@@ -71,6 +71,16 @@ describe("a node", () => {
     ).toMatchObject({ issues: ["a known gap"] });
   });
 
+  it("parses with an optional link absent, and is refused with a required link absent", () => {
+    expect(things.parse("object", without(fabric, "representedAs"))).toEqual({
+      ...without(fabric, "representedAs"),
+      livesIn: ["sheets", "warehouse"],
+    });
+    expect(() => things.parse("object", without(fabric, "livesIn"))).toThrow(
+      /livesIn/,
+    );
+  });
+
   it("is refused with a field its type does not declare", () => {
     expect(() => things.parse("object", { ...fabric, colour: "blue" })).toThrow(
       /colour/,
@@ -85,6 +95,9 @@ describe("a node", () => {
       /type/,
     );
     expect(() => things.parse("object", without(fabric, "key"))).toThrow(/key/);
+    expect(() => things.parse("object", without(fabric, "name"))).toThrow(
+      /name/,
+    );
   });
 
   it("is refused when its type is not the type it is parsed as", () => {
@@ -176,6 +189,7 @@ describe("a package", () => {
   it("is refused with a link whose name is not a camelCase key", () => {
     expect(() => withLink(plainLink(""))).toThrow();
     expect(() => withLink(plainLink("Lives In"))).toThrow(/Lives In/);
+    expect(() => withLink(plainLink("LivesIn"))).toThrow(/LivesIn/);
     expect(() => withLink(plainLink("livesIn2"))).not.toThrow();
   });
 
@@ -197,6 +211,14 @@ describe("a package", () => {
     ).toThrow(/constructor/);
   });
 
+  it("is refused with a property that is not a zod schema, made without TypeScript", () => {
+    expect(() =>
+      withType(
+        plainType("t", { key: "text" } as unknown as Type["properties"]),
+      ),
+    ).toThrow(/key/);
+  });
+
   it("is refused with a link named as a field of the base or of its from type, made with defineLink or not, or as a prototype's name", () => {
     expect(() => withLink(defineLink(plainLink("description")))).toThrow(
       /description/,
@@ -205,10 +227,13 @@ describe("a package", () => {
     expect(() => withLink(plainLink("toString"))).toThrow(/toString/);
   });
 
-  it("is refused with a link whose cardinality is not one or many, made without TypeScript", () => {
+  it("is refused with a link whose cardinality is not one or many, or whose required is not true or false, made without TypeScript", () => {
     expect(() =>
       withLink({ ...plainLink("near"), cardinality: "One" } as unknown as Link),
     ).toThrow(/One/);
+    expect(() =>
+      withLink({ ...plainLink("near"), required: "no" } as unknown as Link),
+    ).toThrow(/required/);
   });
 
   it("is refused when a link ends at a type it does not hold, at either end", () => {

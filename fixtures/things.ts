@@ -47,6 +47,7 @@ export const representedAs = defineLink({
   from: object,
   to: externalObject,
   cardinality: "many",
+  required: false,
 });
 
 export const heldIn = defineLink({
