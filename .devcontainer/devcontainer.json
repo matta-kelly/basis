@@ -1,0 +1,31 @@
+// Node runs in this container, so node_modules never lands in the repo folder:
+// the folder is a notes vault whose indexer reads every file.
+{
+  "name": "basis",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+
+  // Mount the repo at its host path, so absolute paths in caches and tool output
+  // mean the same thing inside the container and out.
+  "workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind",
+  "workspaceFolder": "${localWorkspaceFolder}",
+
+  // keep-id: map your host user onto the image's `node` user (uid 1000), so files
+  // written into the repo from inside stay owned by you.
+  "runArgs": ["--userns=keep-id:uid=1000,gid=1000"],
+  "remoteUser": "node",
+  "updateRemoteUserUID": false,
+
+  // Packages live in a podman volume, not the repo folder.
+  "mounts": [
+    "source=basis-node-modules,target=${containerWorkspaceFolder}/node_modules,type=volume"
+  ],
+
+  // A new volume starts root-owned: hand it to `node`, then install.
+  "postCreateCommand": "sudo chown node:node node_modules && npm ci",
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["dbaeumer.vscode-eslint"]
+    }
+  }
+}
