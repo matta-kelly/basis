@@ -31,15 +31,8 @@ export type Type = {
   properties: z.ZodRawShape;
 };
 
-/** A kind of node, and the fields its nodes carry beside the base. A type cannot change a field of the base. */
+/** A kind of node, and the fields its nodes carry beside the base. The package that holds it checks it. */
 export function defineType<const T extends Type>(type: T): T {
-  Name.parse(type.name);
-  const taken = Object.keys(type.properties).filter(isBaseField);
-  if (taken.length > 0) {
-    throw new Error(
-      `The type ${type.name} redefines ${taken.join(", ")}, a field of the base.`,
-    );
-  }
   return type;
 }
 
@@ -52,17 +45,41 @@ export type Link = {
   cardinality: "one" | "many";
 };
 
-/** An edge between two types. It is stored on the node it starts from, under its own name. */
+/** An edge between two types. It is stored on the node it starts from, under its own name. The package that holds it checks it. */
 export function defineLink<const L extends Link>(link: L): L {
+  return link;
+}
+
+/** A link is a frontmatter key: camelCase. */
+const LinkName = z.string().regex(/^[a-z][A-Za-z0-9]*$/, "a camelCase key");
+
+/** What is wrong with a type, whatever made it. */
+function typeProblems(type: Type): string[] {
+  const problems = Name.safeParse(type.name).success
+    ? []
+    : [`The type ${type.name} is not named by a lowercase slug.`];
+  const taken = Object.keys(type.properties).filter(isBaseField);
+  if (taken.length > 0)
+    problems.push(
+      `The type ${type.name} redefines ${taken.join(", ")}, a field of the base.`,
+    );
+  return problems;
+}
+
+/** What is wrong with a link, whatever made it. */
+function linkProblems(link: Link): string[] {
+  const problems = LinkName.safeParse(link.name).success
+    ? []
+    : [`The link "${link.name}" is not named by a camelCase key.`];
   if (
     isBaseField(link.name) ||
     Object.hasOwn(link.from.properties, link.name)
   ) {
-    throw new Error(
+    problems.push(
       `The link ${link.name} has the name of a field of ${link.from.name}.`,
     );
   }
-  return link;
+  return problems;
 }
 
 export type Package = {
@@ -74,9 +91,17 @@ export type Package = {
   parse(type: string, node: unknown): Record<string, unknown>;
 };
 
-/** One package: its types, and the links between them. Each type has one name, and each link ends at a type of the package. */
+/**
+ * One package: its types, and the links between them. It checks every type and link it holds,
+ * however they were made, and throws before any note is read.
+ */
 export function definePackage(pkg: Omit<Package, "parse">): Package {
   Name.parse(pkg.name);
+  const problems = [
+    ...pkg.types.flatMap(typeProblems),
+    ...pkg.links.flatMap(linkProblems),
+  ];
+  if (problems.length > 0) throw new Error(problems.join("\n"));
   const names = pkg.types.map((type) => type.name);
   const twice = names.filter((name, i) => names.indexOf(name) !== i);
   if (twice.length > 0)
@@ -114,9 +139,10 @@ export function definePackage(pkg: Omit<Package, "parse">): Package {
         type.name,
         z.strictObject({
           ...base,
-          type: z.literal(type.name),
           ...type.properties,
           ...links,
+          // Last, so nothing replaces it.
+          type: z.literal(type.name),
         }),
       ];
     }),
