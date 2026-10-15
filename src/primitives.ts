@@ -10,11 +10,14 @@ import * as z from "zod";
 /** A node is named by a short slug, so one node can point at another by name. */
 export const Name = z.string().regex(/^[a-z][a-z0-9-]*$/, "a lowercase slug");
 
-/** What every node carries, whatever its type. Every type extends it. */
+/** What every node carries, whatever its type. Every type extends it, and fixes the value of `type` to its own name. */
 export const base = {
   name: Name,
+  type: Name,
   description: z.string().min(1),
 };
+
+const isBaseField = (field: string) => Object.hasOwn(base, field);
 
 /** A pointer to another node, as a note writes it: "[[name]]". Parsed to the name. */
 const wikilink = z
@@ -31,7 +34,7 @@ export type Type = {
 /** A kind of node, and the fields its nodes carry beside the base. A type cannot change a field of the base. */
 export function defineType<const T extends Type>(type: T): T {
   Name.parse(type.name);
-  const taken = Object.keys(type.properties).filter((field) => field in base);
+  const taken = Object.keys(type.properties).filter(isBaseField);
   if (taken.length > 0) {
     throw new Error(
       `The type ${type.name} redefines ${taken.join(", ")}, a field of the base.`,
@@ -51,7 +54,10 @@ export type Link = {
 
 /** An edge between two types. It is stored on the node it starts from, under its own name. */
 export function defineLink<const L extends Link>(link: L): L {
-  if (link.name in base || link.name in link.from.properties) {
+  if (
+    isBaseField(link.name) ||
+    Object.hasOwn(link.from.properties, link.name)
+  ) {
     throw new Error(
       `The link ${link.name} has the name of a field of ${link.from.name}.`,
     );
@@ -77,6 +83,12 @@ export function definePackage(pkg: Omit<Package, "parse">): Package {
     throw new Error(
       `The package ${pkg.name} has two types named ${twice.join(", ")}.`,
     );
+  const links = pkg.links.map((link) => `${link.from.name}.${link.name}`);
+  const twiceLinked = links.filter((link, i) => links.indexOf(link) !== i);
+  if (twiceLinked.length > 0)
+    throw new Error(
+      `The package ${pkg.name} has two links named ${twiceLinked.join(", ")}.`,
+    );
   for (const link of pkg.links) {
     for (const end of [link.from, link.to]) {
       if (!pkg.types.includes(end)) {
@@ -100,7 +112,12 @@ export function definePackage(pkg: Omit<Package, "parse">): Package {
       );
       return [
         type.name,
-        z.strictObject({ ...base, ...type.properties, ...links }),
+        z.strictObject({
+          ...base,
+          type: z.literal(type.name),
+          ...type.properties,
+          ...links,
+        }),
       ];
     }),
   );

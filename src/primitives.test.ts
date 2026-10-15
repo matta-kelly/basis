@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as z from "zod";
 import things, { externalObject, object, source } from "../fixtures/things.ts";
-import { defineLink, definePackage, defineType } from "./index.ts";
+import { defineLink, definePackage, defineType, type Type } from "./index.ts";
 
 // The real frontmatter of three notes in ~/cc/ontology, unedited. A node's name is its file name.
 const fabric = {
@@ -34,7 +34,7 @@ const attributeValue = {
 const without = (node: Record<string, unknown>, field: string) =>
   Object.fromEntries(Object.entries(node).filter(([key]) => key !== field));
 
-const link = (name: string, from = object, to = source) =>
+const link = (name: string, from: Type = object, to: Type = source) =>
   defineLink({ name, description: "d", from, to, cardinality: "one" });
 
 describe("a node", () => {
