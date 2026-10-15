@@ -36,5 +36,5 @@ step install install
 step types npx tsc --noEmit
 step lint npx eslint
 step format npx prettier --check .
-step tests npx vitest run --passWithNoTests --reporter="$reporter"
+step tests npx vitest run --reporter="$reporter"
 echo "check passed"
