@@ -63,6 +63,12 @@ describe("a node", () => {
       ...attributeValue,
       heldIn: "odoo",
     });
+    expect(
+      things.parse("external-object", {
+        ...attributeValue,
+        issues: ["a known gap"],
+      }),
+    ).toMatchObject({ issues: ["a known gap"] });
   });
 
   it("is refused with a field its type does not declare", () => {
@@ -173,7 +179,7 @@ describe("a package", () => {
     expect(() => withLink(plainLink("livesIn2"))).not.toThrow();
   });
 
-  it("is refused with a type that redefines a field of the base, made with defineType or not", () => {
+  it("is refused with a type that redefines a field of the base, made with defineType or not, or has a prototype's name", () => {
     expect(() =>
       withType(
         defineType({
@@ -187,16 +193,22 @@ describe("a package", () => {
       /type/,
     );
     expect(() =>
-      withType(plainType("t", { constructor: z.string() })),
-    ).not.toThrow();
+      withType(plainType("t", { constructor: z.string().optional() })),
+    ).toThrow(/constructor/);
   });
 
-  it("is refused with a link named as a field of the base or of its from type, made with defineLink or not", () => {
+  it("is refused with a link named as a field of the base or of its from type, made with defineLink or not, or as a prototype's name", () => {
     expect(() => withLink(defineLink(plainLink("description")))).toThrow(
       /description/,
     );
     expect(() => withLink(plainLink("key"))).toThrow(/key/);
-    expect(() => withLink(plainLink("toString"))).not.toThrow();
+    expect(() => withLink(plainLink("toString"))).toThrow(/toString/);
+  });
+
+  it("is refused with a link whose cardinality is not one or many, made without TypeScript", () => {
+    expect(() =>
+      withLink({ ...plainLink("near"), cardinality: "One" } as unknown as Link),
+    ).toThrow(/One/);
   });
 
   it("is refused when a link ends at a type it does not hold, at either end", () => {

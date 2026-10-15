@@ -27,7 +27,10 @@ export const object = defineType({
 export const externalObject = defineType({
   name: "external-object",
   description: "An outside copy of an object, as a source holds it.",
-  properties: { schema: z.string().min(1).optional() },
+  properties: {
+    schema: z.string().min(1).optional(),
+    issues: z.array(z.string().min(1)).optional(),
+  },
 });
 
 export const livesIn = defineLink({
