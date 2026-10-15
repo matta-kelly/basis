@@ -19,6 +19,10 @@ export const base = {
 
 const isBaseField = (field: string) => Object.hasOwn(base, field);
 
+/** A name the object prototype has (`constructor`, `toString`). A parse reads `node[name]`, and would find the prototype's value. */
+const isPrototypeName = (field: string) =>
+  Object.hasOwn(Object.prototype, field);
+
 /** A pointer to another node, as a note writes it: "[[name]]". Parsed to the name. */
 const wikilink = z
   .string()
@@ -63,6 +67,12 @@ function typeProblems(type: Type): string[] {
     problems.push(
       `The type ${type.name} redefines ${taken.join(", ")}, a field of the base.`,
     );
+  const prototypeNames = Object.keys(type.properties).filter(isPrototypeName);
+  if (prototypeNames.length > 0) {
+    problems.push(
+      `The type ${type.name} has ${prototypeNames.join(", ")}, a name the object prototype has.`,
+    );
+  }
   return problems;
 }
 
@@ -77,6 +87,13 @@ function linkProblems(link: Link): string[] {
   ) {
     problems.push(
       `The link ${link.name} has the name of a field of ${link.from.name}.`,
+    );
+  }
+  if (isPrototypeName(link.name))
+    problems.push(`The link ${link.name} has a name the object prototype has.`);
+  if (link.cardinality !== "one" && link.cardinality !== "many") {
+    problems.push(
+      `The link ${link.name} has the cardinality ${String(link.cardinality)}: it is one or many.`,
     );
   }
   return problems;
