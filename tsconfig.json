@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src", "eslint.config.ts"]
+  "include": ["src", "fixtures", "eslint.config.ts"]
 }

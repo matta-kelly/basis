@@ -19,4 +19,18 @@ export default defineConfig([
     plugins: { sonarjs },
     rules: { "sonarjs/no-commented-code": "error" },
   },
+  // `in` also finds the names of the object prototype, so a field named `constructor` is found where there is none.
+  {
+    files: ["**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "BinaryExpression[operator='in']",
+          message:
+            "Use Object.hasOwn: `in` also finds the object prototype's names.",
+        },
+      ],
+    },
+  },
 ]);

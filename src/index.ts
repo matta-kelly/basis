@@ -1,2 +1,9 @@
-// What basis exports. Each part is added here as it is built.
-export {};
+// What basis exports.
+export {
+  base,
+  defineLink,
+  definePackage,
+  defineType,
+  Name,
+} from "./primitives.ts";
+export type { Link, Package, Type } from "./primitives.ts";
