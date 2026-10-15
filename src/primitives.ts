@@ -47,6 +47,8 @@ export type Link = {
   to: Type;
   /** one: a node points at one node. many: at one or more. */
   cardinality: "one" | "many";
+  /** false: a node of the from type can leave it out. Required when not given. */
+  required?: boolean;
 };
 
 /** An edge between two types. It is stored on the node it starts from, under its own name. The package that holds it checks it. */
@@ -66,6 +68,13 @@ function typeProblems(type: Type): string[] {
   if (taken.length > 0)
     problems.push(
       `The type ${type.name} redefines ${taken.join(", ")}, a field of the base.`,
+    );
+  const notSchemas = Object.entries(type.properties)
+    .filter(([, property]) => !(property instanceof z.ZodType))
+    .map(([field]) => field);
+  if (notSchemas.length > 0)
+    problems.push(
+      `The type ${type.name} has ${notSchemas.join(", ")}, which is not a zod schema.`,
     );
   const prototypeNames = Object.keys(type.properties).filter(isPrototypeName);
   if (prototypeNames.length > 0) {
@@ -94,6 +103,11 @@ function linkProblems(link: Link): string[] {
   if (link.cardinality !== "one" && link.cardinality !== "many") {
     problems.push(
       `The link ${link.name} has the cardinality ${String(link.cardinality)}: it is one or many.`,
+    );
+  }
+  if (link.required !== undefined && typeof link.required !== "boolean") {
+    problems.push(
+      `The link ${link.name} has required ${String(link.required)}: it is true or false.`,
     );
   }
   return problems;
@@ -147,10 +161,14 @@ export function definePackage(pkg: Omit<Package, "parse">): Package {
       const links = Object.fromEntries(
         pkg.links
           .filter((link) => link.from === type)
-          .map((link) => [
-            link.name,
-            link.cardinality === "one" ? wikilink : z.array(wikilink).min(1),
-          ]),
+          .map((link) => {
+            const schema =
+              link.cardinality === "one" ? wikilink : z.array(wikilink).min(1);
+            return [
+              link.name,
+              link.required === false ? schema.optional() : schema,
+            ];
+          }),
       );
       return [
         type.name,
