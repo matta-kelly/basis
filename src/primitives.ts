@@ -56,8 +56,8 @@ export function defineLink<const L extends Link>(link: L): L {
   return link;
 }
 
-/** A link is a frontmatter key: camelCase. */
-const LinkName = z.string().regex(/^[a-z][A-Za-z0-9]*$/, "a camelCase key");
+/** A property or a link is a frontmatter key: camelCase. */
+const Key = z.string().regex(/^[a-z][A-Za-z0-9]*$/, "a camelCase key");
 
 /** What is wrong with a type, whatever made it. */
 function typeProblems(type: Type): string[] {
@@ -68,6 +68,13 @@ function typeProblems(type: Type): string[] {
   if (taken.length > 0)
     problems.push(
       `The type ${type.name} redefines ${taken.join(", ")}, a field of the base.`,
+    );
+  const notKeys = Object.keys(type.properties).filter(
+    (field) => !Key.safeParse(field).success,
+  );
+  if (notKeys.length > 0)
+    problems.push(
+      `The type ${type.name} has ${notKeys.join(", ")}, which is not a camelCase key.`,
     );
   const notSchemas = Object.entries(type.properties)
     .filter(([, property]) => !(property instanceof z.ZodType))
@@ -87,7 +94,7 @@ function typeProblems(type: Type): string[] {
 
 /** What is wrong with a link, whatever made it. */
 function linkProblems(link: Link): string[] {
-  const problems = LinkName.safeParse(link.name).success
+  const problems = Key.safeParse(link.name).success
     ? []
     : [`The link "${link.name}" is not named by a camelCase key.`];
   if (
