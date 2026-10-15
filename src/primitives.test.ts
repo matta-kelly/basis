@@ -211,6 +211,21 @@ describe("a package", () => {
     ).toThrow(/constructor/);
   });
 
+  it("is refused with a property whose name is not a camelCase key", () => {
+    expect(() =>
+      withType(plainType("t", { "Fabric Code": z.string() })),
+    ).toThrow(/Fabric Code/);
+    expect(() => withType(plainType("t", { fabric_code: z.string() }))).toThrow(
+      /fabric_code/,
+    );
+    expect(() => withType(plainType("t", { FabricCode: z.string() }))).toThrow(
+      /FabricCode/,
+    );
+    expect(() =>
+      withType(plainType("t", { fabricCode: z.string() })),
+    ).not.toThrow();
+  });
+
   it("is refused with a property that is not a zod schema, made without TypeScript", () => {
     expect(() =>
       withType(
