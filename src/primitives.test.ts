@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import * as z from "zod";
 import things, { externalObject, object, source } from "../fixtures/things.ts";
-import { defineLink, definePackage, defineType, type Type } from "./index.ts";
+import {
+  defineLink,
+  definePackage,
+  defineType,
+  type Link,
+  type Type,
+} from "./index.ts";
 
-// The real frontmatter of three notes in ~/cc/ontology, unedited. A node's name is its file name.
+// The frontmatter of four notes in ~/cc/ontology, as it is in the notes, with `name` added
+// from the file name, as the loader gives it.
 const fabric = {
   name: "fabric",
   type: "object",
@@ -31,11 +38,17 @@ const attributeValue = {
   schema: "packages/odoo/schema.ts#AttributeValue",
 };
 
+const faire = {
+  name: "faire",
+  type: "source",
+  description:
+    "The wholesale marketplace. A projection; no connector is built yet.",
+  role: "projection",
+  kind: "marketplace",
+};
+
 const without = (node: Record<string, unknown>, field: string) =>
   Object.fromEntries(Object.entries(node).filter(([key]) => key !== field));
-
-const link = (name: string, from: Type = object, to: Type = source) =>
-  defineLink({ name, description: "d", from, to, cardinality: "one" });
 
 describe("a node", () => {
   it("parses with the base, its type's properties and its links, and its links come back as names", () => {
@@ -45,6 +58,7 @@ describe("a node", () => {
       representedAs: ["odoo-attribute-value"],
     });
     expect(things.parse("source", sheets)).toEqual(sheets);
+    expect(things.parse("source", faire)).toEqual(faire);
     expect(things.parse("external-object", attributeValue)).toEqual({
       ...attributeValue,
       heldIn: "odoo",
@@ -114,11 +128,34 @@ describe("a node", () => {
   });
 });
 
-describe("a definition", () => {
-  it("is refused with a name that is not a slug", () => {
-    expect(() =>
-      defineType({ name: "Thing", description: "d", properties: {} }),
-    ).toThrow();
+// A package of one type, or of the fixture's types and one link: the checks run in definePackage.
+const withType = (type: Type) =>
+  definePackage({ name: "p", description: "d", types: [type], links: [] });
+const withLink = (link: Link) =>
+  definePackage({
+    name: "p",
+    description: "d",
+    types: [object, source, externalObject],
+    links: [link],
+  });
+const plainType = (
+  name: string,
+  properties: Type["properties"] = {},
+): Type => ({ name, description: "d", properties });
+const plainLink = (
+  name: string,
+  from: Type = object,
+  to: Type = source,
+): Link => ({
+  name,
+  description: "d",
+  from,
+  to,
+  cardinality: "one",
+});
+
+describe("a package", () => {
+  it("is refused with a name that is not a slug, of itself or of a type", () => {
     expect(() =>
       definePackage({
         name: "My Things",
@@ -127,45 +164,48 @@ describe("a definition", () => {
         links: [],
       }),
     ).toThrow();
+    expect(() => withType(plainType("Thing"))).toThrow(/Thing/);
   });
 
-  it("of a type is refused when it redefines a field of the base, and not for a prototype's name", () => {
+  it("is refused with a link whose name is not a camelCase key", () => {
+    expect(() => withLink(plainLink(""))).toThrow();
+    expect(() => withLink(plainLink("Lives In"))).toThrow(/Lives In/);
+    expect(() => withLink(plainLink("livesIn2"))).not.toThrow();
+  });
+
+  it("is refused with a type that redefines a field of the base, made with defineType or not", () => {
     expect(() =>
-      defineType({
-        name: "t",
-        description: "d",
-        properties: { description: z.number() },
-      }),
+      withType(
+        defineType({
+          name: "t",
+          description: "d",
+          properties: { description: z.number() },
+        }),
+      ),
     ).toThrow(/description/);
+    expect(() => withType(plainType("t", { type: z.string() }))).toThrow(
+      /type/,
+    );
     expect(() =>
-      defineType({
-        name: "t",
-        description: "d",
-        properties: { type: z.string() },
-      }),
-    ).toThrow(/type/);
-    expect(() =>
-      defineType({
-        name: "t",
-        description: "d",
-        properties: { constructor: z.string() },
-      }),
+      withType(plainType("t", { constructor: z.string() })),
     ).not.toThrow();
   });
 
-  it("of a link is refused with the name of a field of the base or of its from type, and not for a prototype's name", () => {
-    expect(() => link("description")).toThrow(/description/);
-    expect(() => link("key")).toThrow(/key/);
-    expect(() => link("toString")).not.toThrow();
+  it("is refused with a link named as a field of the base or of its from type, made with defineLink or not", () => {
+    expect(() => withLink(defineLink(plainLink("description")))).toThrow(
+      /description/,
+    );
+    expect(() => withLink(plainLink("key"))).toThrow(/key/);
+    expect(() => withLink(plainLink("toString"))).not.toThrow();
   });
 
-  it("of a package is refused when a link ends at a type it does not hold, at either end", () => {
+  it("is refused when a link ends at a type it does not hold, at either end", () => {
     expect(() =>
       definePackage({
         name: "p",
         description: "d",
         types: [object],
-        links: [link("near")],
+        links: [plainLink("near")],
       }),
     ).toThrow(/source/);
     expect(() =>
@@ -173,12 +213,12 @@ describe("a definition", () => {
         name: "p",
         description: "d",
         types: [source],
-        links: [link("near")],
+        links: [plainLink("near")],
       }),
     ).toThrow(/object/);
   });
 
-  it("of a package is refused with two types of one name, or two links of one name from one type", () => {
+  it("is refused with two types of one name, or two links of one name from one type", () => {
     expect(() =>
       definePackage({
         name: "p",
@@ -192,7 +232,7 @@ describe("a definition", () => {
         name: "p",
         description: "d",
         types: [object, source, externalObject],
-        links: [link("near"), link("near", object, externalObject)],
+        links: [plainLink("near"), plainLink("near", object, externalObject)],
       }),
     ).toThrow(/near/);
   });

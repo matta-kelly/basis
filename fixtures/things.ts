@@ -8,6 +8,7 @@ export const source = defineType({
   properties: {
     role: z.enum(["entry", "record", "projection"]),
     connector: Name.optional(),
+    kind: z.enum(["marketplace"]).optional(),
   },
 });
 
@@ -19,6 +20,7 @@ export const object = defineType({
     schema: z.string().min(1).optional(),
     states: z.array(Name).min(1),
     derived: z.array(Name).optional(),
+    issues: z.array(z.string().min(1)).optional(),
   },
 });
 
