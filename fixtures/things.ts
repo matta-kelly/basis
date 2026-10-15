@@ -1,17 +1,31 @@
-// A small package for the tests: two types from the lotusandluna ontology, and the link between them.
+// A small package for the tests: three types from the lotusandluna ontology, and the links between them.
 import * as z from "zod";
-import { defineLink, definePackage, defineType } from "../src/index.ts";
+import { defineLink, definePackage, defineType, Name } from "../src/index.ts";
 
 export const source = defineType({
   name: "source",
   description: "A place data lives.",
-  properties: { role: z.enum(["entry", "record", "projection"]) },
+  properties: {
+    role: z.enum(["entry", "record", "projection"]),
+    connector: Name.optional(),
+  },
 });
 
 export const object = defineType({
   name: "object",
   description: "What the business is made of.",
-  properties: { key: z.string().min(1) },
+  properties: {
+    key: z.string().min(1),
+    schema: z.string().min(1).optional(),
+    states: z.array(Name).min(1),
+    derived: z.array(Name).optional(),
+  },
+});
+
+export const externalObject = defineType({
+  name: "external-object",
+  description: "An outside copy of an object, as a source holds it.",
+  properties: { schema: z.string().min(1).optional() },
 });
 
 export const livesIn = defineLink({
@@ -22,9 +36,25 @@ export const livesIn = defineLink({
   cardinality: "many",
 });
 
+export const representedAs = defineLink({
+  name: "representedAs",
+  description: "Its outside copies.",
+  from: object,
+  to: externalObject,
+  cardinality: "many",
+});
+
+export const heldIn = defineLink({
+  name: "heldIn",
+  description: "The source that holds it.",
+  from: externalObject,
+  to: source,
+  cardinality: "one",
+});
+
 export default definePackage({
   name: "things",
   description: "What exists, and where.",
-  types: [source, object],
-  links: [livesIn],
+  types: [source, object, externalObject],
+  links: [livesIn, representedAs, heldIn],
 });
