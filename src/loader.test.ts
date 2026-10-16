@@ -1,15 +1,36 @@
-import { chmod, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { loadFolder, readNote } from "./index.ts";
 
 const folder = fileURLToPath(new URL("../fixtures/loader", import.meta.url));
 
+// The folders the tests make, and the paths they lock, undone after each test.
+const made: string[] = [];
+const locked: string[] = [];
+afterEach(async () => {
+  for (const path of locked.splice(0)) await chmod(path, 0o755);
+  for (const root of made.splice(0))
+    await rm(root, { recursive: true, force: true });
+});
+const lock = async (path: string) => {
+  await chmod(path, 0o000);
+  locked.push(path);
+};
+
 // A new folder, with the notes written in the order given.
-async function folderOf(notes: [string, string][]): Promise<string> {
+async function folderOf(notes: [string, string | Buffer][]): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "basis-loader-"));
+  made.push(root);
   for (const [path, text] of notes) {
     await mkdir(join(root, path, ".."), { recursive: true });
     await writeFile(join(root, path), text);
@@ -150,21 +171,26 @@ describe("a folder", () => {
     ]);
   });
 
-  it("gives a problem for a note it may not open, and for a symbolic link, and still loads the rest", async () => {
+  it("gives a problem for a note or a folder it may not open, a note that is not UTF-8, and a symbolic link, and still loads the rest", async () => {
     const root = await folderOf([
       ["a.md", ""],
+      ["latin1.md", Buffer.from("---\ndescription: Caf\xe9\n---\n", "latin1")],
       ["locked.md", ""],
+      ["lockeddir/b.md", ""],
       ["real/r.md", ""],
     ]);
-    await chmod(join(root, "locked.md"), 0o000);
+    await lock(join(root, "locked.md"));
+    await lock(join(root, "lockeddir"));
     await symlink(join(root, "a.md"), join(root, "linked.md"));
     await symlink(join(root, "real"), join(root, "linkdir"));
     const { notes, problems } = await loadFolder(root);
     expect(notes.map((note) => note.path)).toEqual(["a.md", "real/r.md"]);
     expect(problems.map((problem) => problem.path)).toEqual([
+      "latin1.md",
       "linkdir",
       "linked.md",
       "locked.md",
+      "lockeddir",
     ]);
   });
 });
