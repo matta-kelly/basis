@@ -64,44 +64,58 @@ export function readNote(path: string, file: string): Read {
   };
 }
 
-/** The notes under a folder, by their paths from it, and a problem for each symbolic link. A file or folder whose name starts with a dot is skipped. */
+/** The notes under a folder, by their paths from it, and a problem for each symbolic link and each folder that cannot be read. A file or folder whose name starts with a dot is skipped. */
 async function notePaths(
   root: string,
   folder = "",
-): Promise<{ paths: string[]; links: Problem[] }> {
-  const entries = await readdir(join(root, folder), { withFileTypes: true });
+): Promise<{ paths: string[]; unread: Problem[] }> {
   const paths: string[] = [];
-  const links: Problem[] = [];
+  const unread: Problem[] = [];
+  let entries;
+  try {
+    entries = await readdir(join(root, folder), { withFileTypes: true });
+  } catch (error) {
+    // The folder read is the caller's: if it cannot be read, nothing can.
+    if (!folder) throw error;
+    unread.push({
+      path: folder,
+      message: `The folder cannot be read: ${String(error)}`,
+    });
+    return { paths, unread };
+  }
   for (const entry of entries) {
     if (entry.name.startsWith(".")) continue;
     const path = folder ? `${folder}/${entry.name}` : entry.name;
     if (entry.isSymbolicLink()) {
-      links.push({
+      unread.push({
         path,
         message: "A symbolic link: basis reads only files and folders.",
       });
     } else if (entry.isDirectory()) {
       const inner = await notePaths(root, path);
       paths.push(...inner.paths);
-      links.push(...inner.links);
+      unread.push(...inner.unread);
     } else if (entry.isFile() && entry.name.endsWith(".md")) {
       paths.push(path);
     }
   }
-  return { paths, links };
+  return { paths, unread };
 }
+
+// Fails on bytes that are not UTF-8, where a plain read would change them with no word.
+const utf8 = new TextDecoder("utf-8", { fatal: true });
 
 /** Every note in a folder and the folders in it, in path order, and a problem for each note that cannot be read. The files are read one at a time. */
 export async function loadFolder(
   folder: string,
 ): Promise<{ notes: Note[]; problems: Problem[] }> {
-  const { paths, links } = await notePaths(folder);
+  const { paths, unread } = await notePaths(folder);
   const notes: Note[] = [];
-  const problems = [...links];
+  const problems = [...unread];
   for (const path of paths) {
     let text: string;
     try {
-      text = await readFile(join(folder, path), "utf8");
+      text = utf8.decode(await readFile(join(folder, path)));
     } catch (error) {
       problems.push({
         path,
