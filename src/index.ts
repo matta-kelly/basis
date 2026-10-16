@@ -7,3 +7,10 @@ export {
   Name,
 } from "./primitives.ts";
 export type { Link, Package, Type } from "./primitives.ts";
+export {
+  loadFolder,
+  readNote,
+  type Note,
+  type Problem,
+  type Read,
+} from "./loader.ts";
