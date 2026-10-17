@@ -11,6 +11,7 @@ import things, { source } from "../fixtures/things.ts";
 import {
   definePackage,
   defineType,
+  extendType,
   many,
   linksOf,
   manyOrNone,
@@ -227,10 +228,10 @@ describe("a type that extends another, in a package that imports it", () => {
   it("is refused by the compiler with a field the base has, its own or of the base of every node", () => {
     void (() =>
       // @ts-expect-error: capability has title (the field's type is never).
-      defineType({ extends: capability, fields: { title: z.number() } }));
+      extendType(capability, { fields: { title: z.number() } }));
     void (() =>
       // @ts-expect-error: every node has description (the field's type is never).
-      defineType({ extends: capability, fields: { description: z.string() } }));
+      extendType(capability, { fields: { description: z.string() } }));
   });
 
   it("is refused by the compiler in a package that does not import its base", () => {

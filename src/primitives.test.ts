@@ -11,6 +11,7 @@ import things, { externalObject, object, source } from "../fixtures/things.ts";
 import {
   definePackage,
   defineType,
+  extendType,
   linksOf,
   many,
   manyOrNone,
@@ -523,8 +524,7 @@ describe("a package that imports another", () => {
 
   it("is refused with an extension that has a field of its base, made without TypeScript", () => {
     for (const field of ["title", "description", "type"]) {
-      const over = defineType({
-        extends: capability,
+      const over = extendType(capability, {
         fields: { [field]: z.string() } as Record<string, never>,
       });
       expect(() =>
@@ -621,6 +621,27 @@ describe("a package that imports another", () => {
         types: {},
       }),
     ).not.toThrow();
+  });
+
+  it("is refused with two imports that each extend one base: two owners of one name", () => {
+    const studio = definePackage({
+      name: "studio",
+      description: "d",
+      imports: [core],
+      types: {
+        capability: extendType(capability, { fields: { budget: z.number() } }),
+      },
+    });
+    expect(() =>
+      definePackage({
+        name: "p",
+        description: "d",
+        imports: [company, studio],
+        types: {},
+      }),
+    ).toThrow(
+      /two types named capability, from company and from studio, and neither extends the other/,
+    );
   });
 
   it("is refused with an import that is refused", () => {

@@ -1,7 +1,7 @@
 // Two packages for the tests, one on the other: core, like que's ontology, and company, like cc's,
 // which imports core, extends its capability and links to its agent.
 import * as z from "zod";
-import { definePackage, defineType, one } from "../src/index.ts";
+import { definePackage, defineType, extendType, one } from "../src/index.ts";
 
 export const agent = defineType({
   name: "agent",
@@ -28,8 +28,7 @@ export const core = definePackage({
   types: { agent, capability, case: kase },
 });
 
-export const companyCapability = defineType({
-  extends: core.types.capability,
+export const companyCapability = extendType(core.types.capability, {
   fields: {
     stage: z.enum(["idea", "live"]),
     // The agent that holds it.
