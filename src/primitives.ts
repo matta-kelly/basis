@@ -32,8 +32,9 @@ const wikilinkOf = () =>
 export const wikilink = wikilinkOf();
 
 /**
- * A schema, the schemas inside it, and their defs: found by walking each def's values, its arrays and plain objects.
- * A method chained on a schema wraps it, or makes a clone that keeps its def or the schemas inside it.
+ * A schema, the schemas inside it, and their defs: found by walking each def's values, its arrays and plain objects,
+ * and the schema a lazy schema returns. A method chained on a schema wraps it, or makes a clone that keeps its def
+ * or the schemas inside it.
  */
 function partsOf(schema: z.ZodType): object[] {
   const found = new Set<object>();
@@ -42,6 +43,7 @@ function partsOf(schema: z.ZodType): object[] {
     if (value instanceof z.ZodType) {
       found.add(value);
       walk(value._zod.def);
+      if (value instanceof z.ZodLazy) walk(value.unwrap());
     } else if (
       Array.isArray(value) ||
       [Object.prototype, null].includes(Object.getPrototypeOf(value))
@@ -84,16 +86,22 @@ export function defineType<
   return made;
 }
 
-/** What a link points at: a thunk, so a link can point at a type defined later. */
-export type Link = { to: () => Type; cardinality: "one" | "many" };
+/** A link: the field it is, what it points at, how many, and whether a node can leave it out. */
+export type Link = {
+  name: string;
+  /** A thunk, so a link can point at a type defined later. */
+  to: () => Type;
+  cardinality: "one" | "many";
+  optional: boolean;
+};
 
 /** The target of each link schema, kept beside the schema and not in its type. */
-const links = new WeakMap<object, Link>();
+const links = new WeakMap<object, Omit<Link, "name">>();
 
 /** Each part of each link schema. Each link is made of new schemas, so a part is in no other schema but one made from the link. */
 const linkParts = new WeakSet<object>();
 
-function link<S extends z.ZodType>(schema: S, target: Link): S {
+function link<S extends z.ZodType>(schema: S, target: Omit<Link, "name">): S {
   links.set(schema, target);
   for (const part of partsOf(schema)) linkParts.add(part);
   return schema;
@@ -101,18 +109,30 @@ function link<S extends z.ZodType>(schema: S, target: Link): S {
 
 /** A link to one node. */
 export const one = (to: () => Type) =>
-  link(wikilinkOf(), { to, cardinality: "one" });
+  link(wikilinkOf(), { to, cardinality: "one", optional: false });
+
+/** A link to one node or none: the key holds a name, or is absent. */
+export const oneOrNone = (to: () => Type) =>
+  link(wikilinkOf().optional(), { to, cardinality: "one", optional: true });
 
 /** A link to one or more nodes. */
 export const many = (to: () => Type) =>
-  link(z.array(wikilinkOf()).min(1), { to, cardinality: "many" });
+  link(z.array(wikilinkOf()).min(1), {
+    to,
+    cardinality: "many",
+    optional: false,
+  });
 
-/** A link to any number of nodes: no value and an empty list both mean none. */
+/** A link to any number of nodes: an absent key and an empty list both mean none. */
 export const manyOrNone = (to: () => Type) =>
-  link(z.array(wikilinkOf()).optional(), { to, cardinality: "many" });
+  link(z.array(wikilinkOf()).optional(), {
+    to,
+    cardinality: "many",
+    optional: true,
+  });
 
-/** The links that start from a type: each of its fields made by one, many or manyOrNone. */
-export const linksOf = (type: Type) =>
+/** The links that start from a type: each of its fields made by one, oneOrNone, many or manyOrNone. */
+export const linksOf = (type: Type): Link[] =>
   Object.entries(type.fields).flatMap(([name, schema]) => {
     const target = links.get(schema);
     return target ? [{ name, ...target }] : [];
@@ -155,7 +175,7 @@ function typeProblems(type: Type): string[] {
     .map(([field]) => field);
   if (holdLinks.length > 0)
     problems.push(
-      `The type ${type.name} has ${holdLinks.join(", ")}, which holds a link but is not one: a link is one, many or manyOrNone with no method chained, and an optional many link is manyOrNone.`,
+      `The type ${type.name} has ${holdLinks.join(", ")}, which holds a link but is not one: a link is one, oneOrNone, many or manyOrNone with no method chained. An optional one link is oneOrNone, and an optional many link is manyOrNone.`,
     );
   const prototypeNames = Object.keys(type.fields).filter(isPrototypeName);
   if (prototypeNames.length > 0) {
@@ -171,12 +191,56 @@ export type Package<T extends Record<string, Type> = Record<string, Type>> = {
   description: string;
   /** Its types, each by its name. */
   types: T;
-  /** The node, parsed by the schema of its type. Throws when the node does not fit. */
-  parse<N extends keyof T & string>(
+  /**
+   * The node, parsed by the schema of its type, in the types of the package it is called on. Throws when the node
+   * does not fit.
+   */
+  parse<This extends Package, N extends keyof This["types"] & string>(
+    this: This,
     type: N,
     node: unknown,
-  ): z.output<T[N]["schema"]>;
+  ): z.output<This["types"][N]["schema"]>;
 };
+
+/** The types objects checked as a package's types. A package spread with other types is checked on its first parse. */
+const checkedTypes = new WeakSet<object>();
+
+/** What definePackage checks: the name, each type, and the links between them. Throws on the first kind of problem. */
+function checkPackage(name: string, types: Record<string, Type>) {
+  Name.parse(name);
+  const entries = Object.entries(types);
+  const notMade = entries.filter(([, type]) => !madeTypes.has(type));
+  if (notMade.length > 0)
+    throw new Error(
+      `The package ${name} has ${notMade.map(([key]) => key).join(", ")}, which defineType did not make.`,
+    );
+  const problems = entries.flatMap(([key, type]) => [
+    ...typeProblems(type),
+    ...(key === type.name
+      ? []
+      : [
+          `The package ${name} has the type ${type.name} under the key ${key}: a type is under its name.`,
+        ]),
+  ]);
+  if (problems.length > 0) throw new Error(problems.join("\n"));
+  const held = entries.map(([, type]) => type);
+  for (const type of held) {
+    for (const link of linksOf(type)) {
+      const end = link.to();
+      if (!held.includes(end))
+        throw new Error(
+          `The link ${link.name} of ${type.name} ends at ${end.name}, which is not a type of the package ${name}.`,
+        );
+    }
+  }
+  checkedTypes.add(types);
+}
+
+/** A type by its key. Generic, so the type is the one under that key, not any type of the record. */
+const typeIn = <T extends Record<string, Type>, K extends keyof T>(
+  types: T,
+  key: K,
+): T[K] => types[key];
 
 /**
  * One package: its types, each under its own name, and through their fields the links between them.
@@ -185,39 +249,21 @@ export type Package<T extends Record<string, Type> = Record<string, Type>> = {
 export function definePackage<
   const T extends Record<string, Type> & { [K in keyof T]: { name: K } },
 >(pkg: { name: string; description: string; types: T }): Package<T> {
-  Name.parse(pkg.name);
-  const types = Object.entries(pkg.types);
-  const notMade = types.filter(([, type]) => !madeTypes.has(type));
-  if (notMade.length > 0)
-    throw new Error(
-      `The package ${pkg.name} has ${notMade.map(([key]) => key).join(", ")}, which defineType did not make.`,
-    );
-  const problems = types.flatMap(([key, type]) => [
-    ...typeProblems(type),
-    ...(key === type.name
-      ? []
-      : [
-          `The package ${pkg.name} has the type ${type.name} under the key ${key}: a type is under its name.`,
-        ]),
-  ]);
-  if (problems.length > 0) throw new Error(problems.join("\n"));
-  const held = types.map(([, type]) => type);
-  for (const type of held) {
-    for (const { name, to } of linksOf(type)) {
-      const end = to();
-      if (!held.includes(end))
-        throw new Error(
-          `The link ${name} of ${type.name} ends at ${end.name}, which is not a type of the package ${pkg.name}.`,
-        );
-    }
-  }
-
+  checkPackage(pkg.name, pkg.types);
   return {
     ...pkg,
-    parse<N extends keyof T & string>(type: N, node: unknown) {
-      if (!Object.hasOwn(pkg.types, type))
-        throw new Error(`The package ${pkg.name} has no type ${type}.`);
-      const schema: T[N]["schema"] = pkg.types[type].schema;
+    parse<This extends Package, N extends keyof This["types"] & string>(
+      this: This,
+      type: N,
+      node: unknown,
+    ) {
+      if (!checkedTypes.has(this.types)) checkPackage(this.name, this.types);
+      if (!Object.hasOwn(this.types, type))
+        throw new Error(`The package ${this.name} has no type ${type}.`);
+      const schema: This["types"][N]["schema"] = typeIn(
+        this.types,
+        type,
+      ).schema;
       return schema.parse(node);
     },
   };
