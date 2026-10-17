@@ -84,7 +84,12 @@ describe("the lint", () => {
       ),
     ).toEqual([{ path: "sheets.md", message: expect.stringMatching(/verb/) }]);
     expect(lint(things, withNote(without(sheets, "type")))).toEqual([
-      { path: "sheets.md", message: expect.stringMatching(/type/) },
+      { path: "sheets.md", message: expect.stringMatching(/no type/) },
+    ]);
+    expect(
+      lint(things, withNote(edit(sheets, { ...sheets.frontmatter, type: 5 }))),
+    ).toEqual([
+      { path: "sheets.md", message: expect.stringMatching(/5 is not a name/) },
     ]);
   });
 
@@ -142,6 +147,20 @@ describe("the lint", () => {
     ]);
   });
 
+  it("gives a problem for a note whose file name is not a slug, naming the file name", () => {
+    expect(
+      lint(things, [
+        ...right,
+        { ...odoo, path: "Bad_Name.md", name: "Bad_Name" },
+      ]),
+    ).toEqual([
+      {
+        path: "Bad_Name.md",
+        message: expect.stringMatching(/file name Bad_Name/),
+      },
+    ]);
+  });
+
   it("gives a problem for a note that writes its own name", () => {
     expect(
       lint(
@@ -153,13 +172,14 @@ describe("the lint", () => {
 });
 
 describe("a folder", () => {
-  it("is linted with the loader's problems and the lint's, in path order", async () => {
+  it("is linted with the loader's problems and the lint's, in path order, and a link to a note the loader could not read is not a problem", async () => {
+    // elm.md cannot be read, and fabric.md, which is right, links to it.
     const folder = fileURLToPath(new URL("../fixtures/lint", import.meta.url));
     const problems = await lintFolder(things, folder);
     expect(problems.map((p) => p.path)).toEqual([
-      "broken.md",
       "cotton.md",
       "do-thing.md",
+      "elm.md",
       "linen.md",
     ]);
   });
