@@ -91,7 +91,7 @@ function noteProblems(
   }
 
   for (const link of linksOf(at.type)) {
-    const to = link.to().name;
+    const to = link.to().map((type) => type.name);
     for (const name of linkNames(note.frontmatter[link.name])) {
       const targets = byName.get(name);
       if (!targets) {
@@ -105,11 +105,11 @@ function noteProblems(
       } else if (
         // A note with no type of the package has that problem itself.
         targets.every((t) => noteType(seen, t)) &&
-        !targets.some((t) => t.frontmatter.type === to)
+        !targets.some((t) => to.some((type) => t.frontmatter.type === type))
       ) {
         problems.push(
           problem(
-            `The link ${link.name} points at ${name}, which is a ${String(targets[0]?.frontmatter.type)}, not a ${to}.`,
+            `The link ${link.name} points at ${name}, which is a ${String(targets[0]?.frontmatter.type)}, not a ${to.join(" or a ")}.`,
           ),
         );
       }

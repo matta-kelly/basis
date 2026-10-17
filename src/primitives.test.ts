@@ -360,10 +360,10 @@ describe("a package", () => {
         optional,
       })),
     ).toEqual([
-      { name: "livesIn", to: source, cardinality: "many", optional: false },
+      { name: "livesIn", to: [source], cardinality: "many", optional: false },
       {
         name: "representedAs",
-        to: externalObject,
+        to: [externalObject],
         cardinality: "many",
         optional: true,
       },
@@ -413,6 +413,43 @@ describe("a type", () => {
   it("is frozen", () => {
     const t = defineType({ name: "t", description: "d", fields: {} });
     expect(Object.isFrozen(t)).toBe(true);
+  });
+});
+
+describe("a link with several targets", () => {
+  const domain = defineType({ name: "domain", description: "d", fields: {} });
+  const holder = defineType({
+    name: "holder",
+    description: "d",
+    fields: {
+      a: one(() => [source, domain]),
+      b: oneOrNone(() => [source, domain]),
+      c: many(() => [source, domain]),
+      d: manyOrNone(() => [source, domain]),
+      e: one(() => source),
+    },
+  });
+
+  it("is made by each link kind, and gives its types as a list, as a link to one type does", () => {
+    expect(linksOf(holder).map((link) => [link.name, link.to()])).toEqual([
+      ...["a", "b", "c", "d"].map((name) => [name, [source, domain]]),
+      ["e", [source]],
+    ]);
+  });
+
+  it("is refused by a package that does not hold each of its types", () => {
+    expect(() =>
+      definePackage({ name: "p", description: "d", types: { source, holder } }),
+    ).toThrow(
+      "The link a of holder ends at domain, which is not a type of the package p or its imports.",
+    );
+    expect(() =>
+      definePackage({
+        name: "p",
+        description: "d",
+        types: { source, domain, holder },
+      }),
+    ).not.toThrow();
   });
 });
 
