@@ -1,6 +1,8 @@
-import { basename } from "node:path";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import things from "../fixtures/things.ts";
 import { lint, lintFolder, type Note } from "./index.ts";
 
@@ -98,6 +100,17 @@ describe("the lint", () => {
       lint(things, withNote(edit(sheets, { ...sheets.frontmatter, type: 5 }))),
     ).toEqual([
       { path: "sheets.md", message: expect.stringMatching(/5 is not a name/) },
+    ]);
+    expect(
+      lint(
+        things,
+        withNote(edit(sheets, { ...sheets.frontmatter, type: ["source"] })),
+      ),
+    ).toEqual([
+      {
+        path: "sheets.md",
+        message: expect.stringContaining('["source"] is not a name'),
+      },
     ]);
   });
 
@@ -225,4 +238,24 @@ describe("a folder", () => {
       "linen.md",
     ]);
   });
+
+  it("gives a symbolic link its own problem, and none to the note it points at", async () => {
+    const root = await mkdtemp(join(tmpdir(), "basis-lint-"));
+    made.push(root);
+    await mkdir(join(root, "a"));
+    await mkdir(join(root, "b"));
+    await writeFile(
+      join(root, "a/sheets.md"),
+      '---\ntype: source\ndescription: "A source."\nrole: entry\n---\n',
+    );
+    await symlink("../a/sheets.md", join(root, "b/sheets.md"));
+    const problems = await lintFolder(things, root);
+    expect(problems.map((p) => p.path)).toEqual(["b/sheets.md"]);
+  });
+});
+
+const made: string[] = [];
+afterEach(async () => {
+  for (const root of made.splice(0))
+    await rm(root, { recursive: true, force: true });
 });
