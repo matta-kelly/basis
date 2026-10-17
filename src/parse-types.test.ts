@@ -200,6 +200,12 @@ describe("a parsed note's type", () => {
     expectTypeOf<Link["cardinality"]>().toEqualTypeOf<"one" | "many">();
     expectTypeOf<Link["optional"]>().toEqualTypeOf<boolean>();
   });
+
+  it("is refused by the compiler for a link to an empty list of types", () => {
+    // @ts-expect-error: a link points at one type or more.
+    void one(() => []);
+    void one(() => [source]);
+  });
 });
 
 describe("a type that extends another, in a package that imports it", () => {
