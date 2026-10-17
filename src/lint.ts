@@ -4,6 +4,7 @@
  */
 
 import { basename } from "node:path";
+import { inspect } from "node:util";
 import * as z from "zod";
 import { byPath, loadFolder, type Note, type Problem } from "./loader.ts";
 import { wikilink, type Package } from "./primitives.ts";
@@ -49,12 +50,13 @@ function noteProblems(
   if (Object.hasOwn(note.frontmatter, "name"))
     problems.push(problem("The note writes name: its name is its file name."));
   const type = note.frontmatter.type;
-  if (type === undefined || type === null)
+  if (type === undefined || type === null || type === "")
     return [...problems, problem("The note has no type.")];
   if (typeof type !== "string")
     return [
       ...problems,
-      problem(`The type ${JSON.stringify(type)} is not a name.`),
+      // inspect, not JSON: a YAML alias can make a value that holds itself.
+      problem(`The type ${inspect(type)} is not a name.`),
     ];
   if (!hasType(pkg, note))
     return [
