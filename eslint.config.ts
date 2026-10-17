@@ -5,7 +5,7 @@ import sonarjs from "eslint-plugin-sonarjs";
 import { defineConfig, globalIgnores } from "eslint/config";
 
 export default defineConfig([
-  globalIgnores(["**/node_modules"]),
+  globalIgnores(["**/node_modules", "dist"]),
   {
     files: ["**/*.ts"],
     plugins: { js },
