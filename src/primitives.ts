@@ -120,20 +120,55 @@ function linkProblems(link: Link): string[] {
   return problems;
 }
 
-export type Package = {
+/** The links that start from the type named N. */
+type LinksFrom<L extends readonly Link[], N> = Extract<
+  L[number],
+  { from: { name: N } }
+>;
+type LinkValue<K> = K extends { cardinality: "one" } ? string : string[];
+
+/** A note of the type named N, as parse returns it: the base, its properties, and its links as names. */
+export type Parsed<
+  T extends readonly Type[],
+  L extends readonly Link[],
+  N extends string,
+> = { name: string; type: N; description: string } & z.infer<
+  z.ZodObject<Extract<T[number], { name: N }>["properties"]>
+> & {
+    [
+      K in LinksFrom<L, N> as K extends { required: false } ? never : K["name"]
+    ]: LinkValue<K>;
+  } & {
+    [
+      K in LinksFrom<L, N> as K extends { required: false } ? K["name"] : never
+    ]?: LinkValue<K>;
+  };
+
+export type Package<
+  T extends readonly Type[] = readonly Type[],
+  L extends readonly Link[] = readonly Link[],
+> = {
   name: string;
   description: string;
-  types: Type[];
-  links: Link[];
+  types: T;
+  links: L;
   /** The node, parsed by the schema of its type. Throws when the node does not fit. */
-  parse(type: string, node: unknown): Record<string, unknown>;
+  parse<N extends T[number]["name"]>(type: N, node: unknown): Parsed<T, L, N>;
 };
 
 /**
  * One package: its types, and the links between them. It checks every type and link it holds,
  * however they were made, and throws before any note is read.
  */
-export function definePackage(pkg: Omit<Package, "parse">): Package {
+export function definePackage<
+  const T extends readonly Type[],
+  const L extends readonly Link[],
+>(pkg: {
+  name: string;
+  description: string;
+  types: T;
+  links: L;
+}): Package<T, L> {
   Name.parse(pkg.name);
   const problems = [
     ...pkg.types.flatMap(typeProblems),
@@ -192,11 +227,12 @@ export function definePackage(pkg: Omit<Package, "parse">): Package {
 
   return {
     ...pkg,
-    parse(type, node) {
+    parse<N extends T[number]["name"]>(type: N, node: unknown) {
       const schema = schemas.get(type);
       if (!schema)
         throw new Error(`The package ${pkg.name} has no type ${type}.`);
-      return schema.parse(node);
+      // The schema is built from the same types and links Parsed reads.
+      return schema.parse(node) as Parsed<T, L, N>;
     },
   };
 }

@@ -2,12 +2,9 @@
 import { describe, expectTypeOf, it } from "vitest";
 import things from "../fixtures/things.ts";
 
-const asObject = () => things.parse("object", {});
-const asExternal = () => things.parse("external-object", {});
-const asSource = () => things.parse("source", {});
-type Object = ReturnType<typeof asObject>;
-type External = ReturnType<typeof asExternal>;
-type Source = ReturnType<typeof asSource>;
+type Object = ReturnType<typeof things.parse<"object">>;
+type External = ReturnType<typeof things.parse<"external-object">>;
+type Source = ReturnType<typeof things.parse<"source">>;
 
 describe("a parsed note's type", () => {
   it("has its type's fields, its type's name, and its links as names", () => {

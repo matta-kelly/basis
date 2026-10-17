@@ -143,6 +143,7 @@ describe("a node", () => {
   });
 
   it("is refused for a type the package does not hold", () => {
+    // @ts-expect-error: the compiler refuses it too; this checks the refusal at run time, for code without types.
     expect(() => things.parse("verb", fabric)).toThrow(/verb/);
   });
 });
