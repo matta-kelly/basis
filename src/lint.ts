@@ -124,6 +124,12 @@ function noteProblems(
  * key field has a problem is not: it has that problem.
  */
 function keyProblems(seen: Seen, notes: Note[]): Problem[] {
+  // Each value a number, by a map: a key field gives a scalar, and a map tells "1" from 1. Type names are slugs.
+  const ids = new Map<unknown, number>();
+  const idOf = (value: unknown) => {
+    if (!ids.has(value)) ids.set(value, ids.size);
+    return ids.get(value);
+  };
   const byKey = new Map<string, { note: Note; values: string }[]>();
   for (const note of notes) {
     const type = noteType(seen, note)?.type;
@@ -135,16 +141,15 @@ function keyProblems(seen: Seen, notes: Note[]): Problem[] {
       .safeParse(note.frontmatter);
     if (!parsed.success) continue;
     const values = key.map((field) => parsed.data[field]);
-    const id = JSON.stringify([type.name, ...values]);
-    byKey.set(id, [
-      ...(byKey.get(id) ?? []),
-      {
-        note,
-        values: key
-          .map((field, i) => `${field} ${JSON.stringify(values[i])}`)
-          .join(", "),
-      },
-    ]);
+    const id = [type.name, ...values.map(idOf)].join(" ");
+    const same = byKey.get(id) ?? [];
+    same.push({
+      note,
+      values: key
+        .map((field, i) => `${field} ${JSON.stringify(values[i])}`)
+        .join(", "),
+    });
+    byKey.set(id, same);
   }
   return [...byKey.values()].flatMap((same) =>
     same.length < 2

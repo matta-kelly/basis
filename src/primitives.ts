@@ -68,13 +68,25 @@ export type Type = {
   key?: readonly string[];
 };
 
-/** The fields a key can name: fields beside the base that every node has. A key is checked against the schema, not described again. */
+/**
+ * The fields a key can name: fields beside the base that every node has, each one string, number or boolean.
+ * zod marks a field a node can leave out (optional, exactOptional), whatever it gives. A key is checked against the
+ * schema, not described again.
+ */
 type KeyField<F extends z.ZodRawShape> = Exclude<
   {
-    [K in keyof F & string]: undefined extends z.output<F[K]> ? never : K;
+    [K in keyof F & string]: F[K] extends { _zod: { optout: "optional" } }
+      ? never
+      : z.output<F[K]> extends string | number | boolean
+        ? K
+        : never;
   }[keyof F & string],
   keyof typeof base
 >;
+
+/** A copy of a key, frozen. A value that is not a list is kept, and the package refuses it. */
+const keyCopy = <K extends readonly string[]>(key: K | undefined) =>
+  Object.freeze(Array.isArray(key) ? [...key] : (key ?? []));
 
 /** The types defineType made. A package holds no other: a type's schema is made from its fields, once. */
 const madeTypes = new WeakSet<Type>();
@@ -92,7 +104,7 @@ export function defineType<
     description: type.description,
     // The fields last: spread before them, the literal keeps its type. A field named type is refused by the package.
     schema: z.strictObject({ ...base, type: z.literal(type.name), ...fields }),
-    key: Object.freeze([...(type.key ?? [])]),
+    key: keyCopy(type.key),
   });
   madeTypes.add(made);
   return made;
@@ -128,7 +140,7 @@ export function extendType<
     description: parent.description,
     extends: parent,
     schema: schema.extend(fields),
-    key: Object.freeze([...(type.key ?? parent.key ?? [])]),
+    key: keyCopy(type.key ?? parent.key),
   });
   madeTypes.add(made);
   return made;
@@ -214,29 +226,71 @@ function overriddenBy(type: Type, extended: Type): string[] {
     .map(([field]) => field);
 }
 
-/** A field a node can leave out: its schema takes nothing, and gives nothing. A default gives a value. */
-function canBeAbsent(field: z.core.$ZodType) {
-  const parsed = z.safeParse(field, undefined);
-  return parsed.success && parsed.data === undefined;
+/**
+ * Whether a field gives one string, number or boolean, read from its schema. A transform's output cannot be read,
+ * so a one link is the only transform taken: it gives the name it points at.
+ */
+function givesScalar(field: z.core.$ZodType): boolean {
+  const link = links.get(field);
+  if (link) return link.cardinality === "one" && !link.optional;
+  if (
+    field instanceof z.ZodString ||
+    field instanceof z.ZodNumber ||
+    field instanceof z.ZodBoolean ||
+    field instanceof z.ZodEnum ||
+    field instanceof z.ZodTemplateLiteral
+  )
+    return true;
+  if (field instanceof z.ZodLiteral)
+    return [...field.values].every((value) =>
+      ["string", "number", "boolean"].includes(typeof value),
+    );
+  if (
+    field instanceof z.ZodDefault ||
+    field instanceof z.ZodPrefault ||
+    field instanceof z.ZodReadonly ||
+    field instanceof z.ZodCatch ||
+    field instanceof z.ZodNonOptional
+  )
+    return givesScalar(field.def.innerType);
+  if (field instanceof z.ZodPipe) return givesScalar(field.def.out);
+  if (field instanceof z.ZodUnion) return field.options.every(givesScalar);
+  return false;
 }
 
-/** What is wrong with a type's key: a field it does not have or a node can leave out, or a key its base has changed. */
+/**
+ * What is wrong with a type's key: not a list, a field named twice, a field it does not have, one a node can leave
+ * out or one that gives other than one string, number or boolean, or a key its base has changed.
+ */
 function keyProblems(type: Type, fields: z.ZodRawShape): string[] {
   const key = type.key ?? [];
-  const problems: string[] = [];
-  const notFields = key.filter((field) => !Object.hasOwn(fields, field));
-  if (notFields.length > 0)
-    problems.push(
-      `The key of ${type.name} names ${notFields.join(", ")}, which is not a field of ${type.name}.`,
-    );
-  const absent = key.filter((field) => {
+  if (!Array.isArray(key))
+    return [`The key of ${type.name} is not a list of field names.`];
+  const named = (names: string[], why: string) =>
+    names.length > 0
+      ? [`The key of ${type.name} names ${names.join(", ")}, ${why}.`]
+      : [];
+  const schemaOf = (field: string) => {
     const schema = Object.hasOwn(fields, field) ? fields[field] : undefined;
-    return schema instanceof z.ZodType && canBeAbsent(schema);
-  });
-  if (absent.length > 0)
-    problems.push(
-      `The key of ${type.name} names ${absent.join(", ")}, which a note can leave out.`,
-    );
+    return schema instanceof z.ZodType ? schema : undefined;
+  };
+  const absent = (field: string) => schemaOf(field)?._zod.optout === "optional";
+  const twice = [...new Set(key.filter((f, i) => key.indexOf(f) !== i))];
+  const problems = [
+    ...twice.map((field) => `The key of ${type.name} names ${field} twice.`),
+    ...named(
+      key.filter((field) => !Object.hasOwn(fields, field)),
+      `which is not a field of ${type.name}`,
+    ),
+    ...named(key.filter(absent), "which a note can leave out"),
+    ...named(
+      key.filter((field) => {
+        const schema = schemaOf(field);
+        return schema !== undefined && !absent(field) && !givesScalar(schema);
+      }),
+      "which does not give one string, number or boolean",
+    ),
+  ];
   const baseKey = type.extends?.key ?? [];
   if (
     baseKey.length > 0 &&
