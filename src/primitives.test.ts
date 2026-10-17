@@ -416,6 +416,80 @@ describe("a type", () => {
   });
 });
 
+describe("a type with a key", () => {
+  // A key made by code without types: the compiler would refuse it.
+  const untypedKey = (key: string[]) => key as never[];
+  const keyed = (key: string[], fields: z.ZodRawShape) =>
+    defineType({ name: "t", description: "d", fields, key: untypedKey(key) });
+
+  it("keeps its key as it was when it was made, though the caller's key changes", () => {
+    const key = ["title"];
+    const t = keyed(key, { title: z.string() });
+    key.push("colour");
+    expect(t.key).toEqual(["title"]);
+    expect(() => withType(t)).not.toThrow();
+  });
+
+  it("is refused with a key field the type does not have, a field of the base among them, made without TypeScript", () => {
+    expect(() => withType(keyed(["colour"], { title: z.string() }))).toThrow(
+      /key of t names colour, which is not a field of t/,
+    );
+    expect(() => withType(keyed(["name"], {}))).toThrow(
+      /key of t names name, which is not a field of t/,
+    );
+  });
+
+  it("is refused with a key field that can be absent, made without TypeScript", () => {
+    for (const field of [
+      z.string().optional(),
+      oneOrNone(() => source),
+      manyOrNone(() => source),
+      z.unknown(),
+    ])
+      expect(() => withType(keyed(["near"], { near: field }))).toThrow(
+        /key of t names near, which a note can leave out/,
+      );
+    expect(() =>
+      withType(keyed(["near"], { near: z.string().default("here") })),
+    ).not.toThrow();
+  });
+});
+
+describe("a type that extends a type", () => {
+  const keyedCapability = extendType(capability, {
+    fields: { stage: z.string() },
+    key: ["title", "stage"],
+  });
+  // A package made by code without types: the compiler refuses an extension of a base that core does not hold.
+  const withCapability = (type: Type) =>
+    definePackage({
+      name: "p",
+      description: "d",
+      imports: [core],
+      types: { capability: type },
+    } as unknown as Parameters<typeof definePackage>[0]);
+
+  it("can add a key over its own fields and its base's, when its base has none", () => {
+    expect(keyedCapability.key).toEqual(["title", "stage"]);
+    expect(capability.key).toEqual([]);
+    expect(() => withCapability(keyedCapability)).not.toThrow();
+  });
+
+  it("has the key of its base, and is refused with another, made without TypeScript", () => {
+    const deeper = extendType(keyedCapability, {
+      fields: { budget: z.number() },
+    });
+    expect(deeper.key).toEqual(["title", "stage"]);
+    const changed = extendType(keyedCapability, {
+      fields: { budget: z.number() },
+      key: ["budget"] as never[],
+    });
+    expect(() => withCapability(changed)).toThrow(
+      /capability changes the key of the type it extends: extend, never override/,
+    );
+  });
+});
+
 describe("a package's types", () => {
   it("are frozen when they are checked, so parse goes on with the types that were checked", () => {
     const other = defineType({

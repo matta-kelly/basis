@@ -297,3 +297,51 @@ describe("a type that extends another, in a package that imports it", () => {
     });
   });
 });
+
+describe("a type's key", () => {
+  it("is refused by the compiler with a field the type does not have, a field of the base, or a field a note can leave out", () => {
+    void (() =>
+      defineType({
+        name: "t",
+        description: "d",
+        fields: { title: z.string(), note: z.string().optional() },
+        key: [
+          "title",
+          // @ts-expect-error: t has no field colour.
+          "colour",
+          // @ts-expect-error: name is a field of the base, not of t.
+          "name",
+          // @ts-expect-error: a note of t can leave note out.
+          "note",
+        ],
+      }));
+  });
+
+  it("takes, on an extension, its own fields and its base's, and is refused by the compiler when its base has a key", () => {
+    const keyed = extendType(capability, {
+      fields: { stage: z.string() },
+      key: ["title", "stage"],
+    });
+    void (() =>
+      extendType(capability, {
+        fields: { stage: z.string(), budget: z.number().optional() },
+        key: [
+          // @ts-expect-error: a note can leave budget out.
+          "budget",
+          // @ts-expect-error: description is a field of the base of every node.
+          "description",
+        ],
+      }));
+    void (() =>
+      extendType(keyed, {
+        fields: { level: z.number() },
+        // @ts-expect-error: keyed has a key: extend, never override.
+        key: ["level"],
+      }));
+  });
+
+  it("adds no second description of a type: the key names fields of its schema", () => {
+    expectTypeOf<Type>().not.toHaveProperty("fields");
+    expectTypeOf<NonNullable<Type["key"]>>().toEqualTypeOf<readonly string[]>();
+  });
+});
