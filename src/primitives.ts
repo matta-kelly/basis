@@ -149,8 +149,8 @@ export function extendType<
 /** A link: the field it is, what it points at, how many, and whether a node can leave it out. */
 export type Link = {
   name: string;
-  /** A thunk, so a link can point at a type defined later. */
-  to: () => Type;
+  /** A thunk, so a link can point at a type defined later. A note of any of its types is a target. */
+  to: () => readonly Type[];
   cardinality: "one" | "many";
   optional: boolean;
 };
@@ -161,22 +161,28 @@ const links = new WeakMap<object, Omit<Link, "name">>();
 /** Each part of each link schema. Each link is made of new schemas, so a part is in no other schema but one made from the link. */
 const linkParts = new WeakSet<object>();
 
-function link<S extends z.ZodType>(schema: S, target: Omit<Link, "name">): S {
-  links.set(schema, target);
+/** What a link kind takes: one type, or a list of one or more types. */
+type Targets = () => Type | readonly [Type, ...Type[]];
+
+function link<S extends z.ZodType>(
+  schema: S,
+  { to, ...target }: Omit<Link, "name" | "to"> & { to: Targets },
+): S {
+  links.set(schema, { ...target, to: () => [to()].flat() });
   for (const part of partsOf(schema)) linkParts.add(part);
   return schema;
 }
 
 /** A link to one node. */
-export const one = (to: () => Type) =>
+export const one = (to: Targets) =>
   link(wikilinkOf(), { to, cardinality: "one", optional: false });
 
 /** A link to one node or none: the key holds a name, or is absent. */
-export const oneOrNone = (to: () => Type) =>
+export const oneOrNone = (to: Targets) =>
   link(wikilinkOf().optional(), { to, cardinality: "one", optional: true });
 
 /** A link to one or more nodes. */
-export const many = (to: () => Type) =>
+export const many = (to: Targets) =>
   link(z.array(wikilinkOf()).min(1), {
     to,
     cardinality: "many",
@@ -184,7 +190,7 @@ export const many = (to: () => Type) =>
   });
 
 /** A link to any number of nodes: an absent key and an empty list both mean none. */
-export const manyOrNone = (to: () => Type) =>
+export const manyOrNone = (to: Targets) =>
   link(z.array(wikilinkOf()).optional(), {
     to,
     cardinality: "many",
@@ -491,13 +497,14 @@ function checkPackage(
   for (const imported of imports) checked(imported);
   for (const type of entries.map(([, type]) => type)) {
     for (const link of linksOf(type)) {
-      const end = link.to();
-      // A link to a base the package sees an extension of: the extension is the same kind of note.
-      const at = seen.get(end.name)?.type;
-      if (!at || !(at === end || extendsType(at, end)))
-        throw new Error(
-          `The link ${link.name} of ${type.name} ends at ${end.name}, which is not a type of the package ${name} or its imports.`,
-        );
+      for (const end of link.to()) {
+        // A link to a base the package sees an extension of: the extension is the same kind of note.
+        const at = seen.get(end.name)?.type;
+        if (!at || !(at === end || extendsType(at, end)))
+          throw new Error(
+            `The link ${link.name} of ${type.name} ends at ${end.name}, which is not a type of the package ${name} or its imports.`,
+          );
+      }
     }
   }
   const withImports = checkedWith.get(types) ?? new WeakSet();
