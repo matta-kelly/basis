@@ -38,31 +38,30 @@ export const wikilink = wikilinkOf();
  */
 function partsOf(schema: z.ZodType): object[] {
   const found = new Set<object>();
-  const walk = (value: unknown) => {
+  // A lazy is opened one level: a schema that makes itself again through a function would not end.
+  const walk = (value: unknown, inLazy = false) => {
     if (typeof value !== "object" || value === null || found.has(value)) return;
     if (value instanceof z.ZodType) {
       found.add(value);
-      walk(value._zod.def);
-      if (value instanceof z.ZodLazy) walk(value.unwrap());
+      walk(value._zod.def, inLazy);
+      if (value instanceof z.ZodLazy && !inLazy) walk(value.unwrap(), true);
     } else if (
       Array.isArray(value) ||
       [Object.prototype, null].includes(Object.getPrototypeOf(value))
     ) {
       found.add(value);
-      Object.values(value).forEach(walk);
+      for (const item of Object.values(value)) walk(item, inLazy);
     }
   };
   walk(schema);
   return [...found];
 }
 
-/** A kind of node: its fields beside the base, and the one closed schema they make. */
+/** A kind of node: the one closed schema of its nodes, the base and its fields. */
 export type Type = {
   name: string;
   description: string;
-  /** Its properties and the links that start from it, by name. */
-  fields: z.ZodRawShape;
-  schema: z.ZodType;
+  schema: z.ZodObject;
 };
 
 /** The types defineType made. A package holds no other: a type's schema is made from its fields, once. */
@@ -73,15 +72,14 @@ export function defineType<
   const N extends string,
   const F extends z.ZodRawShape,
 >(type: { name: N; description: string; fields: F }) {
-  const made = {
-    ...type,
+  // One copy of the fields, so each getter is read once. zod copies the shape again: the schema is the one description.
+  const fields: F = { ...type.fields };
+  const made = Object.freeze({
+    name: type.name,
+    description: type.description,
     // The fields last: spread before them, the literal keeps its type. A field named type is refused by the package.
-    schema: z.strictObject({
-      ...base,
-      type: z.literal(type.name),
-      ...type.fields,
-    }),
-  };
+    schema: z.strictObject({ ...base, type: z.literal(type.name), ...fields }),
+  });
   madeTypes.add(made);
   return made;
 }
@@ -133,10 +131,30 @@ export const manyOrNone = (to: () => Type) =>
 
 /** The links that start from a type: each of its fields made by one, oneOrNone, many or manyOrNone. */
 export const linksOf = (type: Type): Link[] =>
-  Object.entries(type.fields).flatMap(([name, schema]) => {
+  Object.entries(fieldsOf(type)).flatMap(([name, schema]) => {
     const target = links.get(schema);
     return target ? [{ name, ...target }] : [];
   });
+
+/** A type's fields: its schema's shape, without the base. */
+function fieldsOf(type: Type): z.ZodRawShape {
+  return Object.fromEntries(
+    Object.entries(type.schema.shape).filter(([field]) => !isBaseField(field)),
+  );
+}
+
+/** The base fields a type's fields replaced: the shape has another schema there than the base's, or than its literal. */
+function redefinedBase(type: Type): string[] {
+  const shape = type.schema.shape;
+  const literal = shape.type;
+  return [
+    ...(shape.name === base.name ? [] : ["name"]),
+    ...(shape.description === base.description ? [] : ["description"]),
+    ...(literal instanceof z.ZodLiteral && literal.value === type.name
+      ? []
+      : ["type"]),
+  ];
+}
 
 /** A property or a link is a frontmatter key: camelCase. */
 const Key = z.string().regex(/^[a-z][A-Za-z0-9]*$/, "a camelCase key");
@@ -146,26 +164,27 @@ function typeProblems(type: Type): string[] {
   const problems = Name.safeParse(type.name).success
     ? []
     : [`The type ${type.name} is not named by a lowercase slug.`];
-  const taken = Object.keys(type.fields).filter(isBaseField);
+  const fields = fieldsOf(type);
+  const taken = redefinedBase(type);
   if (taken.length > 0)
     problems.push(
       `The type ${type.name} redefines ${taken.join(", ")}, a field of the base.`,
     );
-  const notKeys = Object.keys(type.fields).filter(
+  const notKeys = Object.keys(fields).filter(
     (field) => !Key.safeParse(field).success,
   );
   if (notKeys.length > 0)
     problems.push(
       `The type ${type.name} has ${notKeys.join(", ")}, which is not a camelCase key.`,
     );
-  const notSchemas = Object.entries(type.fields)
+  const notSchemas = Object.entries(fields)
     .filter(([, property]) => !(property instanceof z.ZodType))
     .map(([field]) => field);
   if (notSchemas.length > 0)
     problems.push(
       `The type ${type.name} has ${notSchemas.join(", ")}, which is not a zod schema.`,
     );
-  const holdLinks = Object.entries(type.fields)
+  const holdLinks = Object.entries(fields)
     .filter(
       ([, field]) =>
         field instanceof z.ZodType &&
@@ -177,7 +196,7 @@ function typeProblems(type: Type): string[] {
     problems.push(
       `The type ${type.name} has ${holdLinks.join(", ")}, which holds a link but is not one: a link is one, oneOrNone, many or manyOrNone with no method chained. An optional one link is oneOrNone, and an optional many link is manyOrNone.`,
     );
-  const prototypeNames = Object.keys(type.fields).filter(isPrototypeName);
+  const prototypeNames = Object.keys(fields).filter(isPrototypeName);
   if (prototypeNames.length > 0) {
     problems.push(
       `The type ${type.name} has ${prototypeNames.join(", ")}, a name the object prototype has.`,
@@ -205,9 +224,15 @@ export type Package<T extends Record<string, Type> = Record<string, Type>> = {
 /** The types objects checked as a package's types. A package spread with other types is checked on its first parse. */
 const checkedTypes = new WeakSet<object>();
 
+/** A package name is a slug. A plain Error, as for the other checks: the lint takes a ZodError as a note's problem. */
+function checkName(name: string) {
+  if (!Name.safeParse(name).success)
+    throw new Error(`The package ${name} is not named by a lowercase slug.`);
+}
+
 /** What definePackage checks: the name, each type, and the links between them. Throws on the first kind of problem. */
 function checkPackage(name: string, types: Record<string, Type>) {
-  Name.parse(name);
+  checkName(name);
   const entries = Object.entries(types);
   const notMade = entries.filter(([, type]) => !madeTypes.has(type));
   if (notMade.length > 0)
@@ -233,7 +258,7 @@ function checkPackage(name: string, types: Record<string, Type>) {
         );
     }
   }
-  checkedTypes.add(types);
+  checkedTypes.add(Object.freeze(types));
 }
 
 /** A type by its key. Generic, so the type is the one under that key, not any type of the record. */
@@ -257,6 +282,8 @@ export function definePackage<
       type: N,
       node: unknown,
     ) {
+      // The name on each parse: a package spread with another name keeps the types that were checked.
+      checkName(this.name);
       if (!checkedTypes.has(this.types)) checkPackage(this.name, this.types);
       if (!Object.hasOwn(this.types, type))
         throw new Error(`The package ${this.name} has no type ${type}.`);
