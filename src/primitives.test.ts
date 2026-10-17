@@ -418,8 +418,8 @@ describe("a type", () => {
 
 describe("a type with a key", () => {
   // A key made by code without types: the compiler would refuse it.
-  const untypedKey = (key: string[]) => key as never[];
-  const keyed = (key: string[], fields: z.ZodRawShape) =>
+  const untypedKey = (key: unknown) => key as never[];
+  const keyed = (key: unknown, fields: z.ZodRawShape) =>
     defineType({ name: "t", description: "d", fields, key: untypedKey(key) });
 
   it("keeps its key as it was when it was made, though the caller's key changes", () => {
@@ -444,7 +444,7 @@ describe("a type with a key", () => {
       z.string().optional(),
       oneOrNone(() => source),
       manyOrNone(() => source),
-      z.unknown(),
+      z.string().exactOptional(),
     ])
       expect(() => withType(keyed(["near"], { near: field }))).toThrow(
         /key of t names near, which a note can leave out/,
@@ -452,6 +452,42 @@ describe("a type with a key", () => {
     expect(() =>
       withType(keyed(["near"], { near: z.string().default("here") })),
     ).not.toThrow();
+  });
+
+  it("is refused with a key field that does not give one string, number or boolean, made without TypeScript", () => {
+    for (const field of [
+      many(() => source),
+      z.record(z.string(), z.string()),
+      z.object({ code: z.string() }),
+      z.string().transform((code) => new Set([code])),
+      z.coerce.bigint(),
+      z.string().nullable(),
+      z.unknown(),
+    ])
+      expect(() => withType(keyed(["near"], { near: field }))).toThrow(
+        /key of t names near, which does not give one string, number or boolean/,
+      );
+    for (const field of [
+      one(() => source),
+      z.number().int(),
+      z.boolean(),
+      z.enum(["a", "b"]),
+      z.literal(["a", 1, true]),
+      z.coerce.string(),
+      z.union([z.string(), z.number()]),
+      z.string().pipe(z.string().min(1)),
+      z.string().default("here").readonly(),
+    ])
+      expect(() => withType(keyed(["near"], { near: field }))).not.toThrow();
+  });
+
+  it("is refused with a key that is not a list, or names a field twice, made without TypeScript", () => {
+    expect(() => withType(keyed("title", { title: z.string() }))).toThrow(
+      /key of t is not a list of field names/,
+    );
+    expect(() =>
+      withType(keyed(["title", "title"], { title: z.string() })),
+    ).toThrow(/key of t names title twice/);
   });
 });
 

@@ -304,7 +304,11 @@ describe("a type's key", () => {
       defineType({
         name: "t",
         description: "d",
-        fields: { title: z.string(), note: z.string().optional() },
+        fields: {
+          title: z.string(),
+          note: z.string().optional(),
+          exact: z.string().exactOptional(),
+        },
         key: [
           "title",
           // @ts-expect-error: t has no field colour.
@@ -313,8 +317,45 @@ describe("a type's key", () => {
           "name",
           // @ts-expect-error: a note of t can leave note out.
           "note",
+          // @ts-expect-error: a note of t can leave exact out, though it cannot write it as undefined.
+          "exact",
         ],
       }));
+  });
+
+  it("takes a field that gives one string, number or boolean, a one link among them, and is refused by the compiler with any other", () => {
+    const t = defineType({
+      name: "t",
+      description: "d",
+      fields: {
+        to: one(() => source),
+        code: z.string(),
+        count: z.number(),
+        live: z.boolean(),
+        sources: many(() => source),
+        labels: z.record(z.string(), z.string()),
+        codes: z.string().transform((code) => new Set([code])),
+        big: z.coerce.bigint(),
+        maybe: z.string().nullable(),
+      },
+      key: [
+        "to",
+        "code",
+        "count",
+        "live",
+        // @ts-expect-error: a many link gives a list of names.
+        "sources",
+        // @ts-expect-error: a record is not one value.
+        "labels",
+        // @ts-expect-error: a transform to a Set.
+        "codes",
+        // @ts-expect-error: a bigint.
+        "big",
+        // @ts-expect-error: null is not a string.
+        "maybe",
+      ],
+    });
+    void t;
   });
 
   it("takes, on an extension, its own fields and its base's, and is refused by the compiler when its base has a key", () => {

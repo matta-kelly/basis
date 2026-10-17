@@ -472,6 +472,29 @@ describe("the lint of a type with a key", () => {
   });
 });
 
+describe("the lint of two types with a key", () => {
+  it("gives no problem for notes of two types with the same key values: the type is part of the key", () => {
+    const keyedType = <const N extends string>(name: N) =>
+      defineType({
+        name,
+        description: "d",
+        fields: { code: z.string() },
+        key: ["code"],
+      });
+    const pkg = definePackage({
+      name: "p",
+      description: "d",
+      types: { a: keyedType("a"), b: keyedType("b") },
+    });
+    expect(
+      lint(pkg, [
+        note("one.md", { type: "a", description: "d", code: "x" }),
+        note("two.md", { type: "b", description: "d", code: "x" }),
+      ]),
+    ).toEqual([]);
+  });
+});
+
 describe("the lint of a type with no key", () => {
   it("gives no problem for two notes with the same fields: only the name is one note's own", () => {
     expect(
