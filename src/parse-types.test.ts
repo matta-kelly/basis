@@ -257,6 +257,20 @@ describe("a type that extends another, in a package that imports it", () => {
       }));
   });
 
+  it("follows imports past the first level: a type extends a type of an import's import", () => {
+    const deep = definePackage({
+      name: "deep",
+      description: "d",
+      imports: [company],
+      types: {
+        agent: extendType(core.types.agent, { fields: { level: z.number() } }),
+      },
+    });
+    expectTypeOf(parserOf(deep, "agent"))
+      .returns.toHaveProperty("level")
+      .toEqualTypeOf<number>();
+  });
+
   it("is refused by the compiler for an imported type: parse takes the package's own types", () => {
     // @ts-expect-error: agent is core's; a note of it is parsed by core.
     void (() => company.parse("agent", {}));

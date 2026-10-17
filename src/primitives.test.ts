@@ -644,6 +644,60 @@ describe("a package that imports another", () => {
     );
   });
 
+  it("takes a link to a type of an import's import", () => {
+    const task = defineType({
+      name: "task",
+      description: "d",
+      fields: { by: one(() => core.types.agent) },
+    });
+    expect(() =>
+      definePackage({
+        name: "deep",
+        description: "d",
+        imports: [company],
+        types: { task },
+      }),
+    ).not.toThrow();
+  });
+
+  it("is refused with an import whose name is not a slug, naming it", () => {
+    expect(() =>
+      untyped({
+        name: "p",
+        description: "d",
+        imports: [{ ...core, name: "Not A Slug" }],
+        types: {},
+      }),
+    ).toThrow(/package Not A Slug is not named by a lowercase slug/);
+  });
+
+  it("is refused when it sees two different packages of one name, and the error names where each one is", () => {
+    const studio = definePackage({
+      name: "studio",
+      description: "d",
+      imports: [{ ...core }],
+      types: {},
+    });
+    expect(() =>
+      definePackage({
+        name: "p",
+        description: "d",
+        imports: [company, studio],
+        types: {},
+      }),
+    ).toThrow(
+      /p sees two packages named core: at p > company > core, and at p > studio > core/,
+    );
+    expect(() =>
+      untyped({
+        name: "core",
+        description: "d",
+        imports: [company],
+        types: {},
+      }),
+    ).toThrow(/cycle: core imports company imports core/);
+  });
+
   it("is refused with an import that is refused", () => {
     const broken = {
       ...core,

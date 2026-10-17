@@ -3,9 +3,18 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import * as z from "zod";
 import { company, core } from "../fixtures/layers.ts";
 import things from "../fixtures/things.ts";
-import { lint, lintFolder, type Note } from "./index.ts";
+import {
+  definePackage,
+  defineType,
+  extendType,
+  lint,
+  lintFolder,
+  one,
+  type Note,
+} from "./index.ts";
 
 const note = (path: string, frontmatter: Record<string, unknown>): Note => ({
   path,
@@ -283,6 +292,56 @@ describe("the lint of a package that imports another", () => {
 
   it("gives no problems for notes of both packages that are right", () => {
     expect(lint(company, layered)).toEqual([]);
+  });
+
+  it("resolves a link to an imported base that the package extends", () => {
+    const reviews = definePackage({
+      name: "reviews",
+      description: "d",
+      imports: [core],
+      types: {
+        capability: extendType(core.types.capability, {
+          fields: { stage: z.string(), heldBy: one(() => core.types.agent) },
+        }),
+        review: defineType({
+          name: "review",
+          description: "d",
+          fields: { of: one(() => core.types.capability) },
+        }),
+      },
+    });
+    const review = note("ship-review.md", {
+      type: "review",
+      description: "How shipping went.",
+      of: "[[ship]]",
+    });
+    expect(lint(reviews, [...layered, review])).toEqual([]);
+    expect(
+      lint(reviews, [
+        ...layered,
+        edit(review, { ...review.frontmatter, of: "[[ana]]" }),
+      ]),
+    ).toEqual([
+      {
+        path: "ship-review.md",
+        message: expect.stringMatching(
+          /ana, which is a agent, not a capability/,
+        ),
+      },
+    ]);
+  });
+
+  it("checks its package once at the start, though every note is of an imported type", () => {
+    const broken = {
+      ...company,
+      types: {
+        ...company.types,
+        odd: { name: "odd", description: "d", schema: z.strictObject({}) },
+      },
+    };
+    expect(() => lint(broken, [ana])).toThrow(
+      /company has odd, which defineType did not make/,
+    );
   });
 
   it("parses a note of an extended type by the extension, and a note of an imported type by its own", () => {
