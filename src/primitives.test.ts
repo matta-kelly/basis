@@ -4,9 +4,11 @@ import things, { externalObject, object, source } from "../fixtures/things.ts";
 import {
   definePackage,
   defineType,
+  linksOf,
   many,
   manyOrNone,
   one,
+  oneOrNone,
   type Type,
 } from "./index.ts";
 
@@ -85,6 +87,33 @@ describe("a node", () => {
     expect(() => things.parse("object", without(fabric, "livesIn"))).toThrow(
       /livesIn/,
     );
+  });
+
+  it("is refused with an optional link written with no value (null), which is not an absent key", () => {
+    expect(() =>
+      things.parse("object", { ...fabric, representedAs: null }),
+    ).toThrow(/representedAs/);
+  });
+
+  it("parses an optional one link as a name or absent, and refuses null and a list", () => {
+    const near = defineType({
+      name: "near",
+      description: "d",
+      fields: { to: oneOrNone(() => source) },
+    });
+    const pkg = definePackage({
+      name: "p",
+      description: "d",
+      types: { source, near },
+    });
+    const node = { name: "n", type: "near", description: "d" };
+    expect(pkg.parse("near", node)).toEqual(node);
+    expect(pkg.parse("near", { ...node, to: "[[sheets]]" })).toEqual({
+      ...node,
+      to: "sheets",
+    });
+    for (const to of [null, [], ["[[sheets]]"], "sheets"])
+      expect(() => pkg.parse("near", { ...node, to })).toThrow(/to/);
   });
 
   it("is refused with a field its type does not declare", () => {
@@ -215,20 +244,26 @@ describe("a package", () => {
   it("is refused with a field that holds a link but is not one: a method chained on a link, or a link inside another schema", () => {
     for (const near of [
       many(() => source).optional(),
+      one(() => source).optional(),
       one(() => source).describe("The source near it."),
       one(() => source).refine((name) => name !== "odoo"),
       many(() => source).min(2),
       manyOrNone(() => source).nullable(),
       z.array(one(() => source)),
       z.object({ to: one(() => source) }),
+      z.lazy(() => one(() => source)),
+      z.array(z.lazy(() => many(() => source))),
     ]) {
       expect(() => withType(plainType({ near }))).toThrow(
-        /near.*link.*manyOrNone/,
+        /near.*link.*oneOrNone.*manyOrNone/,
       );
     }
-    expect(() =>
-      withType(plainType({ near: manyOrNone(() => source) })),
-    ).not.toThrow();
+    for (const near of [
+      oneOrNone(() => source),
+      manyOrNone(() => source),
+      z.lazy(() => z.string()),
+    ])
+      expect(() => withType(plainType({ near }))).not.toThrow();
   });
 
   it("is refused with a property that is not a zod schema, made without TypeScript", () => {
@@ -276,5 +311,69 @@ describe("a package", () => {
         },
       }),
     ).toThrow(/other/);
+  });
+
+  it("gives the links of a type, and none of its properties", () => {
+    expect(
+      linksOf(object).map(({ name, to, cardinality, optional }) => ({
+        name,
+        to: to(),
+        cardinality,
+        optional,
+      })),
+    ).toEqual([
+      { name: "livesIn", to: source, cardinality: "many", optional: false },
+      {
+        name: "representedAs",
+        to: externalObject,
+        cardinality: "many",
+        optional: true,
+      },
+    ]);
+    expect(linksOf(source)).toEqual([]);
+  });
+});
+
+describe("a package spread with other types", () => {
+  const sheets = {
+    name: "sheets",
+    type: "source",
+    description: "Where product information is typed.",
+  };
+  const other = defineType({
+    name: "source",
+    description: "Another source.",
+    fields: { place: z.string() },
+  });
+  const pkg = definePackage({ name: "p", description: "d", types: { source } });
+
+  it("parses by its own types", () => {
+    const spread = { ...pkg, types: { ...pkg.types, source: other } };
+    expect(spread.parse("source", { ...sheets, place: "here" })).toEqual({
+      ...sheets,
+      place: "here",
+    });
+    expect(() => spread.parse("source", { ...sheets, role: "entry" })).toThrow(
+      /role/,
+    );
+  });
+
+  it("is refused with a type defineType did not make, or a link that ends outside its types", () => {
+    const made = {
+      ...pkg,
+      types: {
+        source: {
+          name: "source",
+          description: "d",
+          fields: {},
+          schema: z.strictObject({}),
+        },
+      },
+    };
+    expect(() => made.parse("source", sheets)).toThrow(/defineType/);
+    const cut = { ...things, types: { ...things.types, source: other } };
+    expect(() => cut.parse("source", { ...sheets, place: "here" })).toThrow(
+      /livesIn.*source/,
+    );
   });
 });

@@ -5,15 +5,29 @@ import {
   definePackage,
   defineType,
   many,
+  linksOf,
   manyOrNone,
   one,
+  oneOrNone,
+  type Link,
   type Package,
   type Type,
 } from "./index.ts";
+import * as z from "zod";
 
-type ObjectNote = ReturnType<typeof things.parse<"object">>;
-type ExternalNote = ReturnType<typeof things.parse<"external-object">>;
-type SourceNote = ReturnType<typeof things.parse<"source">>;
+// What a call to parse returns, for a package and a type name.
+const parserOf =
+  <P extends Package, N extends keyof P["types"] & string>(pkg: P, type: N) =>
+  (node: unknown) =>
+    pkg.parse(type, node);
+type Parsed<
+  P extends Package,
+  N extends keyof P["types"] & string,
+> = ReturnType<ReturnType<typeof parserOf<P, N>>>;
+
+type ObjectNote = Parsed<typeof things, "object">;
+type ExternalNote = Parsed<typeof things, "external-object">;
+type SourceNote = Parsed<typeof things, "source">;
 
 describe("a parsed note's type", () => {
   it("has the base, its type's name, its type's fields, and its links as names", () => {
@@ -36,6 +50,22 @@ describe("a parsed note's type", () => {
     >();
   });
 
+  it("has an optional one link as a name or nothing", () => {
+    const near = defineType({
+      name: "near",
+      description: "d",
+      fields: { to: oneOrNone(() => source) },
+    });
+    const pkg = definePackage({
+      name: "p",
+      description: "d",
+      types: { source, near },
+    });
+    expectTypeOf(parserOf(pkg, "near"))
+      .returns.toHaveProperty("to")
+      .toEqualTypeOf<string | undefined>();
+  });
+
   it("has a link only on the type it starts from", () => {
     expectTypeOf<ExternalNote>().not.toHaveProperty("livesIn");
     expectTypeOf<SourceNote>().not.toHaveProperty("heldIn");
@@ -53,8 +83,8 @@ describe("a parsed note's type", () => {
       description: "d",
       types: { thing },
     });
-    type Thing = ReturnType<typeof pkg.parse<"thing">>;
-    expectTypeOf(pkg.parse<"thing">).returns.toEqualTypeOf<{
+    type Thing = Parsed<typeof pkg, "thing">;
+    expectTypeOf(parserOf(pkg, "thing")).returns.toEqualTypeOf<{
       name: string;
       description: string;
       type: "thing";
@@ -90,7 +120,7 @@ describe("a parsed note's type", () => {
       description: "d",
       types: { source, near },
     });
-    expectTypeOf(pkg.parse<"near">)
+    expectTypeOf(parserOf(pkg, "near"))
       .returns.toHaveProperty("to")
       .toEqualTypeOf<string[] | undefined>();
   });
@@ -108,10 +138,10 @@ describe("a parsed note's type", () => {
       fields: { a: manyOrNone(() => a) },
     });
     const pkg = definePackage({ name: "p", description: "d", types: { a, b } });
-    expectTypeOf(pkg.parse<"a">)
+    expectTypeOf(parserOf(pkg, "a"))
       .returns.toHaveProperty("b")
       .toEqualTypeOf<string>();
-    expectTypeOf(pkg.parse<"b">)
+    expectTypeOf(parserOf(pkg, "b"))
       .returns.toHaveProperty("a")
       .toEqualTypeOf<string[] | undefined>();
   });
@@ -120,5 +150,41 @@ describe("a parsed note's type", () => {
     void (() =>
       // @ts-expect-error: the key is other, the type's name is source.
       definePackage({ name: "p", description: "d", types: { other: source } }));
+  });
+
+  it("follows the types of the package it is called on, so a spread package parses by its own types", () => {
+    const other = defineType({
+      name: "source",
+      description: "Another source.",
+      fields: { place: z.string() },
+    });
+    const pkg = definePackage({
+      name: "p",
+      description: "d",
+      types: { source },
+    });
+    const spread: Package<{ source: typeof other }> = {
+      ...pkg,
+      types: { ...pkg.types, source: other },
+    };
+    expectTypeOf(parserOf(spread, "source")).returns.toEqualTypeOf<{
+      name: string;
+      description: string;
+      type: "source";
+      place: string;
+    }>();
+  });
+
+  it("is refused by the compiler for a parse called apart from its package", () => {
+    const { parse } = things;
+    // @ts-expect-error: parse reads the package it is called on.
+    void (() => parse("object", {}));
+  });
+
+  it("gives the links of a type as links", () => {
+    expectTypeOf(linksOf).returns.toEqualTypeOf<Link[]>();
+    expectTypeOf<Link["to"]>().toEqualTypeOf<() => Type>();
+    expectTypeOf<Link["cardinality"]>().toEqualTypeOf<"one" | "many">();
+    expectTypeOf<Link["optional"]>().toEqualTypeOf<boolean>();
   });
 });
