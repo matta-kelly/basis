@@ -78,13 +78,21 @@ describe("the lint", () => {
     }
   });
 
-  it("gives a problem for a note whose type the package does not have, or with no type", () => {
+  it("gives a problem for a note whose type the package does not have, or is a name the object prototype has, or with no type", () => {
     expect(
       lint(
         things,
         withNote(edit(sheets, { ...sheets.frontmatter, type: "verb" })),
       ),
     ).toEqual([{ path: "sheets.md", message: expect.stringMatching(/verb/) }]);
+    expect(
+      lint(
+        things,
+        withNote(edit(sheets, { ...sheets.frontmatter, type: "constructor" })),
+      ),
+    ).toEqual([
+      { path: "sheets.md", message: expect.stringMatching(/constructor/) },
+    ]);
     expect(lint(things, withNote(without(sheets, "type")))).toEqual([
       { path: "sheets.md", message: expect.stringMatching(/no type/) },
     ]);
