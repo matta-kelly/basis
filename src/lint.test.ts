@@ -12,6 +12,7 @@ import {
   extendType,
   lint,
   lintFolder,
+  many,
   one,
   type Note,
 } from "./index.ts";
@@ -492,6 +493,113 @@ describe("the lint of two types with a key", () => {
         note("two.md", { type: "b", description: "d", code: "x" }),
       ]),
     ).toEqual([]);
+  });
+});
+
+describe("the lint of a link with several targets", () => {
+  // Like cc's capability: held by a source or by a domain.
+  const plain = <const N extends string>(name: N) =>
+    defineType({ name, description: "d", fields: {} });
+  const source = plain("source");
+  const domain = plain("domain");
+  const verb = plain("verb");
+  const capability = defineType({
+    name: "capability",
+    description: "d",
+    fields: {
+      heldBy: one(() => [source, domain]),
+      localName: z.string(),
+      touches: many(() => [source, domain]),
+    },
+    key: ["heldBy", "localName"],
+  });
+  const pkg = definePackage({
+    name: "p",
+    description: "d",
+    types: { source, domain, verb, capability },
+  });
+  const notes = [
+    note("odoo.md", { type: "source", description: "d" }),
+    note("pim.md", { type: "domain", description: "d" }),
+    note("push.md", { type: "verb", description: "d" }),
+  ];
+  const capabilityNote = (
+    path: string,
+    heldBy: string,
+    localName = "ship",
+    touches = ["[[odoo]]", "[[pim]]"],
+  ) =>
+    note(path, {
+      type: "capability",
+      description: "d",
+      heldBy: `[[${heldBy}]]`,
+      localName,
+      touches,
+    });
+
+  it("gives no problem for a link to a note of any of its types", () => {
+    expect(
+      lint(pkg, [
+        ...notes,
+        capabilityNote("a.md", "odoo"),
+        capabilityNote("b.md", "pim"),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("gives a problem for a note of another type that names each type, and for a name that is no note", () => {
+    expect(
+      lint(pkg, [
+        ...notes,
+        capabilityNote("a.md", "push"),
+        capabilityNote("b.md", "nobody"),
+      ]),
+    ).toEqual([
+      {
+        path: "a.md",
+        message:
+          "The link heldBy points at push, which is a verb, not a source or a domain.",
+      },
+      {
+        path: "b.md",
+        message: "The link heldBy points at nobody, which is not a note.",
+      },
+    ]);
+  });
+
+  it("gives a problem for one name of a list that is a note of another type, naming each type", () => {
+    expect(
+      lint(pkg, [
+        ...notes,
+        capabilityNote("a.md", "odoo", "ship", ["[[pim]]", "[[push]]"]),
+      ]),
+    ).toEqual([
+      {
+        path: "a.md",
+        message:
+          "The link touches points at push, which is a verb, not a source or a domain.",
+      },
+    ]);
+  });
+
+  it("is a key field, compared by the name it points at", () => {
+    const key = 'heldBy "pim", localName "ship"';
+    expect(
+      lint(pkg, [
+        ...notes,
+        capabilityNote("a.md", "pim"),
+        capabilityNote("b.md", "pim"),
+      ]),
+    ).toEqual([
+      {
+        path: "a.md",
+        message: `The key ${key} of the type capability is also the key of b.md.`,
+      },
+      {
+        path: "b.md",
+        message: `The key ${key} of the type capability is also the key of a.md.`,
+      },
+    ]);
   });
 });
 

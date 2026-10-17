@@ -196,7 +196,7 @@ describe("a parsed note's type", () => {
 
   it("gives the links of a type as links", () => {
     expectTypeOf(linksOf).returns.toEqualTypeOf<Link[]>();
-    expectTypeOf<Link["to"]>().toEqualTypeOf<() => Type>();
+    expectTypeOf<Link["to"]>().toEqualTypeOf<() => readonly Type[]>();
     expectTypeOf<Link["cardinality"]>().toEqualTypeOf<"one" | "many">();
     expectTypeOf<Link["optional"]>().toEqualTypeOf<boolean>();
   });
