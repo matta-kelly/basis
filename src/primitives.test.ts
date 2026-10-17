@@ -482,7 +482,7 @@ describe("a type that extends a type", () => {
     expect(deeper.key).toEqual(["title", "stage"]);
     const changed = extendType(keyedCapability, {
       fields: { budget: z.number() },
-      key: ["budget"] as never[],
+      key: ["budget"] as never,
     });
     expect(() => withCapability(changed)).toThrow(
       /capability changes the key of the type it extends: extend, never override/,

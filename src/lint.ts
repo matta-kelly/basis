@@ -119,6 +119,47 @@ function noteProblems(
 }
 
 /**
+ * Two notes of one type with one key: a problem on each, naming the others. Each key field is parsed by its own
+ * schema, so a link is the name it points at, a note with a problem in another field is compared, and a note whose
+ * key field has a problem is not: it has that problem.
+ */
+function keyProblems(seen: Seen, notes: Note[]): Problem[] {
+  const byKey = new Map<string, { note: Note; values: string }[]>();
+  for (const note of notes) {
+    const type = noteType(seen, note)?.type;
+    const key = type?.key ?? [];
+    if (!type || key.length === 0) continue;
+    const shape = type.schema.shape;
+    const parsed = z
+      .object(Object.fromEntries(key.map((field) => [field, shape[field]])))
+      .safeParse(note.frontmatter);
+    if (!parsed.success) continue;
+    const values = key.map((field) => parsed.data[field]);
+    const id = JSON.stringify([type.name, ...values]);
+    byKey.set(id, [
+      ...(byKey.get(id) ?? []),
+      {
+        note,
+        values: key
+          .map((field, i) => `${field} ${JSON.stringify(values[i])}`)
+          .join(", "),
+      },
+    ]);
+  }
+  return [...byKey.values()].flatMap((same) =>
+    same.length < 2
+      ? []
+      : same.map(({ note, values }) => ({
+          path: note.path,
+          message: `The key ${values} of the type ${String(note.frontmatter.type)} is also the key of ${same
+            .filter((other) => other.note !== note)
+            .map((other) => other.note.path)
+            .join(", ")}.`,
+        })),
+  );
+}
+
+/**
  * What is wrong with the notes, by the package, in path order. `unread` holds the paths of
  * notes that exist but could not be read: a link to one is not a problem, unless a read note has
  * its name, and a read note with its name is a duplicate.
@@ -157,6 +198,7 @@ export function lint(
   }
   for (const note of notes)
     problems.push(...noteProblems(pkg, seen, note, byName, unreadNames));
+  problems.push(...keyProblems(seen, notes));
   return problems.sort(byPath);
 }
 

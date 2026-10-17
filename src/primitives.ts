@@ -64,7 +64,17 @@ export type Type = {
   schema: z.ZodObject;
   /** The type it extends: the same kind of note, with more fields. */
   extends?: Type;
+  /** Its identity rule: fields of its schema that, together, no two of its nodes share. None when empty. */
+  key?: readonly string[];
 };
+
+/** The fields a key can name: fields beside the base that every node has. A key is checked against the schema, not described again. */
+type KeyField<F extends z.ZodRawShape> = Exclude<
+  {
+    [K in keyof F & string]: undefined extends z.output<F[K]> ? never : K;
+  }[keyof F & string],
+  keyof typeof base
+>;
 
 /** The types defineType made. A package holds no other: a type's schema is made from its fields, once. */
 const madeTypes = new WeakSet<Type>();
@@ -73,7 +83,8 @@ const madeTypes = new WeakSet<Type>();
 export function defineType<
   const N extends string,
   const F extends z.ZodRawShape,
->(type: { name: N; description: string; fields: F }) {
+  const K extends readonly KeyField<F>[] = readonly [],
+>(type: { name: N; description: string; fields: F; key?: K }) {
   // One copy of the fields, so each getter is read once. zod copies the shape again: the schema is the one description.
   const fields: F = { ...type.fields };
   const made = Object.freeze({
@@ -81,6 +92,7 @@ export function defineType<
     description: type.description,
     // The fields last: spread before them, the literal keeps its type. A field named type is refused by the package.
     schema: z.strictObject({ ...base, type: z.literal(type.name), ...fields }),
+    key: Object.freeze([...(type.key ?? [])]),
   });
   madeTypes.add(made);
   return made;
@@ -90,17 +102,21 @@ export function defineType<
  * A type that extends another: the same kind of note, under the base's name and description, with the base's fields
  * and more. Its schema is the base's, extended by zod. The package that holds it checks it.
  * The base's shape and config are inferred from its schema, so the extension's schema is zod's own type for it.
+ * It has the base's key. When the base has none, it can add one, over its own fields and the base's.
  */
 export function extendType<
   B extends Type,
   S extends z.ZodRawShape,
   C extends z.core.$ZodObjectConfig,
   const F extends z.ZodRawShape,
+  const K extends readonly (KeyField<S> | KeyField<F>)[] = readonly [],
 >(
   extended: B & { schema: z.ZodObject<S, C> },
   type: {
     /** No field of the base: extend, never override. */
     fields: F & { [K in keyof S]?: never };
+    /** None when the base has a key: extend, never override. */
+    key?: [NonNullable<B["key"]>[number]] extends [never] ? K : never;
   },
 ) {
   const fields: F = { ...type.fields };
@@ -112,6 +128,7 @@ export function extendType<
     description: parent.description,
     extends: parent,
     schema: schema.extend(fields),
+    key: Object.freeze([...(type.key ?? parent.key ?? [])]),
   });
   madeTypes.add(made);
   return made;
@@ -197,6 +214,40 @@ function overriddenBy(type: Type, extended: Type): string[] {
     .map(([field]) => field);
 }
 
+/** A field a node can leave out: its schema takes nothing, and gives nothing. A default gives a value. */
+function canBeAbsent(field: z.core.$ZodType) {
+  const parsed = z.safeParse(field, undefined);
+  return parsed.success && parsed.data === undefined;
+}
+
+/** What is wrong with a type's key: a field it does not have or a node can leave out, or a key its base has changed. */
+function keyProblems(type: Type, fields: z.ZodRawShape): string[] {
+  const key = type.key ?? [];
+  const problems: string[] = [];
+  const notFields = key.filter((field) => !Object.hasOwn(fields, field));
+  if (notFields.length > 0)
+    problems.push(
+      `The key of ${type.name} names ${notFields.join(", ")}, which is not a field of ${type.name}.`,
+    );
+  const absent = key.filter((field) => {
+    const schema = Object.hasOwn(fields, field) ? fields[field] : undefined;
+    return schema instanceof z.ZodType && canBeAbsent(schema);
+  });
+  if (absent.length > 0)
+    problems.push(
+      `The key of ${type.name} names ${absent.join(", ")}, which a note can leave out.`,
+    );
+  const baseKey = type.extends?.key ?? [];
+  if (
+    baseKey.length > 0 &&
+    (key.length !== baseKey.length || key.some((f, i) => f !== baseKey[i]))
+  )
+    problems.push(
+      `The type ${type.name} changes the key of the type it extends: extend, never override.`,
+    );
+  return problems;
+}
+
 /** A property or a link is a frontmatter key: camelCase. */
 const Key = z.string().regex(/^[a-z][A-Za-z0-9]*$/, "a camelCase key");
 
@@ -248,7 +299,7 @@ function typeProblems(type: Type): string[] {
       `The type ${type.name} has ${prototypeNames.join(", ")}, a name the object prototype has.`,
     );
   }
-  return problems;
+  return [...problems, ...keyProblems(type, fields)];
 }
 
 export interface Package<
