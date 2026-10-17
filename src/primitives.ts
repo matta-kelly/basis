@@ -69,11 +69,11 @@ export type Type = {
 /** The types defineType made. A package holds no other: a type's schema is made from its fields, once. */
 const madeTypes = new WeakSet<Type>();
 
-function newType<const N extends string, const F extends z.ZodRawShape>(type: {
-  name: N;
-  description: string;
-  fields: F;
-}) {
+/** A kind of node, and the fields its nodes carry beside the base. The package that holds it checks it. */
+export function defineType<
+  const N extends string,
+  const F extends z.ZodRawShape,
+>(type: { name: N; description: string; fields: F }) {
   // One copy of the fields, so each getter is read once. zod copies the shape again: the schema is the one description.
   const fields: F = { ...type.fields };
   const made = Object.freeze({
@@ -86,71 +86,35 @@ function newType<const N extends string, const F extends z.ZodRawShape>(type: {
   return made;
 }
 
-/** A base's shape and config are inferred from its schema, so the extension's schema is zod's own type for it. */
-type ExtensionOf<
-  B extends Type,
-  S extends z.ZodRawShape,
-  C extends z.core.$ZodObjectConfig,
-  F extends z.ZodRawShape,
-> = {
-  extends: B & { schema: z.ZodObject<S, C> };
-  /** No field of the base: extend, never override. */
-  fields: F & { [K in keyof S]?: never };
-};
-
-function extendType<
+/**
+ * A type that extends another: the same kind of note, under the base's name and description, with the base's fields
+ * and more. Its schema is the base's, extended by zod. The package that holds it checks it.
+ * The base's shape and config are inferred from its schema, so the extension's schema is zod's own type for it.
+ */
+export function extendType<
   B extends Type,
   S extends z.ZodRawShape,
   C extends z.core.$ZodObjectConfig,
   const F extends z.ZodRawShape,
->(type: ExtensionOf<B, S, C, F>) {
+>(
+  extended: B & { schema: z.ZodObject<S, C> },
+  type: {
+    /** No field of the base: extend, never override. */
+    fields: F & { [K in keyof S]?: never };
+  },
+) {
   const fields: F = { ...type.fields };
-  const extended: B = type.extends;
-  const schema: z.ZodObject<S, C> = type.extends.schema;
-  const name: B["name"] = extended.name;
+  const parent: B = extended;
+  const name: B["name"] = parent.name;
+  const schema: z.ZodObject<S, C> = extended.schema;
   const made = Object.freeze({
     name,
-    description: extended.description,
-    extends: extended,
+    description: parent.description,
+    extends: parent,
     schema: schema.extend(fields),
   });
   madeTypes.add(made);
   return made;
-}
-
-const isExtension = (
-  type: object,
-): type is ExtensionOf<
-  Type,
-  z.ZodRawShape,
-  z.core.$ZodObjectConfig,
-  z.ZodRawShape
-> => Object.hasOwn(type, "extends");
-
-/**
- * A kind of node, and the fields its nodes carry beside the base. Or a type that extends another: the same kind of
- * note, under the base's name, with the base's fields and more. The package that holds it checks it.
- */
-export function defineType<
-  const N extends string,
-  const F extends z.ZodRawShape,
->(type: {
-  name: N;
-  description: string;
-  fields: F;
-}): ReturnType<typeof newType<N, F>>;
-export function defineType<
-  B extends Type,
-  S extends z.ZodRawShape,
-  C extends z.core.$ZodObjectConfig,
-  const F extends z.ZodRawShape,
->(type: ExtensionOf<B, S, C, F>): ReturnType<typeof extendType<B, S, C, F>>;
-export function defineType(
-  type:
-    | { name: string; description: string; fields: z.ZodRawShape }
-    | ExtensionOf<Type, z.ZodRawShape, z.core.$ZodObjectConfig, z.ZodRawShape>,
-) {
-  return isExtension(type) ? extendType(type) : newType(type);
 }
 
 /** A link: the field it is, what it points at, how many, and whether a node can leave it out. */

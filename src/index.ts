@@ -3,6 +3,7 @@ export {
   base,
   definePackage,
   defineType,
+  extendType,
   linksOf,
   many,
   manyOrNone,
