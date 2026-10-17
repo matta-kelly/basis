@@ -102,6 +102,10 @@ async function notePaths(
   return { paths, unread };
 }
 
+/** Orders notes and problems by path. The loader and the lint use it, so their orders agree. */
+export const byPath = (a: { path: string }, b: { path: string }) =>
+  a.path < b.path ? -1 : Number(a.path > b.path);
+
 // Fails on bytes that are not UTF-8, where a plain read would change them with no word.
 const utf8 = new TextDecoder("utf-8", { fatal: true });
 
@@ -127,7 +131,5 @@ export async function loadFolder(
     if (read.ok) notes.push(read.note);
     else problems.push(read.problem);
   }
-  const byPath = (a: { path: string }, b: { path: string }) =>
-    a.path < b.path ? -1 : Number(a.path > b.path);
   return { notes: notes.sort(byPath), problems: problems.sort(byPath) };
 }

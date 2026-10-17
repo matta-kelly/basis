@@ -24,7 +24,7 @@ const isPrototypeName = (field: string) =>
   Object.hasOwn(Object.prototype, field);
 
 /** A pointer to another node, as a note writes it: "[[name]]". Parsed to the name. */
-const wikilink = z
+export const wikilink = z
   .string()
   .regex(/^\[\[[a-z][a-z0-9-]*\]\]$/, 'a wikilink, "[[name]]"')
   .transform((link) => link.slice(2, -2));
