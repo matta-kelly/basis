@@ -115,10 +115,13 @@ describe("a node", () => {
     ).toThrow(/heldIn/);
   });
 
-  it("is refused with no names in a many link", () => {
+  it("is refused with no names in a required many link, and takes none in an optional one", () => {
     expect(() => things.parse("object", { ...fabric, livesIn: [] })).toThrow(
       /livesIn/,
     );
+    expect(
+      things.parse("object", { ...fabric, representedAs: [] }),
+    ).toMatchObject({ representedAs: [] });
   });
 
   it("is refused with a link that is not a wikilink", () => {
