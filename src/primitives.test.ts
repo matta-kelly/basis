@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import * as z from "zod";
 import things, { externalObject, object, source } from "../fixtures/things.ts";
-import { definePackage, defineType, one, type Type } from "./index.ts";
+import {
+  definePackage,
+  defineType,
+  many,
+  manyOrNone,
+  one,
+  type Type,
+} from "./index.ts";
 
 // The frontmatter of four notes in ~/cc/ontology, as it is in the notes, with `name` added
 // from the file name, as the loader gives it.
@@ -203,6 +210,25 @@ describe("a package", () => {
     expect(() => withType(plainType({ toString: one(() => source) }))).toThrow(
       /toString/,
     );
+  });
+
+  it("is refused with a field that holds a link but is not one: a method chained on a link, or a link inside another schema", () => {
+    for (const near of [
+      many(() => source).optional(),
+      one(() => source).describe("The source near it."),
+      one(() => source).refine((name) => name !== "odoo"),
+      many(() => source).min(2),
+      manyOrNone(() => source).nullable(),
+      z.array(one(() => source)),
+      z.object({ to: one(() => source) }),
+    ]) {
+      expect(() => withType(plainType({ near }))).toThrow(
+        /near.*link.*manyOrNone/,
+      );
+    }
+    expect(() =>
+      withType(plainType({ near: manyOrNone(() => source) })),
+    ).not.toThrow();
   });
 
   it("is refused with a property that is not a zod schema, made without TypeScript", () => {
