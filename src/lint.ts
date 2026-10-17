@@ -3,6 +3,7 @@
  * Each note is parsed by its type, and each link it holds must point at a note of the link's `to` type.
  */
 
+import { basename } from "node:path";
 import * as z from "zod";
 import { loadFolder, type Note, type Problem } from "./loader.ts";
 import type { Package } from "./primitives.ts";
@@ -10,16 +11,21 @@ import type { Package } from "./primitives.ts";
 const byPath = (a: Problem, b: Problem) =>
   a.path < b.path ? -1 : Number(a.path > b.path);
 
-/** A parse's issues as problems, one for each field. */
-function fieldProblems(path: string, error: z.ZodError): Problem[] {
-  return error.issues.flatMap((issue) =>
-    issue.code === "unrecognized_keys"
-      ? issue.keys.map((key) => ({
-          path,
-          message: `The field ${key} is not a field of its type.`,
-        }))
-      : [{ path, message: `${issue.path.join(".")}: ${issue.message}` }],
-  );
+/** A parse's issues as problems, one for each field. A note's name is its file name, so a bad name is a bad file name. */
+function fieldProblems(note: Note, error: z.ZodError): Problem[] {
+  const path = note.path;
+  return error.issues.flatMap((issue) => {
+    if (issue.code === "unrecognized_keys")
+      return issue.keys.map((key) => ({
+        path,
+        message: `The field ${key} is not a field of its type.`,
+      }));
+    if (issue.path.length === 1 && issue.path[0] === "name")
+      return [
+        { path, message: `The file name ${note.name}: ${issue.message}` },
+      ];
+    return [{ path, message: `${issue.path.join(".")}: ${issue.message}` }];
+  });
 }
 
 /** The names a parsed link holds: none, one, or a list. */
@@ -37,14 +43,17 @@ function noteProblems(
   pkg: Package,
   note: Note,
   byName: Map<string, Note[]>,
+  unread: Set<string>,
 ): Problem[] {
   const problem = (message: string): Problem => ({ path: note.path, message });
   const problems: Problem[] = [];
   if (Object.hasOwn(note.frontmatter, "name"))
     problems.push(problem("The note writes name: its name is its file name."));
   const type = note.frontmatter.type;
-  if (typeof type !== "string")
+  if (type === undefined)
     return [...problems, problem("The note has no type.")];
+  if (typeof type !== "string")
+    return [...problems, problem(`The type ${String(type)} is not a name.`)];
   if (!hasType(pkg, note))
     return [
       ...problems,
@@ -56,12 +65,14 @@ function noteProblems(
     parsed = pkg.parse(type, { ...note.frontmatter, name: note.name });
   } catch (error) {
     if (!(error instanceof z.ZodError)) throw error;
-    return [...problems, ...fieldProblems(note.path, error)];
+    return [...problems, ...fieldProblems(note, error)];
   }
 
   for (const link of pkg.links.filter((l) => l.from.name === type)) {
     for (const name of linkNames(parsed[link.name])) {
       const targets = byName.get(name);
+      // A note that could not be read exists, and has that problem itself.
+      if (unread.has(name)) continue;
       if (!targets) {
         problems.push(
           problem(
@@ -84,8 +95,13 @@ function noteProblems(
   return problems;
 }
 
-/** What is wrong with the notes, by the package, in path order. */
-export function lint(pkg: Package, notes: Note[]): Problem[] {
+/** What is wrong with the notes, by the package, in path order. `unread` names the notes that exist but could not be read: a link to one is not a problem. */
+export function lint(
+  pkg: Package,
+  notes: Note[],
+  unread: string[] = [],
+): Problem[] {
+  const unreadNames = new Set(unread);
   const byName = new Map<string, Note[]>();
   for (const note of notes)
     byName.set(note.name, [...(byName.get(note.name) ?? []), note]);
@@ -101,7 +117,8 @@ export function lint(pkg: Package, notes: Note[]): Problem[] {
       });
     }
   }
-  for (const note of notes) problems.push(...noteProblems(pkg, note, byName));
+  for (const note of notes)
+    problems.push(...noteProblems(pkg, note, byName, unreadNames));
   return problems.sort(byPath);
 }
 
@@ -111,5 +128,8 @@ export async function lintFolder(
   folder: string,
 ): Promise<Problem[]> {
   const { notes, problems } = await loadFolder(folder);
-  return [...problems, ...lint(pkg, notes)].sort(byPath);
+  const unread = problems
+    .filter((problem) => problem.path.endsWith(".md"))
+    .map((problem) => basename(problem.path, ".md"));
+  return [...problems, ...lint(pkg, notes, unread)].sort(byPath);
 }
