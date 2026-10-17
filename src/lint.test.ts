@@ -399,6 +399,110 @@ describe("the lint of a package that imports another", () => {
   });
 });
 
+describe("the lint of a type with a key", () => {
+  // Like cc's capability on que's: one capability for each agent and its name there.
+  const keyed = definePackage({
+    name: "keyed",
+    description: "d",
+    imports: [core],
+    types: {
+      capability: extendType(core.types.capability, {
+        fields: {
+          heldBy: one(() => core.types.agent),
+          localName: z.string().min(1),
+        },
+        key: ["heldBy", "localName"],
+      }),
+    },
+  });
+  const agentNote = (name: string) =>
+    note(`${name}.md`, { type: "agent", description: "d", role: "r" });
+  const capabilityNote = (path: string, heldBy: string, localName: string) =>
+    note(path, {
+      type: "capability",
+      description: "d",
+      title: "Ship",
+      heldBy,
+      localName,
+    });
+  const agents = [agentNote("ana"), agentNote("bo")];
+  const ship = capabilityNote("ship.md", "[[ana]]", "ship");
+
+  it("gives a problem for each of two notes with one key, naming the other, and compares a link by the name it points at", () => {
+    const twin = capabilityNote("copies/ana-ship.md", "[[ana]]", "ship");
+    const key = 'heldBy "ana", localName "ship"';
+    expect(lint(keyed, [...agents, ship, twin])).toEqual([
+      {
+        path: "copies/ana-ship.md",
+        message: `The key ${key} of the type capability is also the key of ship.md.`,
+      },
+      {
+        path: "ship.md",
+        message: `The key ${key} of the type capability is also the key of copies/ana-ship.md.`,
+      },
+    ]);
+  });
+
+  it("gives no problem for two notes that share some of the key, and a link to each name resolves to that note", () => {
+    const boShip = capabilityNote("bo-ship.md", "[[bo]]", "ship");
+    const cases = ["ship", "bo-ship"].map((name) =>
+      note(`${name}-works.md`, {
+        type: "case",
+        description: "d",
+        capability: `[[${name}]]`,
+      }),
+    );
+    expect(lint(keyed, [...agents, ship, boShip, ...cases])).toEqual([]);
+  });
+
+  it("compares a note whose other fields have problems, and not one whose key field has one", () => {
+    const twin = without(
+      capabilityNote("ana-ship.md", "[[ana]]", "ship"),
+      "title",
+    );
+    expect(lint(keyed, [...agents, ship, twin]).map((p) => p.path)).toEqual([
+      "ana-ship.md",
+      "ana-ship.md",
+      "ship.md",
+    ]);
+    const unlinked = capabilityNote("ana-ship.md", "ana", "ship");
+    expect(lint(keyed, [...agents, ship, unlinked])).toEqual([
+      { path: "ana-ship.md", message: expect.stringMatching(/heldBy/) },
+    ]);
+  });
+});
+
+describe("the lint of two types with a key", () => {
+  it("gives no problem for notes of two types with the same key values: the type is part of the key", () => {
+    const keyedType = <const N extends string>(name: N) =>
+      defineType({
+        name,
+        description: "d",
+        fields: { code: z.string() },
+        key: ["code"],
+      });
+    const pkg = definePackage({
+      name: "p",
+      description: "d",
+      types: { a: keyedType("a"), b: keyedType("b") },
+    });
+    expect(
+      lint(pkg, [
+        note("one.md", { type: "a", description: "d", code: "x" }),
+        note("two.md", { type: "b", description: "d", code: "x" }),
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("the lint of a type with no key", () => {
+  it("gives no problem for two notes with the same fields: only the name is one note's own", () => {
+    expect(
+      lint(things, [...right, { ...fabric, path: "silk.md", name: "silk" }]),
+    ).toEqual([]);
+  });
+});
+
 describe("a folder", () => {
   it("is linted with the loader's problems and the lint's, in path order, and a link to a note the loader could not read is not a problem", async () => {
     // elm.md cannot be read, and fabric.md, which is right, links to it.
