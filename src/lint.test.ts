@@ -87,9 +87,49 @@ describe("the lint", () => {
       { path: "sheets.md", message: expect.stringMatching(/no type/) },
     ]);
     expect(
+      lint(
+        things,
+        withNote(edit(sheets, { ...sheets.frontmatter, type: null })),
+      ),
+    ).toEqual([
+      { path: "sheets.md", message: expect.stringMatching(/no type/) },
+    ]);
+    expect(
       lint(things, withNote(edit(sheets, { ...sheets.frontmatter, type: 5 }))),
     ).toEqual([
       { path: "sheets.md", message: expect.stringMatching(/5 is not a name/) },
+    ]);
+  });
+
+  it("checks the links of a note that fails its schema", () => {
+    const problems = lint(
+      things,
+      withNote(
+        edit(without(fabric, "key"), {
+          ...without(fabric, "key").frontmatter,
+          livesIn: ["[[nowhere]]"],
+        }),
+      ),
+    );
+    expect(problems.map((p) => p.message)).toEqual([
+      expect.stringMatching(/key/),
+      expect.stringMatching(/nowhere/),
+    ]);
+  });
+
+  it("checks a link against a read note when an unread note has the same name, and reports the read one as a duplicate", () => {
+    const elm = note("b/elm.md", {
+      type: "external-object",
+      description: "Read, and of the wrong type for livesIn.",
+      heldIn: "[[odoo]]",
+    });
+    const linking = edit(fabric, {
+      ...fabric.frontmatter,
+      livesIn: ["[[sheets]]", "[[elm]]"],
+    });
+    expect(lint(things, [...withNote(linking), elm], ["a/elm.md"])).toEqual([
+      { path: "b/elm.md", message: expect.stringContaining("a/elm.md") },
+      { path: "fabric.md", message: expect.stringMatching(/elm.*source/) },
     ]);
   });
 
@@ -156,7 +196,9 @@ describe("the lint", () => {
     ).toEqual([
       {
         path: "Bad_Name.md",
-        message: expect.stringMatching(/file name Bad_Name/),
+        message: expect.stringMatching(
+          /file name Bad_Name is not a lowercase slug/,
+        ),
       },
     ]);
   });
