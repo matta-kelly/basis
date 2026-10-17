@@ -62,16 +62,18 @@ export type Type = {
   name: string;
   description: string;
   schema: z.ZodObject;
+  /** The type it extends: the same kind of note, with more fields. */
+  extends?: Type;
 };
 
 /** The types defineType made. A package holds no other: a type's schema is made from its fields, once. */
 const madeTypes = new WeakSet<Type>();
 
-/** A kind of node, and the fields its nodes carry beside the base. The package that holds it checks it. */
-export function defineType<
-  const N extends string,
-  const F extends z.ZodRawShape,
->(type: { name: N; description: string; fields: F }) {
+function newType<const N extends string, const F extends z.ZodRawShape>(type: {
+  name: N;
+  description: string;
+  fields: F;
+}) {
   // One copy of the fields, so each getter is read once. zod copies the shape again: the schema is the one description.
   const fields: F = { ...type.fields };
   const made = Object.freeze({
@@ -82,6 +84,73 @@ export function defineType<
   });
   madeTypes.add(made);
   return made;
+}
+
+/** A base's shape and config are inferred from its schema, so the extension's schema is zod's own type for it. */
+type ExtensionOf<
+  B extends Type,
+  S extends z.ZodRawShape,
+  C extends z.core.$ZodObjectConfig,
+  F extends z.ZodRawShape,
+> = {
+  extends: B & { schema: z.ZodObject<S, C> };
+  /** No field of the base: extend, never override. */
+  fields: F & { [K in keyof S]?: never };
+};
+
+function extendType<
+  B extends Type,
+  S extends z.ZodRawShape,
+  C extends z.core.$ZodObjectConfig,
+  const F extends z.ZodRawShape,
+>(type: ExtensionOf<B, S, C, F>) {
+  const fields: F = { ...type.fields };
+  const extended: B = type.extends;
+  const schema: z.ZodObject<S, C> = type.extends.schema;
+  const name: B["name"] = extended.name;
+  const made = Object.freeze({
+    name,
+    description: extended.description,
+    extends: extended,
+    schema: schema.extend(fields),
+  });
+  madeTypes.add(made);
+  return made;
+}
+
+const isExtension = (
+  type: object,
+): type is ExtensionOf<
+  Type,
+  z.ZodRawShape,
+  z.core.$ZodObjectConfig,
+  z.ZodRawShape
+> => Object.hasOwn(type, "extends");
+
+/**
+ * A kind of node, and the fields its nodes carry beside the base. Or a type that extends another: the same kind of
+ * note, under the base's name, with the base's fields and more. The package that holds it checks it.
+ */
+export function defineType<
+  const N extends string,
+  const F extends z.ZodRawShape,
+>(type: {
+  name: N;
+  description: string;
+  fields: F;
+}): ReturnType<typeof newType<N, F>>;
+export function defineType<
+  B extends Type,
+  S extends z.ZodRawShape,
+  C extends z.core.$ZodObjectConfig,
+  const F extends z.ZodRawShape,
+>(type: ExtensionOf<B, S, C, F>): ReturnType<typeof extendType<B, S, C, F>>;
+export function defineType(
+  type:
+    | { name: string; description: string; fields: z.ZodRawShape }
+    | ExtensionOf<Type, z.ZodRawShape, z.core.$ZodObjectConfig, z.ZodRawShape>,
+) {
+  return isExtension(type) ? extendType(type) : newType(type);
 }
 
 /** A link: the field it is, what it points at, how many, and whether a node can leave it out. */
@@ -156,6 +225,14 @@ function redefinedBase(type: Type): string[] {
   ];
 }
 
+/** The fields of a base whose schema in the extension is not the base's own. */
+function overriddenBy(type: Type, extended: Type): string[] {
+  const shape = type.schema.shape;
+  return Object.entries(extended.schema.shape)
+    .filter(([field, schema]) => shape[field] !== schema)
+    .map(([field]) => field);
+}
+
 /** A property or a link is a frontmatter key: camelCase. */
 const Key = z.string().regex(/^[a-z][A-Za-z0-9]*$/, "a camelCase key");
 
@@ -165,7 +242,12 @@ function typeProblems(type: Type): string[] {
     ? []
     : [`The type ${type.name} is not named by a lowercase slug.`];
   const fields = fieldsOf(type);
-  const taken = redefinedBase(type);
+  const taken = type.extends ? [] : redefinedBase(type);
+  const overridden = type.extends ? overriddenBy(type, type.extends) : [];
+  if (overridden.length > 0)
+    problems.push(
+      `The type ${type.name} overrides ${overridden.join(", ")}, a field of the type it extends: extend, never override.`,
+    );
   if (taken.length > 0)
     problems.push(
       `The type ${type.name} redefines ${taken.join(", ")}, a field of the base.`,
@@ -205,24 +287,48 @@ function typeProblems(type: Type): string[] {
   return problems;
 }
 
-export type Package<T extends Record<string, Type> = Record<string, Type>> = {
+export interface Package<
+  T extends Record<string, Type> = Record<string, Type>,
+  I extends readonly AnyPackage[] = readonly AnyPackage[],
+> {
   name: string;
   description: string;
-  /** Its types, each by its name. */
+  /** Its own types, each by its name. A type that extends an imported one is under that name. */
   types: T;
+  /** The packages it imports: its links can point at their types, and its types can extend them. */
+  imports: I;
   /**
-   * The node, parsed by the schema of its type, in the types of the package it is called on. Throws when the node
-   * does not fit.
+   * The node, parsed by the schema of its type, in the own types of the package it is called on. Throws when the
+   * node does not fit. A note of an imported type is parsed by the package that holds it.
    */
   parse<This extends Package, N extends keyof This["types"] & string>(
     this: This,
     type: N,
     node: unknown,
   ): z.output<This["types"][N]["schema"]>;
-};
+}
 
-/** The types objects checked as a package's types. A package spread with other types is checked on its first parse. */
-const checkedTypes = new WeakSet<object>();
+/** Any package, as an import: its own imports are any packages. A type parameter cannot name its own interface. */
+export interface AnyPackage extends Package {
+  imports: readonly AnyPackage[];
+}
+
+/** The types a package sees through its imports, at every depth. */
+type TypesSeen<I extends readonly AnyPackage[]> = I[number] extends infer P
+  ? P extends Package<infer U, infer J extends readonly AnyPackage[]>
+    ? U[keyof U] | TypesSeen<J>
+    : never
+  : never;
+
+/** A type that extends another must extend one its package sees. */
+type ExtendsSeen<X, I extends readonly AnyPackage[]> = X extends {
+  extends: Type;
+}
+  ? { extends: TypesSeen<I> }
+  : unknown;
+
+/** For each types object, the imports it was checked with. A spread package is checked on its first parse. */
+const checked = new WeakMap<object, WeakSet<object>>();
 
 /** A package name is a slug. A plain Error, as for the other checks: the lint takes a ZodError as a note's problem. */
 function checkName(name: string) {
@@ -230,8 +336,62 @@ function checkName(name: string) {
     throw new Error(`The package ${name} is not named by a lowercase slug.`);
 }
 
-/** What definePackage checks: the name, each type, and the links between them. Throws on the first kind of problem. */
-function checkPackage(name: string, types: Record<string, Type>) {
+/** Whether a type extends another, at any depth. */
+const extendsType = (type: Type, other: Type): boolean =>
+  type.extends !== undefined &&
+  (type.extends === other || extendsType(type.extends, other));
+
+type Layer<P> = {
+  name: string;
+  types: Record<string, Type>;
+  imports: readonly P[];
+};
+
+/**
+ * The types a package sees, each by its name, with the package that holds it: its imports' at every depth, then its
+ * own. An extension takes the name of what it extends. Throws on a cycle of imports, by package name, and on two
+ * owners of one name.
+ */
+export function seenTypes<P extends Layer<P>>(
+  pkg: P,
+  path: string[] = [],
+): Map<string, { type: Type; owner: P }> {
+  if (path.includes(pkg.name))
+    throw new Error(
+      `The imports of ${path[0]} make a cycle: ${[...path, pkg.name].join(" imports ")}.`,
+    );
+  const seen = new Map<string, { type: Type; owner: P }>();
+  for (const imported of pkg.imports) {
+    for (const [name, at] of seenTypes(imported, [...path, pkg.name])) {
+      const had = seen.get(name);
+      if (!had || extendsType(at.type, had.type)) seen.set(name, at);
+      else if (had.type !== at.type && !extendsType(had.type, at.type))
+        throw new Error(
+          `The package ${pkg.name} imports two types named ${name}, from ${had.owner.name} and from ${at.owner.name}, and neither extends the other.`,
+        );
+    }
+  }
+  for (const [name, type] of Object.entries(pkg.types)) {
+    const had = seen.get(name);
+    if (had && !extendsType(type, had.type))
+      throw new Error(
+        `The type ${name} of ${pkg.name} has the name of a type of ${had.owner.name}, and does not extend it: a name has one owner.`,
+      );
+    if (type.extends && !had)
+      throw new Error(
+        `The type ${name} of ${pkg.name} extends ${type.extends.name}, which is not a type of the package ${pkg.name} or its imports.`,
+      );
+    seen.set(name, { type, owner: pkg });
+  }
+  return seen;
+}
+
+/** What definePackage checks: the name, each type, its imports, and the links between them. Throws on the first kind of problem. */
+function checkPackage(
+  name: string,
+  types: Record<string, Type>,
+  imports: readonly AnyPackage[],
+) {
   checkName(name);
   const entries = Object.entries(types);
   const notMade = entries.filter(([, type]) => !madeTypes.has(type));
@@ -248,18 +408,29 @@ function checkPackage(name: string, types: Record<string, Type>) {
         ]),
   ]);
   if (problems.length > 0) throw new Error(problems.join("\n"));
-  const held = entries.map(([, type]) => type);
-  for (const type of held) {
+  const seen = seenTypes<Package | Layer<Package>>({ name, types, imports });
+  // Each import as definePackage checks it: a spread package is another object, checked on its own first use.
+  for (const imported of imports)
+    if (!isChecked(imported.types, imported.imports))
+      checkPackage(imported.name, imported.types, imported.imports);
+  for (const type of entries.map(([, type]) => type)) {
     for (const link of linksOf(type)) {
       const end = link.to();
-      if (!held.includes(end))
+      // A link to a base the package sees an extension of: the extension is the same kind of note.
+      const at = seen.get(end.name)?.type;
+      if (!at || !(at === end || extendsType(at, end)))
         throw new Error(
-          `The link ${link.name} of ${type.name} ends at ${end.name}, which is not a type of the package ${name}.`,
+          `The link ${link.name} of ${type.name} ends at ${end.name}, which is not a type of the package ${name} or its imports.`,
         );
     }
   }
-  checkedTypes.add(Object.freeze(types));
+  const withImports = checked.get(types) ?? new WeakSet();
+  withImports.add(Object.freeze(imports));
+  checked.set(Object.freeze(types), withImports);
 }
+
+const isChecked = (types: object, imports: object) =>
+  checked.get(types)?.has(imports) ?? false;
 
 /** A type by its key. Generic, so the type is the one under that key, not any type of the record. */
 const typeIn = <T extends Record<string, Type>, K extends keyof T>(
@@ -268,15 +439,25 @@ const typeIn = <T extends Record<string, Type>, K extends keyof T>(
 ): T[K] => types[key];
 
 /**
- * One package: its types, each under its own name, and through their fields the links between them.
- * It checks every type it holds, however it was made, and throws before any note is read.
+ * One package: its types, each under its own name, and through their fields the links between them, and the packages
+ * it imports. It checks every type it holds, however it was made, and throws before any note is read.
  */
 export function definePackage<
-  const T extends Record<string, Type> & { [K in keyof T]: { name: K } },
->(pkg: { name: string; description: string; types: T }): Package<T> {
-  checkPackage(pkg.name, pkg.types);
+  const T extends Record<string, Type> & {
+    [K in keyof T]: { name: K } & ExtendsSeen<T[K], I>;
+  },
+  const I extends readonly AnyPackage[] = readonly [],
+>(pkg: {
+  name: string;
+  description: string;
+  types: T;
+  imports?: I;
+}): Package<T, I | readonly []> {
+  const imports = pkg.imports ?? [];
+  checkPackage(pkg.name, pkg.types, imports);
   return {
     ...pkg,
+    imports,
     parse<This extends Package, N extends keyof This["types"] & string>(
       this: This,
       type: N,
@@ -284,7 +465,8 @@ export function definePackage<
     ) {
       // The name on each parse: a package spread with another name keeps the types that were checked.
       checkName(this.name);
-      if (!checkedTypes.has(this.types)) checkPackage(this.name, this.types);
+      if (!isChecked(this.types, this.imports))
+        checkPackage(this.name, this.types, this.imports);
       if (!Object.hasOwn(this.types, type))
         throw new Error(`The package ${this.name} has no type ${type}.`);
       const schema: This["types"][N]["schema"] = typeIn(

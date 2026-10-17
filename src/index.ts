@@ -10,7 +10,7 @@ export {
   one,
   oneOrNone,
 } from "./primitives.ts";
-export type { Link, Package, Type } from "./primitives.ts";
+export type { AnyPackage, Link, Package, Type } from "./primitives.ts";
 export {
   loadFolder,
   readNote,
