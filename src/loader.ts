@@ -68,50 +68,58 @@ export function readNote(path: string, file: string): Read {
 async function notePaths(
   root: string,
   folder = "",
-): Promise<{ paths: string[]; unread: Problem[] }> {
+): Promise<{ paths: string[]; skipped: Problem[] }> {
   const paths: string[] = [];
-  const unread: Problem[] = [];
+  const skipped: Problem[] = [];
   let entries;
   try {
     entries = await readdir(join(root, folder), { withFileTypes: true });
   } catch (error) {
     // The folder read is the caller's: if it cannot be read, nothing can.
     if (!folder) throw error;
-    unread.push({
+    skipped.push({
       path: folder,
       message: `The folder cannot be read: ${String(error)}`,
     });
-    return { paths, unread };
+    return { paths, skipped };
   }
   for (const entry of entries) {
     if (entry.name.startsWith(".")) continue;
     const path = folder ? `${folder}/${entry.name}` : entry.name;
     if (entry.isSymbolicLink()) {
-      unread.push({
+      skipped.push({
         path,
         message: "A symbolic link: basis reads only files and folders.",
       });
     } else if (entry.isDirectory()) {
       const inner = await notePaths(root, path);
       paths.push(...inner.paths);
-      unread.push(...inner.unread);
+      skipped.push(...inner.skipped);
     } else if (entry.isFile() && entry.name.endsWith(".md")) {
       paths.push(path);
     }
   }
-  return { paths, unread };
+  return { paths, skipped };
 }
+
+/** Orders notes and problems by path. The loader and the lint use it, so their orders agree. */
+export const comparePaths = (a: string, b: string) =>
+  a < b ? -1 : Number(a > b);
+export const byPath = (a: { path: string }, b: { path: string }) =>
+  comparePaths(a.path, b.path);
 
 // Fails on bytes that are not UTF-8, where a plain read would change them with no word.
 const utf8 = new TextDecoder("utf-8", { fatal: true });
 
-/** Every note in a folder and the folders in it, in path order, and a problem for each note that cannot be read. The files are read one at a time. */
+/** Every note in a folder and the folders in it, in path order, a problem for each note that cannot be read, and the paths of the notes found and not read. The files are read one at a time. */
 export async function loadFolder(
   folder: string,
-): Promise<{ notes: Note[]; problems: Problem[] }> {
-  const { paths, unread } = await notePaths(folder);
+): Promise<{ notes: Note[]; problems: Problem[]; unread: string[] }> {
+  const { paths, skipped } = await notePaths(folder);
   const notes: Note[] = [];
-  const problems = [...unread];
+  const problems = [...skipped];
+  // The notes found and not read: the files, not a link or a folder.
+  const unread: string[] = [];
   for (const path of paths) {
     let text: string;
     try {
@@ -121,13 +129,19 @@ export async function loadFolder(
         path,
         message: `The file cannot be read: ${String(error)}`,
       });
+      unread.push(path);
       continue;
     }
     const read = readNote(path, text);
     if (read.ok) notes.push(read.note);
-    else problems.push(read.problem);
+    else {
+      problems.push(read.problem);
+      unread.push(path);
+    }
   }
-  const byPath = (a: { path: string }, b: { path: string }) =>
-    a.path < b.path ? -1 : Number(a.path > b.path);
-  return { notes: notes.sort(byPath), problems: problems.sort(byPath) };
+  return {
+    notes: notes.sort(byPath),
+    problems: problems.sort(byPath),
+    unread: unread.sort(comparePaths),
+  };
 }

@@ -122,8 +122,8 @@ describe("a note", () => {
 });
 
 describe("a folder", () => {
-  it("is read into its notes and the problems of the notes it cannot read, in path order", async () => {
-    const { notes, problems } = await loadFolder(folder);
+  it("is read into its notes and the problems of the notes it cannot read, in path order, and names those notes", async () => {
+    const { notes, problems, unread } = await loadFolder(folder);
     expect(notes.map((note) => note.path)).toEqual([
       "empty.md",
       "fabric.md",
@@ -135,6 +135,7 @@ describe("a folder", () => {
       "list.md",
       "unclosed.md",
     ]);
+    expect(unread).toEqual(["broken.md", "list.md", "unclosed.md"]);
   });
 
   it("gives each note its frontmatter as the file has it", async () => {
@@ -176,21 +177,23 @@ describe("a folder", () => {
       ["a.md", ""],
       ["latin1.md", Buffer.from("---\ndescription: Caf\xe9\n---\n", "latin1")],
       ["locked.md", ""],
-      ["lockeddir/b.md", ""],
+      ["lockeddir.md/b.md", ""],
       ["real/r.md", ""],
     ]);
     await lock(join(root, "locked.md"));
-    await lock(join(root, "lockeddir"));
+    await lock(join(root, "lockeddir.md"));
     await symlink(join(root, "a.md"), join(root, "linked.md"));
     await symlink(join(root, "real"), join(root, "linkdir"));
-    const { notes, problems } = await loadFolder(root);
+    const { notes, problems, unread } = await loadFolder(root);
     expect(notes.map((note) => note.path)).toEqual(["a.md", "real/r.md"]);
+    // A symbolic link and a folder are not notes the loader could not read.
+    expect(unread).toEqual(["latin1.md", "locked.md"]);
     expect(problems.map((problem) => problem.path)).toEqual([
       "latin1.md",
       "linkdir",
       "linked.md",
       "locked.md",
-      "lockeddir",
+      "lockeddir.md",
     ]);
   });
 });
