@@ -197,7 +197,7 @@ const withType = (type: Type) =>
       [type.name]: type,
     },
   });
-const plainType = (fields: Type["fields"] = {}) =>
+const plainType = (fields: z.ZodRawShape = {}) =>
   defineType({ name: "t", description: "d", fields });
 
 describe("a package", () => {
@@ -266,9 +266,40 @@ describe("a package", () => {
       expect(() => withType(plainType({ near }))).not.toThrow();
   });
 
+  it("takes a field that refers to itself through a function, and parses its notes", () => {
+    const tree = (): z.ZodType =>
+      z.object({
+        label: z.string(),
+        kids: z.array(z.lazy(tree)).optional(),
+      });
+    const pkg = withType(plainType({ outline: tree() }));
+    const node = {
+      name: "n",
+      type: "t",
+      description: "d",
+      outline: { label: "a", kids: [{ label: "b" }] },
+    };
+    expect(pkg.parse("t", node)).toEqual(node);
+  });
+
+  it("is refused with a name that is not a slug by a plain Error that names the package, not a ZodError", () => {
+    let error: unknown;
+    try {
+      definePackage({ name: "My Things", description: "d", types: {} });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).not.toBeInstanceOf(z.ZodError);
+    expect(error).toEqual(
+      expect.objectContaining({
+        message: expect.stringMatching(/package My Things.*slug/),
+      }),
+    );
+  });
+
   it("is refused with a property that is not a zod schema, made without TypeScript", () => {
     expect(() =>
-      withType(plainType({ key: "text" } as unknown as Type["fields"])),
+      withType(plainType({ key: "text" } as unknown as z.ZodRawShape)),
     ).toThrow(/key/);
   });
 
@@ -277,7 +308,6 @@ describe("a package", () => {
       withType({
         name: "t",
         description: "d",
-        fields: {},
         schema: z.strictObject({}),
       }),
     ).toThrow(/defineType/);
@@ -334,6 +364,79 @@ describe("a package", () => {
   });
 });
 
+describe("a type", () => {
+  const node = { name: "n", type: "t", description: "d", to: "[[sheets]]" };
+
+  it("keeps its fields as they were when it was made, though the caller's fields object changes", () => {
+    const fields: Record<string, z.ZodType> = { to: one(() => source) };
+    const t = defineType({ name: "t", description: "d", fields });
+    fields.to = z.string();
+    const pkg = definePackage({
+      name: "p",
+      description: "d",
+      types: { source, t },
+    });
+    expect(linksOf(t).map((link) => link.name)).toEqual(["to"]);
+    expect(pkg.parse("t", node)).toEqual({ ...node, to: "sheets" });
+  });
+
+  it("reads a getter in its fields once", () => {
+    let reads = 0;
+    const t = defineType({
+      name: "t",
+      description: "d",
+      fields: {
+        get to() {
+          reads += 1;
+          return reads === 1 ? one(() => source) : z.string();
+        },
+      },
+    });
+    const pkg = definePackage({
+      name: "p",
+      description: "d",
+      types: { source, t },
+    });
+    expect(linksOf(t).map((link) => link.name)).toEqual(["to"]);
+    expect(pkg.parse("t", node)).toEqual({ ...node, to: "sheets" });
+    expect(reads).toBe(1);
+  });
+
+  it("is frozen", () => {
+    const t = defineType({ name: "t", description: "d", fields: {} });
+    expect(Object.isFrozen(t)).toBe(true);
+  });
+});
+
+describe("a package's types", () => {
+  it("are frozen when they are checked, so parse goes on with the types that were checked", () => {
+    const other = defineType({
+      name: "source",
+      description: "Another source.",
+      fields: { place: z.string() },
+    });
+    const pkg = definePackage({
+      name: "p",
+      description: "d",
+      types: { source },
+    });
+    const wide: { source: Type } = pkg.types;
+    expect(() => {
+      wide.source = other;
+    }).toThrow(TypeError);
+    const sheets = {
+      name: "sheets",
+      type: "source",
+      description: "d",
+      role: "entry",
+    };
+    expect(pkg.parse("source", sheets)).toEqual(sheets);
+    const spread = { ...pkg, types: { ...pkg.types } };
+    spread.parse("source", sheets);
+    expect(Object.isFrozen(spread.types)).toBe(true);
+  });
+});
+
 describe("a package spread with other types", () => {
   const sheets = {
     name: "sheets",
@@ -365,7 +468,6 @@ describe("a package spread with other types", () => {
         source: {
           name: "source",
           description: "d",
-          fields: {},
           schema: z.strictObject({}),
         },
       },

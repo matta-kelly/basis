@@ -101,9 +101,9 @@ describe("a parsed note's type", () => {
     expectTypeOf<ReturnType<typeof either>["livesIn"]>().toBeUnknown();
   });
 
-  it("is unknown to code that takes any package, and any package is a Package", () => {
+  it("is a record of unknown fields to code that takes any package, and any package is a Package", () => {
     const parseAny = (pkg: Package) => pkg.parse("object", {});
-    expectTypeOf(parseAny).returns.toBeUnknown();
+    expectTypeOf(parseAny).returns.toEqualTypeOf<Record<string, unknown>>();
     expectTypeOf(things).toExtend<Package>();
   });
 
@@ -179,6 +179,11 @@ describe("a parsed note's type", () => {
     const { parse } = things;
     // @ts-expect-error: parse reads the package it is called on.
     void (() => parse("object", {}));
+  });
+
+  it("has one description of a type's fields: its schema", () => {
+    expectTypeOf<Type>().not.toHaveProperty("fields");
+    expectTypeOf<Type["schema"]>().toHaveProperty("shape");
   });
 
   it("gives the links of a type as links", () => {

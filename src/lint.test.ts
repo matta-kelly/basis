@@ -249,6 +249,13 @@ describe("the lint", () => {
   });
 });
 
+describe("the lint of a package whose name is not a slug", () => {
+  it("throws once, and gives no field problem to each note", () => {
+    const named = { ...things, name: "My Things" };
+    expect(() => lint(named, right)).toThrow(/package My Things/);
+  });
+});
+
 describe("a folder", () => {
   it("is linted with the loader's problems and the lint's, in path order, and a link to a note the loader could not read is not a problem", async () => {
     // elm.md cannot be read, and fabric.md, which is right, links to it.
