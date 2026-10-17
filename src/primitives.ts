@@ -292,7 +292,7 @@ type ExtendsSeen<X, I extends readonly AnyPackage[]> = X extends {
   : unknown;
 
 /** For each types object, the imports it was checked with. A spread package is checked on its first parse. */
-const checked = new WeakMap<object, WeakSet<object>>();
+const checkedWith = new WeakMap<object, WeakSet<object>>();
 
 /** A package name is a slug. A plain Error, as for the other checks: the lint takes a ZodError as a note's problem. */
 function checkName(name: string) {
@@ -313,20 +313,29 @@ type Layer<P> = {
 
 /**
  * The types a package sees, each by its name, with the package that holds it: its imports' at every depth, then its
- * own. An extension takes the name of what it extends. Throws on a cycle of imports, by package name, and on two
- * owners of one name.
+ * own. An extension takes the name of what it extends. Throws on a cycle of imports, by package name, on two
+ * packages of one name, and on two owners of one type name.
  */
 export function seenTypes<P extends Layer<P>>(
   pkg: P,
   path: string[] = [],
+  packages = new Map<string, { pkg: P; path: string[] }>(),
 ): Map<string, { type: Type; owner: P }> {
+  const here = [...path, pkg.name];
   if (path.includes(pkg.name))
     throw new Error(
-      `The imports of ${path[0]} make a cycle: ${[...path, pkg.name].join(" imports ")}.`,
+      `The imports of ${path[0]} make a cycle: ${here.join(" imports ")}.`,
     );
+  // One owner per package name, as for types: one object, wherever it is seen.
+  const known = packages.get(pkg.name);
+  if (known && known.pkg !== pkg)
+    throw new Error(
+      `The package ${here[0]} sees two packages named ${pkg.name}: at ${known.path.join(" > ")}, and at ${here.join(" > ")}.`,
+    );
+  packages.set(pkg.name, { pkg, path: here });
   const seen = new Map<string, { type: Type; owner: P }>();
   for (const imported of pkg.imports) {
-    for (const [name, at] of seenTypes(imported, [...path, pkg.name])) {
+    for (const [name, at] of seenTypes(imported, here, packages)) {
       const had = seen.get(name);
       if (!had || extendsType(at.type, had.type)) seen.set(name, at);
       else if (had.type !== at.type && !extendsType(had.type, at.type))
@@ -374,9 +383,7 @@ function checkPackage(
   if (problems.length > 0) throw new Error(problems.join("\n"));
   const seen = seenTypes<Package | Layer<Package>>({ name, types, imports });
   // Each import as definePackage checks it: a spread package is another object, checked on its own first use.
-  for (const imported of imports)
-    if (!isChecked(imported.types, imported.imports))
-      checkPackage(imported.name, imported.types, imported.imports);
+  for (const imported of imports) checked(imported);
   for (const type of entries.map(([, type]) => type)) {
     for (const link of linksOf(type)) {
       const end = link.to();
@@ -388,13 +395,24 @@ function checkPackage(
         );
     }
   }
-  const withImports = checked.get(types) ?? new WeakSet();
+  const withImports = checkedWith.get(types) ?? new WeakSet();
   withImports.add(Object.freeze(imports));
-  checked.set(Object.freeze(types), withImports);
+  checkedWith.set(Object.freeze(types), withImports);
 }
 
-const isChecked = (types: object, imports: object) =>
-  checked.get(types)?.has(imports) ?? false;
+/**
+ * A package, checked as definePackage checks it, once for its types and imports. The name on each call: a package
+ * spread with another name keeps the types and imports that were checked.
+ */
+export function checked(pkg: {
+  name: string;
+  types: Record<string, Type>;
+  imports: readonly AnyPackage[];
+}) {
+  checkName(pkg.name);
+  if (!checkedWith.get(pkg.types)?.has(pkg.imports))
+    checkPackage(pkg.name, pkg.types, pkg.imports);
+}
 
 /** A type by its key. Generic, so the type is the one under that key, not any type of the record. */
 const typeIn = <T extends Record<string, Type>, K extends keyof T>(
@@ -427,10 +445,7 @@ export function definePackage<
       type: N,
       node: unknown,
     ) {
-      // The name on each parse: a package spread with another name keeps the types that were checked.
-      checkName(this.name);
-      if (!isChecked(this.types, this.imports))
-        checkPackage(this.name, this.types, this.imports);
+      checked(this);
       if (!Object.hasOwn(this.types, type))
         throw new Error(`The package ${this.name} has no type ${type}.`);
       const schema: This["types"][N]["schema"] = typeIn(

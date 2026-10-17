@@ -9,6 +9,7 @@ import { inspect } from "node:util";
 import * as z from "zod";
 import { byPath, loadFolder, type Note, type Problem } from "./loader.ts";
 import {
+  checked,
   linksOf,
   seenTypes,
   wikilink,
@@ -133,6 +134,8 @@ export function lint(
     unreadByName.set(name, [...(unreadByName.get(name) ?? []), path]);
   }
   const unreadNames = new Set(unreadByName.keys());
+  // The package's own check once: a note of an imported type is parsed by its own package, not by this one.
+  checked(pkg);
   const seen: Seen = seenTypes<Package>(pkg);
   const byName = new Map<string, Note[]>();
   for (const note of notes)
