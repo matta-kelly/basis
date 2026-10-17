@@ -78,13 +78,21 @@ describe("the lint", () => {
     }
   });
 
-  it("gives a problem for a note whose type the package does not have, or with no type", () => {
+  it("gives a problem for a note whose type the package does not have, or is a name the object prototype has, or with no type", () => {
     expect(
       lint(
         things,
         withNote(edit(sheets, { ...sheets.frontmatter, type: "verb" })),
       ),
     ).toEqual([{ path: "sheets.md", message: expect.stringMatching(/verb/) }]);
+    expect(
+      lint(
+        things,
+        withNote(edit(sheets, { ...sheets.frontmatter, type: "constructor" })),
+      ),
+    ).toEqual([
+      { path: "sheets.md", message: expect.stringMatching(/constructor/) },
+    ]);
     expect(lint(things, withNote(without(sheets, "type")))).toEqual([
       { path: "sheets.md", message: expect.stringMatching(/no type/) },
     ]);
@@ -238,6 +246,13 @@ describe("the lint", () => {
         withNote(edit(sheets, { ...sheets.frontmatter, name: "sheets" })),
       ),
     ).toEqual([{ path: "sheets.md", message: expect.stringMatching(/name/) }]);
+  });
+});
+
+describe("the lint of a package whose name is not a slug", () => {
+  it("throws once, and gives no field problem to each note", () => {
+    const named = { ...things, name: "My Things" };
+    expect(() => lint(named, right)).toThrow(/package My Things/);
   });
 });
 

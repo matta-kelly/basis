@@ -1,10 +1,14 @@
 // What basis exports.
 export {
   base,
-  defineLink,
   definePackage,
   defineType,
+  linksOf,
+  many,
+  manyOrNone,
   Name,
+  one,
+  oneOrNone,
 } from "./primitives.ts";
 export type { Link, Package, Type } from "./primitives.ts";
 export {
