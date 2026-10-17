@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
 import * as z from "zod";
+import {
+  agent,
+  capability,
+  company,
+  companyCapability,
+  core,
+} from "../fixtures/layers.ts";
 import things, { externalObject, object, source } from "../fixtures/things.ts";
 import {
   definePackage,
   defineType,
+  extendType,
   linksOf,
   many,
   manyOrNone,
@@ -477,5 +485,249 @@ describe("a package spread with other types", () => {
     expect(() => cut.parse("source", { ...sheets, place: "here" })).toThrow(
       /livesIn.*source/,
     );
+  });
+});
+
+describe("a package that imports another", () => {
+  const ship = {
+    name: "ship",
+    type: "capability",
+    description: "Ship an order.",
+    title: "Ship",
+  };
+  const shipHere = { ...ship, stage: "live", heldBy: "[[ana]]" };
+  // A package made by code without types: the compiler would refuse it.
+  const untyped = (pkg: unknown) =>
+    definePackage(pkg as Parameters<typeof definePackage>[0]);
+
+  it("holds a type that extends an imported one under its name, parsed with the base's fields and its own", () => {
+    expect(companyCapability.name).toBe("capability");
+    expect(companyCapability.description).toBe(capability.description);
+    expect(companyCapability.extends).toBe(capability);
+    expect(company.imports).toEqual([core]);
+    expect(company.parse("capability", shipHere)).toEqual({
+      ...shipHere,
+      heldBy: "ana",
+    });
+    expect(() =>
+      company.parse("capability", { ...shipHere, title: undefined }),
+    ).toThrow(/title/);
+  });
+
+  it("leaves the imported package as it was", () => {
+    expect(Object.keys(core.types)).toEqual(["agent", "capability", "case"]);
+    expect(core.types.capability).toBe(capability);
+    expect(core.imports).toEqual([]);
+    expect(core.parse("capability", ship)).toEqual(ship);
+    expect(() => core.parse("capability", shipHere)).toThrow(/stage/);
+  });
+
+  it("is refused with an extension that has a field of its base, made without TypeScript", () => {
+    for (const field of ["title", "description", "type"]) {
+      const over = extendType(capability, {
+        fields: { [field]: z.string() } as Record<string, never>,
+      });
+      expect(() =>
+        untyped({
+          name: "p",
+          description: "d",
+          imports: [core],
+          types: { capability: over },
+        }),
+      ).toThrow(new RegExp(`capability.*overrides ${field}`));
+    }
+  });
+
+  it("is refused with a type that extends a type of no package it imports, made without TypeScript", () => {
+    expect(() =>
+      untyped({
+        name: "p",
+        description: "d",
+        types: { capability: companyCapability },
+      }),
+    ).toThrow(
+      /capability of p extends capability, which is not a type of the package p or its imports/,
+    );
+  });
+
+  it("is refused with a link to a type of neither it nor its imports", () => {
+    const stranger = defineType({
+      name: "stranger",
+      description: "d",
+      fields: {},
+    });
+    const near = defineType({
+      name: "near",
+      description: "d",
+      fields: { to: one(() => stranger), by: one(() => agent) },
+    });
+    expect(() =>
+      definePackage({
+        name: "p",
+        description: "d",
+        imports: [core],
+        types: { near },
+      }),
+    ).toThrow(/to of near ends at stranger/);
+    expect(() =>
+      definePackage({
+        name: "p",
+        description: "d",
+        imports: [core],
+        types: {
+          near: defineType({
+            name: "near",
+            description: "d",
+            fields: { by: one(() => agent) },
+          }),
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it("is refused with a type of an imported type's name that does not extend it: one owner per name", () => {
+    const other = defineType({ name: "agent", description: "d", fields: {} });
+    expect(() =>
+      definePackage({
+        name: "p",
+        description: "d",
+        imports: [core],
+        types: { agent: other },
+      }),
+    ).toThrow(/agent.*core/);
+  });
+
+  it("is refused with two imports that give two types of one name, unless one extends the other", () => {
+    const elsewhere = definePackage({
+      name: "elsewhere",
+      description: "d",
+      types: {
+        agent: defineType({ name: "agent", description: "d", fields: {} }),
+      },
+    });
+    expect(() =>
+      definePackage({
+        name: "p",
+        description: "d",
+        imports: [core, elsewhere],
+        types: {},
+      }),
+    ).toThrow(/agent.*core.*elsewhere/);
+    expect(() =>
+      definePackage({
+        name: "p",
+        description: "d",
+        imports: [core, company],
+        types: {},
+      }),
+    ).not.toThrow();
+  });
+
+  it("is refused with two imports that each extend one base: two owners of one name", () => {
+    const studio = definePackage({
+      name: "studio",
+      description: "d",
+      imports: [core],
+      types: {
+        capability: extendType(capability, { fields: { budget: z.number() } }),
+      },
+    });
+    expect(() =>
+      definePackage({
+        name: "p",
+        description: "d",
+        imports: [company, studio],
+        types: {},
+      }),
+    ).toThrow(
+      /two types named capability, from company and from studio, and neither extends the other/,
+    );
+  });
+
+  it("takes a link to a type of an import's import", () => {
+    const task = defineType({
+      name: "task",
+      description: "d",
+      fields: { by: one(() => core.types.agent) },
+    });
+    expect(() =>
+      definePackage({
+        name: "deep",
+        description: "d",
+        imports: [company],
+        types: { task },
+      }),
+    ).not.toThrow();
+  });
+
+  it("is refused with an import whose name is not a slug, naming it", () => {
+    expect(() =>
+      untyped({
+        name: "p",
+        description: "d",
+        imports: [{ ...core, name: "Not A Slug" }],
+        types: {},
+      }),
+    ).toThrow(/package Not A Slug is not named by a lowercase slug/);
+  });
+
+  it("is refused when it sees two different packages of one name, and the error names where each one is", () => {
+    const studio = definePackage({
+      name: "studio",
+      description: "d",
+      imports: [{ ...core }],
+      types: {},
+    });
+    expect(() =>
+      definePackage({
+        name: "p",
+        description: "d",
+        imports: [company, studio],
+        types: {},
+      }),
+    ).toThrow(
+      /p sees two packages named core: at p > company > core, and at p > studio > core/,
+    );
+    expect(() =>
+      untyped({
+        name: "core",
+        description: "d",
+        imports: [company],
+        types: {},
+      }),
+    ).toThrow(/cycle: core imports company imports core/);
+  });
+
+  it("is refused with an import that is refused", () => {
+    const broken = {
+      ...core,
+      types: {
+        ...core.types,
+        agent: { name: "agent", description: "d", schema: z.strictObject({}) },
+      },
+    };
+    expect(() =>
+      untyped({ name: "p", description: "d", imports: [broken], types: {} }),
+    ).toThrow(/core has agent, which defineType did not make/);
+  });
+
+  it("is refused with a cycle of imports, found by package name", () => {
+    const looped = { ...core, imports: [company] };
+    expect(() =>
+      looped.parse("agent", {
+        name: "ana",
+        type: "agent",
+        description: "d",
+        role: "r",
+      }),
+    ).toThrow(/cycle: core imports company imports core/);
+    expect(() =>
+      untyped({
+        name: "company",
+        description: "d",
+        imports: [company],
+        types: {},
+      }),
+    ).toThrow(/cycle: company imports company/);
   });
 });

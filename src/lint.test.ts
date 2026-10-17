@@ -3,8 +3,18 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import * as z from "zod";
+import { company, core } from "../fixtures/layers.ts";
 import things from "../fixtures/things.ts";
-import { lint, lintFolder, type Note } from "./index.ts";
+import {
+  definePackage,
+  defineType,
+  extendType,
+  lint,
+  lintFolder,
+  one,
+  type Note,
+} from "./index.ts";
 
 const note = (path: string, frontmatter: Record<string, unknown>): Note => ({
   path,
@@ -253,6 +263,139 @@ describe("the lint of a package whose name is not a slug", () => {
   it("throws once, and gives no field problem to each note", () => {
     const named = { ...things, name: "My Things" };
     expect(() => lint(named, right)).toThrow(/package My Things/);
+  });
+});
+
+describe("the lint of a package that imports another", () => {
+  const ana = note("ana.md", {
+    type: "agent",
+    description: "The agent that ships.",
+    role: "shipper",
+  });
+  const ship = note("ship.md", {
+    type: "capability",
+    description: "Ship an order.",
+    title: "Ship",
+    stage: "live",
+    heldBy: "[[ana]]",
+  });
+  const shipWorks = note("ship-works.md", {
+    type: "case",
+    description: "An order ships.",
+    capability: "[[ship]]",
+  });
+  const layered = [ana, ship, shipWorks];
+  const changed = (n: Note, frontmatter: Record<string, unknown>) => [
+    ...layered.filter((m) => m.path !== n.path),
+    edit(n, { ...n.frontmatter, ...frontmatter }),
+  ];
+
+  it("gives no problems for notes of both packages that are right", () => {
+    expect(lint(company, layered)).toEqual([]);
+  });
+
+  it("resolves a link to an imported base that the package extends", () => {
+    const reviews = definePackage({
+      name: "reviews",
+      description: "d",
+      imports: [core],
+      types: {
+        capability: extendType(core.types.capability, {
+          fields: { stage: z.string(), heldBy: one(() => core.types.agent) },
+        }),
+        review: defineType({
+          name: "review",
+          description: "d",
+          fields: { of: one(() => core.types.capability) },
+        }),
+      },
+    });
+    const review = note("ship-review.md", {
+      type: "review",
+      description: "How shipping went.",
+      of: "[[ship]]",
+    });
+    expect(lint(reviews, [...layered, review])).toEqual([]);
+    expect(
+      lint(reviews, [
+        ...layered,
+        edit(review, { ...review.frontmatter, of: "[[ana]]" }),
+      ]),
+    ).toEqual([
+      {
+        path: "ship-review.md",
+        message: expect.stringMatching(
+          /ana, which is a agent, not a capability/,
+        ),
+      },
+    ]);
+  });
+
+  it("checks its package once at the start, though every note is of an imported type", () => {
+    const broken = {
+      ...company,
+      types: {
+        ...company.types,
+        odd: { name: "odd", description: "d", schema: z.strictObject({}) },
+      },
+    };
+    expect(() => lint(broken, [ana])).toThrow(
+      /company has odd, which defineType did not make/,
+    );
+  });
+
+  it("parses a note of an extended type by the extension, and a note of an imported type by its own", () => {
+    expect(lint(company, changed(ship, { stage: undefined }))).toEqual([
+      { path: "ship.md", message: expect.stringMatching(/stage/) },
+    ]);
+    expect(lint(company, changed(ana, { role: undefined }))).toEqual([
+      { path: "ana.md", message: expect.stringMatching(/role/) },
+    ]);
+    // By core alone, a company capability has fields core does not know.
+    expect(lint(core, layered).map((p) => p.message)).toEqual([
+      expect.stringMatching(/stage/),
+      expect.stringMatching(/heldBy/),
+    ]);
+  });
+
+  it("gives a problem for a link to no note, and to a note of the wrong type, across the two packages", () => {
+    expect(lint(company, changed(ship, { heldBy: "[[nobody]]" }))).toEqual([
+      {
+        path: "ship.md",
+        message: expect.stringMatching(
+          /heldBy points at nobody, which is not a note/,
+        ),
+      },
+    ]);
+    expect(lint(company, changed(ship, { heldBy: "[[ship-works]]" }))).toEqual([
+      {
+        path: "ship.md",
+        message: expect.stringMatching(
+          /ship-works, which is a case, not a agent/,
+        ),
+      },
+    ]);
+    expect(
+      lint(company, changed(shipWorks, { capability: "[[ana]]" })),
+    ).toEqual([
+      {
+        path: "ship-works.md",
+        message: expect.stringMatching(
+          /ana, which is a agent, not a capability/,
+        ),
+      },
+    ]);
+  });
+
+  it("gives a problem for a note of a type of neither the package nor its imports, and none to a link to it", () => {
+    expect(lint(company, changed(ana, { type: "verb" }))).toEqual([
+      {
+        path: "ana.md",
+        message: expect.stringMatching(
+          /verb is not a type of the package company or its imports/,
+        ),
+      },
+    ]);
   });
 });
 

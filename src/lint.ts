@@ -1,5 +1,6 @@
 /**
- * The lint: notes and a package in, problems out. It changes nothing.
+ * The lint: notes and a package in, problems out. It changes nothing. The notes are checked against the package and
+ * the packages it imports, as one set.
  * Each note is parsed by its type, and each link it writes must point at a note of the type the link points at.
  */
 
@@ -7,7 +8,14 @@ import { basename } from "node:path";
 import { inspect } from "node:util";
 import * as z from "zod";
 import { byPath, loadFolder, type Note, type Problem } from "./loader.ts";
-import { linksOf, wikilink, type Package, type Type } from "./primitives.ts";
+import {
+  checked,
+  linksOf,
+  seenTypes,
+  wikilink,
+  type Package,
+  type Type,
+} from "./primitives.ts";
 
 /** A parse's issues as problems, one for each field. A note's name is its file name, so a bad name is a bad file name. */
 function fieldProblems(note: Note, error: z.ZodError): Problem[] {
@@ -36,16 +44,18 @@ const linkNames = (value: unknown): string[] =>
     return name.success ? [name.data] : [];
   });
 
-/** The note's type in the package, if the package has it. A name the object prototype has is not a type. */
-const noteType = (pkg: Package, note: Note): Type | undefined => {
+/** The types a package sees, its own and its imports', with the package that holds each. */
+type Seen = Map<string, { type: Type; owner: Package }>;
+
+/** The note's type, with the package that holds it, if the package or its imports have it. */
+const noteType = (seen: Seen, note: Note) => {
   const type = note.frontmatter.type;
-  return typeof type === "string" && Object.hasOwn(pkg.types, type)
-    ? pkg.types[type]
-    : undefined;
+  return typeof type === "string" ? seen.get(type) : undefined;
 };
 
 function noteProblems(
   pkg: Package,
+  seen: Seen,
   note: Note,
   byName: Map<string, Note[]>,
   unread: Set<string>,
@@ -63,21 +73,24 @@ function noteProblems(
       // inspect, not JSON: a YAML alias can make a value that holds itself.
       problem(`The type ${inspect(type)} is not a name.`),
     ];
-  const of = noteType(pkg, note);
-  if (!of)
+  const at = noteType(seen, note);
+  if (!at)
     return [
       ...problems,
-      problem(`The type ${type} is not a type of the package ${pkg.name}.`),
+      problem(
+        `The type ${type} is not a type of the package ${pkg.name} or its imports.`,
+      ),
     ];
 
   try {
-    pkg.parse(type, { ...note.frontmatter, name: note.name });
+    // By the package that holds the type: a note of an imported type is that package's.
+    at.owner.parse(type, { ...note.frontmatter, name: note.name });
   } catch (error) {
     if (!(error instanceof z.ZodError)) throw error;
     problems.push(...fieldProblems(note, error));
   }
 
-  for (const link of linksOf(of)) {
+  for (const link of linksOf(at.type)) {
     const to = link.to().name;
     for (const name of linkNames(note.frontmatter[link.name])) {
       const targets = byName.get(name);
@@ -91,7 +104,7 @@ function noteProblems(
         );
       } else if (
         // A note with no type of the package has that problem itself.
-        targets.every((t) => noteType(pkg, t)) &&
+        targets.every((t) => noteType(seen, t)) &&
         !targets.some((t) => t.frontmatter.type === to)
       ) {
         problems.push(
@@ -121,6 +134,9 @@ export function lint(
     unreadByName.set(name, [...(unreadByName.get(name) ?? []), path]);
   }
   const unreadNames = new Set(unreadByName.keys());
+  // The package's own check once: a note of an imported type is parsed by its own package, not by this one.
+  checked(pkg);
+  const seen: Seen = seenTypes<Package>(pkg);
   const byName = new Map<string, Note[]>();
   for (const note of notes)
     byName.set(note.name, [...(byName.get(note.name) ?? []), note]);
@@ -140,7 +156,7 @@ export function lint(
     }
   }
   for (const note of notes)
-    problems.push(...noteProblems(pkg, note, byName, unreadNames));
+    problems.push(...noteProblems(pkg, seen, note, byName, unreadNames));
   return problems.sort(byPath);
 }
 
