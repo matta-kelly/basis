@@ -109,13 +109,15 @@ export const byPath = (a: { path: string }, b: { path: string }) =>
 // Fails on bytes that are not UTF-8, where a plain read would change them with no word.
 const utf8 = new TextDecoder("utf-8", { fatal: true });
 
-/** Every note in a folder and the folders in it, in path order, and a problem for each note that cannot be read. The files are read one at a time. */
+/** Every note in a folder and the folders in it, in path order, a problem for each note that cannot be read, and the paths of the notes found and not read. The files are read one at a time. */
 export async function loadFolder(
   folder: string,
-): Promise<{ notes: Note[]; problems: Problem[] }> {
+): Promise<{ notes: Note[]; problems: Problem[]; unread: string[] }> {
   const { paths, unread } = await notePaths(folder);
   const notes: Note[] = [];
   const problems = [...unread];
+  // The notes found and not read: the files, not a link or a folder.
+  const unreadNotes: string[] = [];
   for (const path of paths) {
     let text: string;
     try {
@@ -125,11 +127,19 @@ export async function loadFolder(
         path,
         message: `The file cannot be read: ${String(error)}`,
       });
+      unreadNotes.push(path);
       continue;
     }
     const read = readNote(path, text);
     if (read.ok) notes.push(read.note);
-    else problems.push(read.problem);
+    else {
+      problems.push(read.problem);
+      unreadNotes.push(path);
+    }
   }
-  return { notes: notes.sort(byPath), problems: problems.sort(byPath) };
+  return {
+    notes: notes.sort(byPath),
+    problems: problems.sort(byPath),
+    unread: unreadNotes.sort(),
+  };
 }

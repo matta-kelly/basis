@@ -52,7 +52,10 @@ function noteProblems(
   if (type === undefined || type === null)
     return [...problems, problem("The note has no type.")];
   if (typeof type !== "string")
-    return [...problems, problem(`The type ${String(type)} is not a name.`)];
+    return [
+      ...problems,
+      problem(`The type ${JSON.stringify(type)} is not a name.`),
+    ];
   if (!hasType(pkg, note))
     return [
       ...problems,
@@ -137,9 +140,6 @@ export async function lintFolder(
   pkg: Package,
   folder: string,
 ): Promise<Problem[]> {
-  const { notes, problems } = await loadFolder(folder);
-  const unread = problems
-    .map((problem) => problem.path)
-    .filter((path) => path.endsWith(".md"));
+  const { notes, problems, unread } = await loadFolder(folder);
   return [...problems, ...lint(pkg, notes, unread)].sort(byPath);
 }
