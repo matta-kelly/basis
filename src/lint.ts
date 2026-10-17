@@ -1,13 +1,13 @@
 /**
  * The lint: notes and a package in, problems out. It changes nothing.
- * Each note is parsed by its type, and each link it writes must point at a note of the link's `to` type.
+ * Each note is parsed by its type, and each link it writes must point at a note of the type the link points at.
  */
 
 import { basename } from "node:path";
 import { inspect } from "node:util";
 import * as z from "zod";
 import { byPath, loadFolder, type Note, type Problem } from "./loader.ts";
-import { wikilink, type Package } from "./primitives.ts";
+import { linksOf, wikilink, type Package, type Type } from "./primitives.ts";
 
 /** A parse's issues as problems, one for each field. A note's name is its file name, so a bad name is a bad file name. */
 function fieldProblems(note: Note, error: z.ZodError): Problem[] {
@@ -36,8 +36,13 @@ const linkNames = (value: unknown): string[] =>
     return name.success ? [name.data] : [];
   });
 
-const hasType = (pkg: Package, note: Note) =>
-  pkg.types.some((t) => t.name === note.frontmatter.type);
+/** The note's type in the package, if the package has it. A name the object prototype has is not a type. */
+const noteType = (pkg: Package, note: Note): Type | undefined => {
+  const type = note.frontmatter.type;
+  return typeof type === "string" && Object.hasOwn(pkg.types, type)
+    ? pkg.types[type]
+    : undefined;
+};
 
 function noteProblems(
   pkg: Package,
@@ -58,7 +63,8 @@ function noteProblems(
       // inspect, not JSON: a YAML alias can make a value that holds itself.
       problem(`The type ${inspect(type)} is not a name.`),
     ];
-  if (!hasType(pkg, note))
+  const of = noteType(pkg, note);
+  if (!of)
     return [
       ...problems,
       problem(`The type ${type} is not a type of the package ${pkg.name}.`),
@@ -71,7 +77,8 @@ function noteProblems(
     problems.push(...fieldProblems(note, error));
   }
 
-  for (const link of pkg.links.filter((l) => l.from.name === type)) {
+  for (const link of linksOf(of)) {
+    const to = link.to().name;
     for (const name of linkNames(note.frontmatter[link.name])) {
       const targets = byName.get(name);
       if (!targets) {
@@ -84,12 +91,12 @@ function noteProblems(
         );
       } else if (
         // A note with no type of the package has that problem itself.
-        targets.every((t) => hasType(pkg, t)) &&
-        !targets.some((t) => t.frontmatter.type === link.to.name)
+        targets.every((t) => noteType(pkg, t)) &&
+        !targets.some((t) => t.frontmatter.type === to)
       ) {
         problems.push(
           problem(
-            `The link ${link.name} points at ${name}, which is a ${String(targets[0]?.frontmatter.type)}, not a ${link.to.name}.`,
+            `The link ${link.name} points at ${name}, which is a ${String(targets[0]?.frontmatter.type)}, not a ${to}.`,
           ),
         );
       }

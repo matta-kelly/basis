@@ -1,8 +1,8 @@
 /**
  * The primitives as code: a type, a link, and a package that holds them.
  * A node is a note: its frontmatter holds its fields, and its file name is its name.
- * The world is closed: a node carries the fields of its type and the links that start
- * from it, and nothing else.
+ * The world is closed: a node carries the fields of its type, its properties and the links
+ * that start from it, and nothing else.
  */
 
 import * as z from "zod";
@@ -29,61 +29,94 @@ export const wikilink = z
   .regex(/^\[\[[a-z][a-z0-9-]*\]\]$/, 'a wikilink, "[[name]]"')
   .transform((link) => link.slice(2, -2));
 
+/** A kind of node: its fields beside the base, and the one closed schema they make. */
 export type Type = {
   name: string;
   description: string;
-  properties: z.ZodRawShape;
+  /** Its properties and the links that start from it, by name. */
+  fields: z.ZodRawShape;
+  schema: z.ZodType;
 };
+
+/** The types defineType made. A package holds no other: a type's schema is made from its fields, once. */
+const madeTypes = new WeakSet<Type>();
 
 /** A kind of node, and the fields its nodes carry beside the base. The package that holds it checks it. */
-export function defineType<const T extends Type>(type: T): T {
-  return type;
+export function defineType<
+  const N extends string,
+  const F extends z.ZodRawShape,
+>(type: { name: N; description: string; fields: F }) {
+  const made = {
+    ...type,
+    // The fields last: spread before them, the literal keeps its type. A field named type is refused by the package.
+    schema: z.strictObject({
+      ...base,
+      type: z.literal(type.name),
+      ...type.fields,
+    }),
+  };
+  madeTypes.add(made);
+  return made;
 }
 
-export type Link = {
-  name: string;
-  description: string;
-  from: Type;
-  to: Type;
-  /** one: a node points at one node. many: at one or more. */
-  cardinality: "one" | "many";
-  /** false: a node of the from type can leave it out. Required when not given. */
-  required?: boolean;
-};
+/** What a link points at: a thunk, so a link can point at a type defined later. */
+export type Link = { to: () => Type; cardinality: "one" | "many" };
 
-/** An edge between two types. It is stored on the node it starts from, under its own name. The package that holds it checks it. */
-export function defineLink<const L extends Link>(link: L): L {
-  return link;
+/** The target of each link schema, kept beside the schema and not in its type. */
+const links = new WeakMap<object, Link>();
+
+function link<S extends z.ZodType>(schema: S, target: Link): S {
+  links.set(schema, target);
+  return schema;
 }
+
+/** A link to one node. */
+export const one = (to: () => Type) =>
+  link(wikilink.clone(), { to, cardinality: "one" });
+
+/** A link to one or more nodes. */
+export const many = (to: () => Type) =>
+  link(z.array(wikilink).min(1), { to, cardinality: "many" });
+
+/** A link to any number of nodes: no value and an empty list both mean none. */
+export const manyOrNone = (to: () => Type) =>
+  link(z.array(wikilink).optional(), { to, cardinality: "many" });
+
+/** The links that start from a type: each of its fields made by one, many or manyOrNone. */
+export const linksOf = (type: Type) =>
+  Object.entries(type.fields).flatMap(([name, schema]) => {
+    const target = links.get(schema);
+    return target ? [{ name, ...target }] : [];
+  });
 
 /** A property or a link is a frontmatter key: camelCase. */
 const Key = z.string().regex(/^[a-z][A-Za-z0-9]*$/, "a camelCase key");
 
-/** What is wrong with a type, whatever made it. */
+/** What is wrong with a type: its name, and the names and schemas of its fields. */
 function typeProblems(type: Type): string[] {
   const problems = Name.safeParse(type.name).success
     ? []
     : [`The type ${type.name} is not named by a lowercase slug.`];
-  const taken = Object.keys(type.properties).filter(isBaseField);
+  const taken = Object.keys(type.fields).filter(isBaseField);
   if (taken.length > 0)
     problems.push(
       `The type ${type.name} redefines ${taken.join(", ")}, a field of the base.`,
     );
-  const notKeys = Object.keys(type.properties).filter(
+  const notKeys = Object.keys(type.fields).filter(
     (field) => !Key.safeParse(field).success,
   );
   if (notKeys.length > 0)
     problems.push(
       `The type ${type.name} has ${notKeys.join(", ")}, which is not a camelCase key.`,
     );
-  const notSchemas = Object.entries(type.properties)
+  const notSchemas = Object.entries(type.fields)
     .filter(([, property]) => !(property instanceof z.ZodType))
     .map(([field]) => field);
   if (notSchemas.length > 0)
     problems.push(
       `The type ${type.name} has ${notSchemas.join(", ")}, which is not a zod schema.`,
     );
-  const prototypeNames = Object.keys(type.properties).filter(isPrototypeName);
+  const prototypeNames = Object.keys(type.fields).filter(isPrototypeName);
   if (prototypeNames.length > 0) {
     problems.push(
       `The type ${type.name} has ${prototypeNames.join(", ")}, a name the object prototype has.`,
@@ -92,110 +125,58 @@ function typeProblems(type: Type): string[] {
   return problems;
 }
 
-/** What is wrong with a link, whatever made it. */
-function linkProblems(link: Link): string[] {
-  const problems = Key.safeParse(link.name).success
-    ? []
-    : [`The link "${link.name}" is not named by a camelCase key.`];
-  if (
-    isBaseField(link.name) ||
-    Object.hasOwn(link.from.properties, link.name)
-  ) {
-    problems.push(
-      `The link ${link.name} has the name of a field of ${link.from.name}.`,
-    );
-  }
-  if (isPrototypeName(link.name))
-    problems.push(`The link ${link.name} has a name the object prototype has.`);
-  if (link.cardinality !== "one" && link.cardinality !== "many") {
-    problems.push(
-      `The link ${link.name} has the cardinality ${String(link.cardinality)}: it is one or many.`,
-    );
-  }
-  if (link.required !== undefined && typeof link.required !== "boolean") {
-    problems.push(
-      `The link ${link.name} has required ${String(link.required)}: it is true or false.`,
-    );
-  }
-  return problems;
-}
-
-export type Package = {
+export type Package<T extends Record<string, Type> = Record<string, Type>> = {
   name: string;
   description: string;
-  types: Type[];
-  links: Link[];
+  /** Its types, each by its name. */
+  types: T;
   /** The node, parsed by the schema of its type. Throws when the node does not fit. */
-  parse(type: string, node: unknown): Record<string, unknown>;
+  parse<N extends keyof T & string>(
+    type: N,
+    node: unknown,
+  ): z.output<T[N]["schema"]>;
 };
 
 /**
- * One package: its types, and the links between them. It checks every type and link it holds,
- * however they were made, and throws before any note is read.
+ * One package: its types, each under its own name, and through their fields the links between them.
+ * It checks every type it holds, however it was made, and throws before any note is read.
  */
-export function definePackage(pkg: Omit<Package, "parse">): Package {
+export function definePackage<
+  const T extends Record<string, Type> & { [K in keyof T]: { name: K } },
+>(pkg: { name: string; description: string; types: T }): Package<T> {
   Name.parse(pkg.name);
-  const problems = [
-    ...pkg.types.flatMap(typeProblems),
-    ...pkg.links.flatMap(linkProblems),
-  ];
+  const types = Object.entries(pkg.types);
+  const notMade = types.filter(([, type]) => !madeTypes.has(type));
+  if (notMade.length > 0)
+    throw new Error(
+      `The package ${pkg.name} has ${notMade.map(([key]) => key).join(", ")}, which defineType did not make.`,
+    );
+  const problems = types.flatMap(([key, type]) => [
+    ...typeProblems(type),
+    ...(key === type.name
+      ? []
+      : [
+          `The package ${pkg.name} has the type ${type.name} under the key ${key}: a type is under its name.`,
+        ]),
+  ]);
   if (problems.length > 0) throw new Error(problems.join("\n"));
-  const names = pkg.types.map((type) => type.name);
-  const twice = names.filter((name, i) => names.indexOf(name) !== i);
-  if (twice.length > 0)
-    throw new Error(
-      `The package ${pkg.name} has two types named ${twice.join(", ")}.`,
-    );
-  const links = pkg.links.map((link) => `${link.from.name}.${link.name}`);
-  const twiceLinked = links.filter((link, i) => links.indexOf(link) !== i);
-  if (twiceLinked.length > 0)
-    throw new Error(
-      `The package ${pkg.name} has two links named ${twiceLinked.join(", ")}.`,
-    );
-  for (const link of pkg.links) {
-    for (const end of [link.from, link.to]) {
-      if (!pkg.types.includes(end)) {
+  const held = types.map(([, type]) => type);
+  for (const type of held) {
+    for (const { name, to } of linksOf(type)) {
+      const end = to();
+      if (!held.includes(end))
         throw new Error(
-          `The link ${link.name} ends at ${end.name}, which is not a type of the package ${pkg.name}.`,
+          `The link ${name} of ${type.name} ends at ${end.name}, which is not a type of the package ${pkg.name}.`,
         );
-      }
     }
   }
 
-  // The schema of each type: the base, its properties, and the links that start from it.
-  const schemas = new Map(
-    pkg.types.map((type) => {
-      const links = Object.fromEntries(
-        pkg.links
-          .filter((link) => link.from === type)
-          .map((link) => {
-            const schema =
-              link.cardinality === "one" ? wikilink : z.array(wikilink).min(1);
-            return [
-              link.name,
-              link.required === false ? schema.optional() : schema,
-            ];
-          }),
-      );
-      return [
-        type.name,
-        z.strictObject({
-          ...base,
-          ...type.properties,
-          ...links,
-          // Last, so nothing replaces it.
-          type: z.literal(type.name),
-        }),
-      ];
-    }),
-  );
-
   return {
     ...pkg,
-    parse(type, node) {
-      const schema = schemas.get(type);
-      if (!schema)
+    parse<N extends keyof T & string>(type: N, node: unknown) {
+      if (!Object.hasOwn(pkg.types, type))
         throw new Error(`The package ${pkg.name} has no type ${type}.`);
+      const schema: T[N]["schema"] = pkg.types[type].schema;
       return schema.parse(node);
     },
   };
