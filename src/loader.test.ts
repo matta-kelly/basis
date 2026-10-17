@@ -177,11 +177,11 @@ describe("a folder", () => {
       ["a.md", ""],
       ["latin1.md", Buffer.from("---\ndescription: Caf\xe9\n---\n", "latin1")],
       ["locked.md", ""],
-      ["lockeddir/b.md", ""],
+      ["lockeddir.md/b.md", ""],
       ["real/r.md", ""],
     ]);
     await lock(join(root, "locked.md"));
-    await lock(join(root, "lockeddir"));
+    await lock(join(root, "lockeddir.md"));
     await symlink(join(root, "a.md"), join(root, "linked.md"));
     await symlink(join(root, "real"), join(root, "linkdir"));
     const { notes, problems, unread } = await loadFolder(root);
@@ -193,7 +193,7 @@ describe("a folder", () => {
       "linkdir",
       "linked.md",
       "locked.md",
-      "lockeddir",
+      "lockeddir.md",
     ]);
   });
 });

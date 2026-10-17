@@ -102,6 +102,21 @@ describe("the lint", () => {
       { path: "sheets.md", message: expect.stringMatching(/5 is not a name/) },
     ]);
     expect(
+      lint(things, withNote(edit(sheets, { ...sheets.frontmatter, type: "" }))),
+    ).toEqual([
+      { path: "sheets.md", message: expect.stringMatching(/no type/) },
+    ]);
+    const loop: unknown[] = [];
+    loop.push(loop);
+    expect(
+      lint(
+        things,
+        withNote(edit(sheets, { ...sheets.frontmatter, type: loop })),
+      ),
+    ).toEqual([
+      { path: "sheets.md", message: expect.stringMatching(/is not a name/) },
+    ]);
+    expect(
       lint(
         things,
         withNote(edit(sheets, { ...sheets.frontmatter, type: ["source"] })),
@@ -109,7 +124,7 @@ describe("the lint", () => {
     ).toEqual([
       {
         path: "sheets.md",
-        message: expect.stringContaining('["source"] is not a name'),
+        message: expect.stringMatching(/source.* is not a name/),
       },
     ]);
   });
