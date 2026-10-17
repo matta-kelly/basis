@@ -204,11 +204,15 @@ export function definePackage<
         pkg.links
           .filter((link) => link.from === type)
           .map((link) => {
-            const schema =
-              link.cardinality === "one" ? wikilink : z.array(wikilink).min(1);
+            if (link.required === false) {
+              // Optional: no value, or an empty list, means none.
+              const schema =
+                link.cardinality === "one" ? wikilink : z.array(wikilink);
+              return [link.name, schema.optional()];
+            }
             return [
               link.name,
-              link.required === false ? schema.optional() : schema,
+              link.cardinality === "one" ? wikilink : z.array(wikilink).min(1),
             ];
           }),
       );
