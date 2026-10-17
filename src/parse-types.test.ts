@@ -1,5 +1,12 @@
 // The type a package's parse returns. Each check is made by the type check (tsc); no note is parsed.
 import { describe, expectTypeOf, it } from "vitest";
+import {
+  agent,
+  capability,
+  company,
+  companyCapability,
+  core,
+} from "../fixtures/layers.ts";
 import things, { source } from "../fixtures/things.ts";
 import {
   definePackage,
@@ -191,5 +198,87 @@ describe("a parsed note's type", () => {
     expectTypeOf<Link["to"]>().toEqualTypeOf<() => Type>();
     expectTypeOf<Link["cardinality"]>().toEqualTypeOf<"one" | "many">();
     expectTypeOf<Link["optional"]>().toEqualTypeOf<boolean>();
+  });
+});
+
+describe("a type that extends another, in a package that imports it", () => {
+  it("parses with the base's fields and its own, under the base's name", () => {
+    expectTypeOf(parserOf(company, "capability")).returns.toEqualTypeOf<{
+      name: string;
+      description: string;
+      type: "capability";
+      title: string;
+      stage: "idea" | "live";
+      heldBy: string;
+    }>();
+    expectTypeOf(companyCapability.name).toEqualTypeOf<"capability">();
+    expectTypeOf(companyCapability.extends).toEqualTypeOf(capability);
+  });
+
+  it("leaves the base and the imported package as they were", () => {
+    expectTypeOf(parserOf(core, "capability")).returns.toEqualTypeOf<{
+      name: string;
+      description: string;
+      type: "capability";
+      title: string;
+    }>();
+  });
+
+  it("is refused by the compiler with a field the base has, its own or of the base of every node", () => {
+    void (() =>
+      // @ts-expect-error: capability has title (the field's type is never).
+      defineType({ extends: capability, fields: { title: z.number() } }));
+    void (() =>
+      // @ts-expect-error: every node has description (the field's type is never).
+      defineType({ extends: capability, fields: { description: z.string() } }));
+  });
+
+  it("is refused by the compiler in a package that does not import its base", () => {
+    void (() =>
+      definePackage({
+        name: "p",
+        description: "d",
+        // @ts-expect-error: no package of p's imports holds the capability companyCapability extends.
+        types: { capability: companyCapability },
+      }));
+    const other = definePackage({
+      name: "other",
+      description: "d",
+      types: { agent },
+    });
+    void (() =>
+      definePackage({
+        name: "p",
+        description: "d",
+        imports: [other],
+        // @ts-expect-error: as above; other holds no capability.
+        types: { capability: companyCapability },
+      }));
+  });
+
+  it("is refused by the compiler for an imported type: parse takes the package's own types", () => {
+    // @ts-expect-error: agent is core's; a note of it is parsed by core.
+    void (() => company.parse("agent", {}));
+  });
+
+  it("cannot make a direct cycle: the compiler refuses a package used before it is defined", () => {
+    void (() => {
+      // @ts-expect-error: a's type waits on b's.
+      const a = definePackage({
+        name: "a",
+        description: "d",
+        // @ts-expect-error: b is used before it is defined.
+        imports: [b],
+        types: {},
+      });
+      // @ts-expect-error: b's type waits on a's.
+      const b = definePackage({
+        name: "b",
+        description: "d",
+        imports: [a],
+        types: {},
+      });
+      return b;
+    });
   });
 });
