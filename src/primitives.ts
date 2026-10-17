@@ -24,10 +24,35 @@ const isPrototypeName = (field: string) =>
   Object.hasOwn(Object.prototype, field);
 
 /** A pointer to another node, as a note writes it: "[[name]]". Parsed to the name. */
-export const wikilink = z
-  .string()
-  .regex(/^\[\[[a-z][a-z0-9-]*\]\]$/, 'a wikilink, "[[name]]"')
-  .transform((link) => link.slice(2, -2));
+const wikilinkOf = () =>
+  z
+    .string()
+    .regex(/^\[\[[a-z][a-z0-9-]*\]\]$/, 'a wikilink, "[[name]]"')
+    .transform((link) => link.slice(2, -2));
+export const wikilink = wikilinkOf();
+
+/**
+ * A schema, the schemas inside it, and their defs: found by walking each def's values, its arrays and plain objects.
+ * A method chained on a schema wraps it, or makes a clone that keeps its def or the schemas inside it.
+ */
+function partsOf(schema: z.ZodType): object[] {
+  const found = new Set<object>();
+  const walk = (value: unknown) => {
+    if (typeof value !== "object" || value === null || found.has(value)) return;
+    if (value instanceof z.ZodType) {
+      found.add(value);
+      walk(value._zod.def);
+    } else if (
+      Array.isArray(value) ||
+      [Object.prototype, null].includes(Object.getPrototypeOf(value))
+    ) {
+      found.add(value);
+      Object.values(value).forEach(walk);
+    }
+  };
+  walk(schema);
+  return [...found];
+}
 
 /** A kind of node: its fields beside the base, and the one closed schema they make. */
 export type Type = {
@@ -65,22 +90,26 @@ export type Link = { to: () => Type; cardinality: "one" | "many" };
 /** The target of each link schema, kept beside the schema and not in its type. */
 const links = new WeakMap<object, Link>();
 
+/** Each part of each link schema. Each link is made of new schemas, so a part is in no other schema but one made from the link. */
+const linkParts = new WeakSet<object>();
+
 function link<S extends z.ZodType>(schema: S, target: Link): S {
   links.set(schema, target);
+  for (const part of partsOf(schema)) linkParts.add(part);
   return schema;
 }
 
 /** A link to one node. */
 export const one = (to: () => Type) =>
-  link(wikilink.clone(), { to, cardinality: "one" });
+  link(wikilinkOf(), { to, cardinality: "one" });
 
 /** A link to one or more nodes. */
 export const many = (to: () => Type) =>
-  link(z.array(wikilink).min(1), { to, cardinality: "many" });
+  link(z.array(wikilinkOf()).min(1), { to, cardinality: "many" });
 
 /** A link to any number of nodes: no value and an empty list both mean none. */
 export const manyOrNone = (to: () => Type) =>
-  link(z.array(wikilink).optional(), { to, cardinality: "many" });
+  link(z.array(wikilinkOf()).optional(), { to, cardinality: "many" });
 
 /** The links that start from a type: each of its fields made by one, many or manyOrNone. */
 export const linksOf = (type: Type) =>
@@ -115,6 +144,18 @@ function typeProblems(type: Type): string[] {
   if (notSchemas.length > 0)
     problems.push(
       `The type ${type.name} has ${notSchemas.join(", ")}, which is not a zod schema.`,
+    );
+  const holdLinks = Object.entries(type.fields)
+    .filter(
+      ([, field]) =>
+        field instanceof z.ZodType &&
+        !links.has(field) &&
+        partsOf(field).some((part) => linkParts.has(part)),
+    )
+    .map(([field]) => field);
+  if (holdLinks.length > 0)
+    problems.push(
+      `The type ${type.name} has ${holdLinks.join(", ")}, which holds a link but is not one: a link is one, many or manyOrNone with no method chained, and an optional many link is manyOrNone.`,
     );
   const prototypeNames = Object.keys(type.fields).filter(isPrototypeName);
   if (prototypeNames.length > 0) {
