@@ -24,10 +24,10 @@ printf -- '---\ntype: source\nrole: entry\n---\n' >notes/elm.md
 
 node --input-type=module -e '
 import * as z from "zod";
-import { defineType, definePackage, lintFolder } from "basis";
+import { defineType, defineSchema, lintFolder } from "basis";
 const source = defineType({ name: "source", description: "A place data lives.", fields: { role: z.enum(["entry", "record"]) } });
-const pkg = definePackage({ name: "things", description: "Where data lives.", types: { source } });
-const problems = await lintFolder(pkg, "notes");
+const schema = defineSchema({ name: "things", description: "Where data lives.", types: { source } });
+const problems = await lintFolder(schema, "notes");
 console.log(problems);
 if (problems.length !== 1 || !problems[0].path.endsWith("elm.md")) process.exit(1);
 '

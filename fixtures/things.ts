@@ -1,7 +1,7 @@
-// A small package for the tests: three types from the lotusandluna ontology, and the links between them.
+// A small schema for the tests: three types from the lotusandluna ontology, and the links between them.
 import * as z from "zod";
 import {
-  definePackage,
+  defineSchema,
   defineType,
   many,
   manyOrNone,
@@ -30,7 +30,7 @@ export const object = defineType({
     issues: z.array(z.string().min(1)).optional(),
     // The sources that hold it.
     livesIn: many(() => source),
-    // Its outside copies. The type is defined below: the package reads the thunk.
+    // Its outside copies. The type is defined below: the schema reads the thunk.
     representedAs: manyOrNone(() => externalObject),
   },
 });
@@ -46,7 +46,7 @@ export const externalObject = defineType({
   },
 });
 
-export default definePackage({
+export default defineSchema({
   name: "things",
   description: "What exists, and where.",
   types: { source, object, "external-object": externalObject },

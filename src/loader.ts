@@ -4,7 +4,7 @@ import { parseDocument } from "yaml";
 
 /**
  * The loader: notes in, as text, and each one out as data. It reads, and judges nothing a
- * package says; that is the lint's work.
+ * schema says; that is the lint's work.
  */
 
 /** One note: where it is, its name, and what it says. */

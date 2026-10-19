@@ -1,6 +1,6 @@
 /**
- * The lint: notes and a package in, problems out. It changes nothing. The notes are checked against the package and
- * the packages it imports, as one set.
+ * The lint: notes and a schema in, problems out. It changes nothing. The notes are checked against the schema and
+ * the schemas it imports, as one set.
  * Each note is parsed by its type, and each link it writes must point at a note of the type the link points at.
  */
 
@@ -13,7 +13,7 @@ import {
   linksOf,
   seenTypes,
   wikilink,
-  type Package,
+  type Schema,
   type Type,
 } from "./primitives.ts";
 
@@ -44,17 +44,17 @@ const linkNames = (value: unknown): string[] =>
     return name.success ? [name.data] : [];
   });
 
-/** The types a package sees, its own and its imports', with the package that holds each. */
-type Seen = Map<string, { type: Type; owner: Package }>;
+/** The types a schema sees, its own and its imports', with the schema that holds each. */
+type Seen = Map<string, { type: Type; owner: Schema }>;
 
-/** The note's type, with the package that holds it, if the package or its imports have it. */
+/** The note's type, with the schema that holds it, if the schema or its imports have it. */
 const noteType = (seen: Seen, note: Note) => {
   const type = note.frontmatter.type;
   return typeof type === "string" ? seen.get(type) : undefined;
 };
 
 function noteProblems(
-  pkg: Package,
+  schema: Schema,
   seen: Seen,
   note: Note,
   byName: Map<string, Note[]>,
@@ -78,12 +78,12 @@ function noteProblems(
     return [
       ...problems,
       problem(
-        `The type ${type} is not a type of the package ${pkg.name} or its imports.`,
+        `The type ${type} is not a type of the schema ${schema.name} or its imports.`,
       ),
     ];
 
   try {
-    // By the package that holds the type: a note of an imported type is that package's.
+    // By the schema that holds the type: a note of an imported type is that schema's.
     at.owner.parse(type, { ...note.frontmatter, name: note.name });
   } catch (error) {
     if (!(error instanceof z.ZodError)) throw error;
@@ -103,7 +103,7 @@ function noteProblems(
           ),
         );
       } else if (
-        // A note with no type of the package has that problem itself.
+        // A note with no type of the schema has that problem itself.
         targets.every((t) => noteType(seen, t)) &&
         !targets.some((t) => to.some((type) => t.frontmatter.type === type))
       ) {
@@ -165,12 +165,12 @@ function keyProblems(seen: Seen, notes: Note[]): Problem[] {
 }
 
 /**
- * What is wrong with the notes, by the package, in path order. `unread` holds the paths of
+ * What is wrong with the notes, by the schema, in path order. `unread` holds the paths of
  * notes that exist but could not be read: a link to one is not a problem, unless a read note has
  * its name, and a read note with its name is a duplicate.
  */
 export function lint(
-  pkg: Package,
+  schema: Schema,
   notes: Note[],
   unread: string[] = [],
 ): Problem[] {
@@ -180,9 +180,9 @@ export function lint(
     unreadByName.set(name, [...(unreadByName.get(name) ?? []), path]);
   }
   const unreadNames = new Set(unreadByName.keys());
-  // The package's own check once: a note of an imported type is parsed by its own package, not by this one.
-  checked(pkg);
-  const seen: Seen = seenTypes<Package>(pkg);
+  // The schema's own check once: a note of an imported type is parsed by its own schema, not by this one.
+  checked(schema);
+  const seen: Seen = seenTypes<Schema>(schema);
   const byName = new Map<string, Note[]>();
   for (const note of notes)
     byName.set(note.name, [...(byName.get(note.name) ?? []), note]);
@@ -202,16 +202,16 @@ export function lint(
     }
   }
   for (const note of notes)
-    problems.push(...noteProblems(pkg, seen, note, byName, unreadNames));
+    problems.push(...noteProblems(schema, seen, note, byName, unreadNames));
   problems.push(...keyProblems(seen, notes));
   return problems.sort(byPath);
 }
 
 /** A folder, loaded and linted: the loader's problems and the lint's, in path order. */
 export async function lintFolder(
-  pkg: Package,
+  schema: Schema,
   folder: string,
 ): Promise<Problem[]> {
   const { notes, problems, unread } = await loadFolder(folder);
-  return [...problems, ...lint(pkg, notes, unread)].sort(byPath);
+  return [...problems, ...lint(schema, notes, unread)].sort(byPath);
 }

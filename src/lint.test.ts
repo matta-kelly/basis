@@ -7,7 +7,7 @@ import * as z from "zod";
 import { company, core } from "../fixtures/layers.ts";
 import things from "../fixtures/things.ts";
 import {
-  definePackage,
+  defineSchema,
   defineType,
   extendType,
   lint,
@@ -89,7 +89,7 @@ describe("the lint", () => {
     }
   });
 
-  it("gives a problem for a note whose type the package does not have, or is a name the object prototype has, or with no type", () => {
+  it("gives a problem for a note whose type the schema does not have, or is a name the object prototype has, or with no type", () => {
     expect(
       lint(
         things,
@@ -148,7 +148,7 @@ describe("the lint", () => {
     ]);
   });
 
-  it("checks the links of a note that fails its schema", () => {
+  it("checks the links of a note that fails the zod schema of its type", () => {
     const problems = lint(
       things,
       withNote(
@@ -260,14 +260,14 @@ describe("the lint", () => {
   });
 });
 
-describe("the lint of a package whose name is not a slug", () => {
+describe("the lint of a schema whose name is not a slug", () => {
   it("throws once, and gives no field problem to each note", () => {
     const named = { ...things, name: "My Things" };
-    expect(() => lint(named, right)).toThrow(/package My Things/);
+    expect(() => lint(named, right)).toThrow(/schema My Things/);
   });
 });
 
-describe("the lint of a package that imports another", () => {
+describe("the lint of a schema that imports another", () => {
   const ana = note("ana.md", {
     type: "agent",
     description: "The agent that ships.",
@@ -291,12 +291,12 @@ describe("the lint of a package that imports another", () => {
     edit(n, { ...n.frontmatter, ...frontmatter }),
   ];
 
-  it("gives no problems for notes of both packages that are right", () => {
+  it("gives no problems for notes of both schemas that are right", () => {
     expect(lint(company, layered)).toEqual([]);
   });
 
-  it("resolves a link to an imported base that the package extends", () => {
-    const reviews = definePackage({
+  it("resolves a link to an imported base that the schema extends", () => {
+    const reviews = defineSchema({
       name: "reviews",
       description: "d",
       imports: [core],
@@ -332,7 +332,7 @@ describe("the lint of a package that imports another", () => {
     ]);
   });
 
-  it("checks its package once at the start, though every note is of an imported type", () => {
+  it("checks its schema once at the start, though every note is of an imported type", () => {
     const broken = {
       ...company,
       types: {
@@ -359,7 +359,7 @@ describe("the lint of a package that imports another", () => {
     ]);
   });
 
-  it("gives a problem for a link to no note, and to a note of the wrong type, across the two packages", () => {
+  it("gives a problem for a link to no note, and to a note of the wrong type, across the two schemas", () => {
     expect(lint(company, changed(ship, { heldBy: "[[nobody]]" }))).toEqual([
       {
         path: "ship.md",
@@ -388,12 +388,12 @@ describe("the lint of a package that imports another", () => {
     ]);
   });
 
-  it("gives a problem for a note of a type of neither the package nor its imports, and none to a link to it", () => {
+  it("gives a problem for a note of a type of neither the schema nor its imports, and none to a link to it", () => {
     expect(lint(company, changed(ana, { type: "verb" }))).toEqual([
       {
         path: "ana.md",
         message: expect.stringMatching(
-          /verb is not a type of the package company or its imports/,
+          /verb is not a type of the schema company or its imports/,
         ),
       },
     ]);
@@ -402,7 +402,7 @@ describe("the lint of a package that imports another", () => {
 
 describe("the lint of a type with a key", () => {
   // Like cc's capability on que's: one capability for each agent and its name there.
-  const keyed = definePackage({
+  const keyed = defineSchema({
     name: "keyed",
     description: "d",
     imports: [core],
@@ -482,13 +482,13 @@ describe("the lint of two types with a key", () => {
         fields: { code: z.string() },
         key: ["code"],
       });
-    const pkg = definePackage({
+    const schema = defineSchema({
       name: "p",
       description: "d",
       types: { a: keyedType("a"), b: keyedType("b") },
     });
     expect(
-      lint(pkg, [
+      lint(schema, [
         note("one.md", { type: "a", description: "d", code: "x" }),
         note("two.md", { type: "b", description: "d", code: "x" }),
       ]),
@@ -513,7 +513,7 @@ describe("the lint of a link with several targets", () => {
     },
     key: ["heldBy", "localName"],
   });
-  const pkg = definePackage({
+  const schema = defineSchema({
     name: "p",
     description: "d",
     types: { source, domain, verb, capability },
@@ -539,7 +539,7 @@ describe("the lint of a link with several targets", () => {
 
   it("gives no problem for a link to a note of any of its types", () => {
     expect(
-      lint(pkg, [
+      lint(schema, [
         ...notes,
         capabilityNote("a.md", "odoo"),
         capabilityNote("b.md", "pim"),
@@ -549,7 +549,7 @@ describe("the lint of a link with several targets", () => {
 
   it("gives a problem for a note of another type that names each type, and for a name that is no note", () => {
     expect(
-      lint(pkg, [
+      lint(schema, [
         ...notes,
         capabilityNote("a.md", "push"),
         capabilityNote("b.md", "nobody"),
@@ -569,7 +569,7 @@ describe("the lint of a link with several targets", () => {
 
   it("gives a problem for one name of a list that is a note of another type, naming each type", () => {
     expect(
-      lint(pkg, [
+      lint(schema, [
         ...notes,
         capabilityNote("a.md", "odoo", "ship", ["[[pim]]", "[[push]]"]),
       ]),
@@ -585,7 +585,7 @@ describe("the lint of a link with several targets", () => {
   it("is a key field, compared by the name it points at", () => {
     const key = 'heldBy "pim", localName "ship"';
     expect(
-      lint(pkg, [
+      lint(schema, [
         ...notes,
         capabilityNote("a.md", "pim"),
         capabilityNote("b.md", "pim"),

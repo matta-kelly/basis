@@ -1,7 +1,7 @@
-// Two packages for the tests, one on the other: core, like que's ontology, and company, like cc's,
+// Two schemas for the tests, one on the other: core, like que's ontology, and company, like cc's,
 // which imports core, extends its capability and links to its agent.
 import * as z from "zod";
-import { definePackage, defineType, extendType, one } from "../src/index.ts";
+import { defineSchema, defineType, extendType, one } from "../src/index.ts";
 
 export const agent = defineType({
   name: "agent",
@@ -22,7 +22,7 @@ export const kase = defineType({
   fields: { capability: one(() => capability) },
 });
 
-export const core = definePackage({
+export const core = defineSchema({
   name: "core",
   description: "Agents, capabilities and their cases.",
   types: { agent, capability, case: kase },
@@ -36,7 +36,7 @@ export const companyCapability = extendType(core.types.capability, {
   },
 });
 
-export const company = definePackage({
+export const company = defineSchema({
   name: "company",
   description: "The company's capabilities, on core's.",
   imports: [core],
