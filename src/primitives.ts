@@ -102,7 +102,8 @@ export function defineType<
   const made = Object.freeze({
     name: type.name,
     description: type.description,
-    // The fields last: spread before them, the literal keeps its type. A field named type is refused by the schema.
+    // The fields last: spread before them, the literal keeps its type. A field named type is refused by the schema
+    // that holds the type.
     schema: z.strictObject({ ...base, type: z.literal(type.name), ...fields }),
     key: keyCopy(type.key),
   });

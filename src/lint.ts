@@ -119,7 +119,7 @@ function noteProblems(
 }
 
 /**
- * Two notes of one type with one key: a problem on each, naming the others. Each key field is parsed by its own
+ * Two notes of one type with one key: a problem on each, naming the others. Each key field is parsed by its own zod
  * schema, so a link is the name it points at, a note with a problem in another field is compared, and a note whose
  * key field has a problem is not: it has that problem.
  */
