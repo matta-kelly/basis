@@ -1,7 +1,7 @@
 ---
 type: object
 description: "Lives nowhere."
-key: cotton_code
+key: bun_code
 livesIn: ["[[nowhere]]"]
 states: [drafted]
 ---

@@ -51,11 +51,11 @@ describe("a note", () => {
   it("is read into its name, from the file name, its frontmatter and its body", () => {
     const text =
       '---\ntype: source\ndescription: "Where data lives."\nrole: entry\n---\nThe body.\n';
-    expect(readNote("sources/sheets.md", text)).toEqual({
+    expect(readNote("sources/slate.md", text)).toEqual({
       ok: true,
       note: {
-        path: "sources/sheets.md",
-        name: "sheets",
+        path: "sources/slate.md",
+        name: "slate",
         frontmatter: {
           type: "source",
           description: "Where data lives.",
@@ -67,9 +67,9 @@ describe("a note", () => {
   });
 
   it("keeps a link as the note writes it, for the schema to parse", () => {
-    const read = readNote("a.md", '---\nlivesIn: ["[[sheets]]"]\n---\n');
+    const read = readNote("a.md", '---\nlivesIn: ["[[slate]]"]\n---\n');
     expect(read).toMatchObject({
-      note: { frontmatter: { livesIn: ["[[sheets]]"] } },
+      note: { frontmatter: { livesIn: ["[[slate]]"] } },
     });
   });
 
@@ -126,9 +126,9 @@ describe("a folder", () => {
     const { notes, problems, unread } = await loadFolder(folder);
     expect(notes.map((note) => note.path)).toEqual([
       "empty.md",
-      "fabric.md",
+      "loaf.md",
       "plain.md",
-      "sources/sheets.md",
+      "sources/slate.md",
     ]);
     expect(problems.map((problem) => problem.path)).toEqual([
       "broken.md",
@@ -140,17 +140,17 @@ describe("a folder", () => {
 
   it("gives each note its frontmatter as the file has it", async () => {
     const { notes } = await loadFolder(folder);
-    expect(notes.find((note) => note.name === "fabric")).toEqual({
-      path: "fabric.md",
-      name: "fabric",
+    expect(notes.find((note) => note.name === "loaf")).toEqual({
+      path: "loaf.md",
+      name: "loaf",
       frontmatter: {
         type: "object",
-        description: "One print on one cloth. A swatch.",
-        key: "fabric_code",
-        livesIn: ["[[sheets]]", "[[warehouse]]"],
+        description: "One bake of one dough. A crust.",
+        key: "loaf_code",
+        livesIn: ["[[slate]]", "[[daybook]]"],
         states: ["drafted", "complete", "synced", "stale"],
       },
-      body: "One print on one cloth.\n",
+      body: "One bake of one dough.\n",
     });
   });
 

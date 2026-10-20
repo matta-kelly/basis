@@ -1,4 +1,4 @@
-// Two schemas for the tests, one on the other: core, like que's ontology, and company, like cc's,
+// Two schemas for the tests, one on the other: core, like que's ontology, and company, like one company's own,
 // which imports core, extends its capability and links to its agent.
 import * as z from "zod";
 import { defineSchema, defineType, extendType, one } from "../src/index.ts";

@@ -1,5 +1,5 @@
 ---
 type: source
-description: "The ERP."
+description: "The shop's till."
 role: projection
 ---

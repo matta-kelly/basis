@@ -20,40 +20,40 @@ import {
   type Type,
 } from "./index.ts";
 
-// The frontmatter of four notes in ~/cc/ontology, as it is in the notes, with `name` added
+// The frontmatter of four notes of a made-up bakery, as a note would have it, with `name` added
 // from the file name, as the loader gives it.
-const fabric = {
-  name: "fabric",
+const loaf = {
+  name: "loaf",
   type: "object",
-  description: "One print on one cloth. A swatch.",
-  key: "fabric_code",
-  livesIn: ["[[sheets]]", "[[warehouse]]"],
-  schema: "packages/warehouse/schema.ts#Fabric",
+  description: "One bake of one dough. A crust.",
+  key: "loaf_code",
+  livesIn: ["[[slate]]", "[[daybook]]"],
+  schema: "packages/daybook/schema.ts#Loaf",
   states: ["drafted", "complete", "synced", "stale"],
   derived: ["synced", "stale"],
-  representedAs: ["[[odoo-attribute-value]]"],
+  representedAs: ["[[till-item]]"],
 };
-const sheets = {
-  name: "sheets",
+const slate = {
+  name: "slate",
   type: "source",
   description:
-    "Where product information is typed: Google Sheets, the Product Data sheet. One tab per table, loose on purpose.",
+    "Where recipes are written: the chalk slate by the door. One line per recipe, loose on purpose.",
   role: "entry",
 };
-const attributeValue = {
-  name: "odoo-attribute-value",
+const tillItem = {
+  name: "till-item",
   type: "external-object",
   description:
-    "A fabric as Odoo holds it: a value of the print attribute its material picks.",
-  heldIn: "[[odoo]]",
-  schema: "packages/odoo/schema.ts#AttributeValue",
+    "A loaf as the till holds it: a line of the menu its recipe picks.",
+  heldIn: "[[till]]",
+  schema: "packages/till/schema.ts#TillItem",
 };
 
-const faire = {
-  name: "faire",
+const market = {
+  name: "market",
   type: "source",
   description:
-    "The wholesale marketplace. A projection; no connector is built yet.",
+    "The weekly market stall. A projection; no connector is built yet.",
   role: "projection",
   kind: "marketplace",
 };
@@ -63,43 +63,43 @@ const without = (node: Record<string, unknown>, field: string) =>
 
 describe("a node", () => {
   it("parses with the base, its type's properties and its links, and its links come back as names", () => {
-    expect(things.parse("object", fabric)).toEqual({
-      ...fabric,
-      livesIn: ["sheets", "warehouse"],
-      representedAs: ["odoo-attribute-value"],
+    expect(things.parse("object", loaf)).toEqual({
+      ...loaf,
+      livesIn: ["slate", "daybook"],
+      representedAs: ["till-item"],
     });
-    expect(things.parse("source", sheets)).toEqual(sheets);
-    expect(things.parse("source", faire)).toEqual(faire);
-    expect(things.parse("external-object", attributeValue)).toEqual({
-      ...attributeValue,
-      heldIn: "odoo",
+    expect(things.parse("source", slate)).toEqual(slate);
+    expect(things.parse("source", market)).toEqual(market);
+    expect(things.parse("external-object", tillItem)).toEqual({
+      ...tillItem,
+      heldIn: "till",
     });
     expect(
       things.parse("external-object", {
-        ...attributeValue,
+        ...tillItem,
         issues: ["a known gap"],
       }),
     ).toMatchObject({ issues: ["a known gap"] });
   });
 
   it("parses with an optional link absent or empty, and is refused with a required link absent", () => {
-    expect(things.parse("object", without(fabric, "representedAs"))).toEqual({
-      ...without(fabric, "representedAs"),
-      livesIn: ["sheets", "warehouse"],
+    expect(things.parse("object", without(loaf, "representedAs"))).toEqual({
+      ...without(loaf, "representedAs"),
+      livesIn: ["slate", "daybook"],
     });
-    expect(things.parse("object", { ...fabric, representedAs: [] })).toEqual({
-      ...fabric,
-      livesIn: ["sheets", "warehouse"],
+    expect(things.parse("object", { ...loaf, representedAs: [] })).toEqual({
+      ...loaf,
+      livesIn: ["slate", "daybook"],
       representedAs: [],
     });
-    expect(() => things.parse("object", without(fabric, "livesIn"))).toThrow(
+    expect(() => things.parse("object", without(loaf, "livesIn"))).toThrow(
       /livesIn/,
     );
   });
 
   it("is refused with an optional link written with no value (null), which is not an absent key", () => {
     expect(() =>
-      things.parse("object", { ...fabric, representedAs: null }),
+      things.parse("object", { ...loaf, representedAs: null }),
     ).toThrow(/representedAs/);
   });
 
@@ -116,35 +116,31 @@ describe("a node", () => {
     });
     const node = { name: "n", type: "near", description: "d" };
     expect(schema.parse("near", node)).toEqual(node);
-    expect(schema.parse("near", { ...node, to: "[[sheets]]" })).toEqual({
+    expect(schema.parse("near", { ...node, to: "[[slate]]" })).toEqual({
       ...node,
-      to: "sheets",
+      to: "slate",
     });
-    for (const to of [null, [], ["[[sheets]]"], "sheets"])
+    for (const to of [null, [], ["[[slate]]"], "slate"])
       expect(() => schema.parse("near", { ...node, to })).toThrow(/to/);
   });
 
   it("is refused with a field its type does not declare", () => {
-    expect(() => things.parse("object", { ...fabric, colour: "blue" })).toThrow(
+    expect(() => things.parse("object", { ...loaf, colour: "blue" })).toThrow(
       /colour/,
     );
   });
 
   it("is refused with a field of the base or of its type missing", () => {
-    expect(() =>
-      things.parse("object", without(fabric, "description")),
-    ).toThrow(/description/);
-    expect(() => things.parse("object", without(fabric, "type"))).toThrow(
-      /type/,
+    expect(() => things.parse("object", without(loaf, "description"))).toThrow(
+      /description/,
     );
-    expect(() => things.parse("object", without(fabric, "key"))).toThrow(/key/);
-    expect(() => things.parse("object", without(fabric, "name"))).toThrow(
-      /name/,
-    );
+    expect(() => things.parse("object", without(loaf, "type"))).toThrow(/type/);
+    expect(() => things.parse("object", without(loaf, "key"))).toThrow(/key/);
+    expect(() => things.parse("object", without(loaf, "name"))).toThrow(/name/);
   });
 
   it("is refused when its type is not the type it is parsed as", () => {
-    expect(() => things.parse("object", { ...fabric, type: "source" })).toThrow(
+    expect(() => things.parse("object", { ...loaf, type: "source" })).toThrow(
       /type/,
     );
   });
@@ -152,44 +148,44 @@ describe("a node", () => {
   it("is refused with a list in a one link", () => {
     expect(() =>
       things.parse("external-object", {
-        ...attributeValue,
-        heldIn: ["[[odoo]]"],
+        ...tillItem,
+        heldIn: ["[[till]]"],
       }),
     ).toThrow(/heldIn/);
   });
 
   it("is refused with no names in a many link", () => {
-    expect(() => things.parse("object", { ...fabric, livesIn: [] })).toThrow(
+    expect(() => things.parse("object", { ...loaf, livesIn: [] })).toThrow(
       /livesIn/,
     );
   });
 
   it("is refused with a link that is not a wikilink", () => {
     expect(() =>
-      things.parse("object", { ...fabric, livesIn: ["sheets"] }),
+      things.parse("object", { ...loaf, livesIn: ["slate"] }),
     ).toThrow(/livesIn/);
     expect(() =>
-      things.parse("external-object", { ...attributeValue, heldIn: "odoo" }),
+      things.parse("external-object", { ...tillItem, heldIn: "till" }),
     ).toThrow(/heldIn/);
   });
 
   it("is refused with a link that starts from another type", () => {
     expect(() =>
-      things.parse("source", { ...sheets, livesIn: ["[[odoo]]"] }),
+      things.parse("source", { ...slate, livesIn: ["[[till]]"] }),
     ).toThrow(/livesIn/);
   });
 
   it("is refused with a name that is not a slug", () => {
-    expect(() => things.parse("source", { ...sheets, name: "Sheets" })).toThrow(
+    expect(() => things.parse("source", { ...slate, name: "Slate" })).toThrow(
       /name/,
     );
   });
 
   it("is refused for a type the schema does not hold, or a name the object prototype has, by code without types", () => {
     // @ts-expect-error: the compiler refuses verb too; this is the check for code without types.
-    expect(() => things.parse("verb", fabric)).toThrow(/verb/);
+    expect(() => things.parse("verb", loaf)).toThrow(/verb/);
     // @ts-expect-error: as above.
-    expect(() => things.parse("constructor", fabric)).toThrow(/constructor/);
+    expect(() => things.parse("constructor", loaf)).toThrow(/constructor/);
   });
 });
 
@@ -220,7 +216,7 @@ describe("a schema", () => {
   });
 
   it("is refused with a field, a property or a link, whose name is not a camelCase key", () => {
-    for (const field of ["", "Fabric Code", "fabric_code", "FabricCode"]) {
+    for (const field of ["", "Loaf Code", "loaf_code", "LoafCode"]) {
       expect(() => withType(plainType({ [field]: z.string() }))).toThrow(
         /camelCase/,
       );
@@ -228,9 +224,7 @@ describe("a schema", () => {
     expect(() =>
       withType(plainType({ "Lives In": one(() => source) })),
     ).toThrow(/Lives In/);
-    expect(() =>
-      withType(plainType({ fabricCode2: z.string() })),
-    ).not.toThrow();
+    expect(() => withType(plainType({ loafCode2: z.string() }))).not.toThrow();
   });
 
   it("is refused with a field, a property or a link, that redefines a field of the base, or has a name the object prototype has", () => {
@@ -254,7 +248,7 @@ describe("a schema", () => {
       many(() => source).optional(),
       one(() => source).optional(),
       one(() => source).describe("The source near it."),
-      one(() => source).refine((name) => name !== "odoo"),
+      one(() => source).refine((name) => name !== "till"),
       many(() => source).min(2),
       manyOrNone(() => source).nullable(),
       z.array(one(() => source)),
@@ -373,7 +367,7 @@ describe("a schema", () => {
 });
 
 describe("a type", () => {
-  const node = { name: "n", type: "t", description: "d", to: "[[sheets]]" };
+  const node = { name: "n", type: "t", description: "d", to: "[[slate]]" };
 
   it("keeps its fields as they were when it was made, though the caller's fields object changes", () => {
     const fields: Record<string, z.ZodType> = { to: one(() => source) };
@@ -385,7 +379,7 @@ describe("a type", () => {
       types: { source, t },
     });
     expect(linksOf(t).map((link) => link.name)).toEqual(["to"]);
-    expect(schema.parse("t", node)).toEqual({ ...node, to: "sheets" });
+    expect(schema.parse("t", node)).toEqual({ ...node, to: "slate" });
   });
 
   it("reads a getter in its fields once", () => {
@@ -406,7 +400,7 @@ describe("a type", () => {
       types: { source, t },
     });
     expect(linksOf(t).map((link) => link.name)).toEqual(["to"]);
-    expect(schema.parse("t", node)).toEqual({ ...node, to: "sheets" });
+    expect(schema.parse("t", node)).toEqual({ ...node, to: "slate" });
     expect(reads).toBe(1);
   });
 
@@ -579,24 +573,24 @@ describe("a schema's types", () => {
     expect(() => {
       wide.source = other;
     }).toThrow(TypeError);
-    const sheets = {
-      name: "sheets",
+    const slate = {
+      name: "slate",
       type: "source",
       description: "d",
       role: "entry",
     };
-    expect(schema.parse("source", sheets)).toEqual(sheets);
+    expect(schema.parse("source", slate)).toEqual(slate);
     const spread = { ...schema, types: { ...schema.types } };
-    spread.parse("source", sheets);
+    spread.parse("source", slate);
     expect(Object.isFrozen(spread.types)).toBe(true);
   });
 });
 
 describe("a schema spread with other types", () => {
-  const sheets = {
-    name: "sheets",
+  const slate = {
+    name: "slate",
     type: "source",
-    description: "Where product information is typed.",
+    description: "Where recipes are written.",
   };
   const other = defineType({
     name: "source",
@@ -611,11 +605,11 @@ describe("a schema spread with other types", () => {
 
   it("parses by its own types", () => {
     const spread = { ...schema, types: { ...schema.types, source: other } };
-    expect(spread.parse("source", { ...sheets, place: "here" })).toEqual({
-      ...sheets,
+    expect(spread.parse("source", { ...slate, place: "here" })).toEqual({
+      ...slate,
       place: "here",
     });
-    expect(() => spread.parse("source", { ...sheets, role: "entry" })).toThrow(
+    expect(() => spread.parse("source", { ...slate, role: "entry" })).toThrow(
       /role/,
     );
   });
@@ -631,9 +625,9 @@ describe("a schema spread with other types", () => {
         },
       },
     };
-    expect(() => made.parse("source", sheets)).toThrow(/defineType/);
+    expect(() => made.parse("source", slate)).toThrow(/defineType/);
     const cut = { ...things, types: { ...things.types, source: other } };
-    expect(() => cut.parse("source", { ...sheets, place: "here" })).toThrow(
+    expect(() => cut.parse("source", { ...slate, place: "here" })).toThrow(
       /livesIn.*source/,
     );
   });
