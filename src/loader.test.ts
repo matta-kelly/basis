@@ -66,7 +66,7 @@ describe("a note", () => {
     });
   });
 
-  it("keeps a link as the note writes it, for the package to parse", () => {
+  it("keeps a link as the note writes it, for the schema to parse", () => {
     const read = readNote("a.md", '---\nlivesIn: ["[[sheets]]"]\n---\n');
     expect(read).toMatchObject({
       note: { frontmatter: { livesIn: ["[[sheets]]"] } },

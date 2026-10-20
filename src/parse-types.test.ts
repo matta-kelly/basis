@@ -1,4 +1,4 @@
-// The type a package's parse returns. Each check is made by the type check (tsc); no note is parsed.
+// The type a schema's parse returns. Each check is made by the type check (tsc); no note is parsed.
 import { describe, expectTypeOf, it } from "vitest";
 import {
   agent,
@@ -9,7 +9,7 @@ import {
 } from "../fixtures/layers.ts";
 import things, { source } from "../fixtures/things.ts";
 import {
-  definePackage,
+  defineSchema,
   defineType,
   extendType,
   many,
@@ -18,20 +18,19 @@ import {
   one,
   oneOrNone,
   type Link,
-  type Package,
+  type Schema,
   type Type,
 } from "./index.ts";
 import * as z from "zod";
 
-// What a call to parse returns, for a package and a type name.
+// What a call to parse returns, for a schema and a type name.
 const parserOf =
-  <P extends Package, N extends keyof P["types"] & string>(pkg: P, type: N) =>
+  <P extends Schema, N extends keyof P["types"] & string>(schema: P, type: N) =>
   (node: unknown) =>
-    pkg.parse(type, node);
-type Parsed<
-  P extends Package,
-  N extends keyof P["types"] & string,
-> = ReturnType<ReturnType<typeof parserOf<P, N>>>;
+    schema.parse(type, node);
+type Parsed<P extends Schema, N extends keyof P["types"] & string> = ReturnType<
+  ReturnType<typeof parserOf<P, N>>
+>;
 
 type ObjectNote = Parsed<typeof things, "object">;
 type ExternalNote = Parsed<typeof things, "external-object">;
@@ -64,12 +63,12 @@ describe("a parsed note's type", () => {
       description: "d",
       fields: { to: oneOrNone(() => source) },
     });
-    const pkg = definePackage({
+    const schema = defineSchema({
       name: "p",
       description: "d",
       types: { source, near },
     });
-    expectTypeOf(parserOf(pkg, "near"))
+    expectTypeOf(parserOf(schema, "near"))
       .returns.toHaveProperty("to")
       .toEqualTypeOf<string | undefined>();
   });
@@ -79,20 +78,20 @@ describe("a parsed note's type", () => {
     expectTypeOf<SourceNote>().not.toHaveProperty("heldIn");
   });
 
-  it("is refused by the compiler for a type the package does not have", () => {
+  it("is refused by the compiler for a type the schema does not have", () => {
     // @ts-expect-error: things has no type verb.
     void (() => things.parse("verb", {}));
   });
 
   it("has no field but the base for a type with no fields", () => {
     const thing = defineType({ name: "thing", description: "d", fields: {} });
-    const pkg = definePackage({
+    const schema = defineSchema({
       name: "p",
       description: "d",
       types: { thing },
     });
-    type Thing = Parsed<typeof pkg, "thing">;
-    expectTypeOf(parserOf(pkg, "thing")).returns.toEqualTypeOf<{
+    type Thing = Parsed<typeof schema, "thing">;
+    expectTypeOf(parserOf(schema, "thing")).returns.toEqualTypeOf<{
       name: string;
       description: string;
       type: "thing";
@@ -109,10 +108,10 @@ describe("a parsed note's type", () => {
     expectTypeOf<ReturnType<typeof either>["livesIn"]>().toBeUnknown();
   });
 
-  it("is a record of unknown fields to code that takes any package, and any package is a Package", () => {
-    const parseAny = (pkg: Package) => pkg.parse("object", {});
+  it("is a record of unknown fields to code that takes any schema, and any schema is a Schema", () => {
+    const parseAny = (schema: Schema) => schema.parse("object", {});
     expectTypeOf(parseAny).returns.toEqualTypeOf<Record<string, unknown>>();
-    expectTypeOf(things).toExtend<Package>();
+    expectTypeOf(things).toExtend<Schema>();
   });
 
   it("holds nothing for a link chosen at run time that may be optional", () => {
@@ -123,12 +122,12 @@ describe("a parsed note's type", () => {
       description: "d",
       fields: { to: pick(true) },
     });
-    const pkg = definePackage({
+    const schema = defineSchema({
       name: "p",
       description: "d",
       types: { source, near },
     });
-    expectTypeOf(parserOf(pkg, "near"))
+    expectTypeOf(parserOf(schema, "near"))
       .returns.toHaveProperty("to")
       .toEqualTypeOf<string[] | undefined>();
   });
@@ -145,35 +144,39 @@ describe("a parsed note's type", () => {
       description: "d",
       fields: { a: manyOrNone(() => a) },
     });
-    const pkg = definePackage({ name: "p", description: "d", types: { a, b } });
-    expectTypeOf(parserOf(pkg, "a"))
+    const schema = defineSchema({
+      name: "p",
+      description: "d",
+      types: { a, b },
+    });
+    expectTypeOf(parserOf(schema, "a"))
       .returns.toHaveProperty("b")
       .toEqualTypeOf<string>();
-    expectTypeOf(parserOf(pkg, "b"))
+    expectTypeOf(parserOf(schema, "b"))
       .returns.toHaveProperty("a")
       .toEqualTypeOf<string[] | undefined>();
   });
 
-  it("is refused by the compiler for a package whose key for a type is not the type's name", () => {
+  it("is refused by the compiler for a schema whose key for a type is not the type's name", () => {
     void (() =>
       // @ts-expect-error: the key is other, the type's name is source.
-      definePackage({ name: "p", description: "d", types: { other: source } }));
+      defineSchema({ name: "p", description: "d", types: { other: source } }));
   });
 
-  it("follows the types of the package it is called on, so a spread package parses by its own types", () => {
+  it("follows the types of the schema it is called on, so a spread schema parses by its own types", () => {
     const other = defineType({
       name: "source",
       description: "Another source.",
       fields: { place: z.string() },
     });
-    const pkg = definePackage({
+    const schema = defineSchema({
       name: "p",
       description: "d",
       types: { source },
     });
-    const spread: Package<{ source: typeof other }> = {
-      ...pkg,
-      types: { ...pkg.types, source: other },
+    const spread: Schema<{ source: typeof other }> = {
+      ...schema,
+      types: { ...schema.types, source: other },
     };
     expectTypeOf(parserOf(spread, "source")).returns.toEqualTypeOf<{
       name: string;
@@ -183,9 +186,9 @@ describe("a parsed note's type", () => {
     }>();
   });
 
-  it("is refused by the compiler for a parse called apart from its package", () => {
+  it("is refused by the compiler for a parse called apart from its schema", () => {
     const { parse } = things;
-    // @ts-expect-error: parse reads the package it is called on.
+    // @ts-expect-error: parse reads the schema it is called on.
     void (() => parse("object", {}));
   });
 
@@ -208,7 +211,7 @@ describe("a parsed note's type", () => {
   });
 });
 
-describe("a type that extends another, in a package that imports it", () => {
+describe("a type that extends another, in a schema that imports it", () => {
   it("parses with the base's fields and its own, under the base's name", () => {
     expectTypeOf(parserOf(company, "capability")).returns.toEqualTypeOf<{
       name: string;
@@ -222,7 +225,7 @@ describe("a type that extends another, in a package that imports it", () => {
     expectTypeOf(companyCapability.extends).toEqualTypeOf(capability);
   });
 
-  it("leaves the base and the imported package as they were", () => {
+  it("leaves the base and the imported schema as they were", () => {
     expectTypeOf(parserOf(core, "capability")).returns.toEqualTypeOf<{
       name: string;
       description: string;
@@ -240,21 +243,21 @@ describe("a type that extends another, in a package that imports it", () => {
       extendType(capability, { fields: { description: z.string() } }));
   });
 
-  it("is refused by the compiler in a package that does not import its base", () => {
+  it("is refused by the compiler in a schema that does not import its base", () => {
     void (() =>
-      definePackage({
+      defineSchema({
         name: "p",
         description: "d",
-        // @ts-expect-error: no package of p's imports holds the capability companyCapability extends.
+        // @ts-expect-error: no schema of p's imports holds the capability companyCapability extends.
         types: { capability: companyCapability },
       }));
-    const other = definePackage({
+    const other = defineSchema({
       name: "other",
       description: "d",
       types: { agent },
     });
     void (() =>
-      definePackage({
+      defineSchema({
         name: "p",
         description: "d",
         imports: [other],
@@ -264,7 +267,7 @@ describe("a type that extends another, in a package that imports it", () => {
   });
 
   it("follows imports past the first level: a type extends a type of an import's import", () => {
-    const deep = definePackage({
+    const deep = defineSchema({
       name: "deep",
       description: "d",
       imports: [company],
@@ -277,15 +280,15 @@ describe("a type that extends another, in a package that imports it", () => {
       .toEqualTypeOf<number>();
   });
 
-  it("is refused by the compiler for an imported type: parse takes the package's own types", () => {
+  it("is refused by the compiler for an imported type: parse takes the schema's own types", () => {
     // @ts-expect-error: agent is core's; a note of it is parsed by core.
     void (() => company.parse("agent", {}));
   });
 
-  it("cannot make a direct cycle: the compiler refuses a package used before it is defined", () => {
+  it("cannot make a direct cycle: the compiler refuses a schema used before it is defined", () => {
     void (() => {
       // @ts-expect-error: a's type waits on b's.
-      const a = definePackage({
+      const a = defineSchema({
         name: "a",
         description: "d",
         // @ts-expect-error: b is used before it is defined.
@@ -293,7 +296,7 @@ describe("a type that extends another, in a package that imports it", () => {
         types: {},
       });
       // @ts-expect-error: b's type waits on a's.
-      const b = definePackage({
+      const b = defineSchema({
         name: "b",
         description: "d",
         imports: [a],

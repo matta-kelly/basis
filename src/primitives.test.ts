@@ -9,7 +9,7 @@ import {
 } from "../fixtures/layers.ts";
 import things, { externalObject, object, source } from "../fixtures/things.ts";
 import {
-  definePackage,
+  defineSchema,
   defineType,
   extendType,
   linksOf,
@@ -109,19 +109,19 @@ describe("a node", () => {
       description: "d",
       fields: { to: oneOrNone(() => source) },
     });
-    const pkg = definePackage({
+    const schema = defineSchema({
       name: "p",
       description: "d",
       types: { source, near },
     });
     const node = { name: "n", type: "near", description: "d" };
-    expect(pkg.parse("near", node)).toEqual(node);
-    expect(pkg.parse("near", { ...node, to: "[[sheets]]" })).toEqual({
+    expect(schema.parse("near", node)).toEqual(node);
+    expect(schema.parse("near", { ...node, to: "[[sheets]]" })).toEqual({
       ...node,
       to: "sheets",
     });
     for (const to of [null, [], ["[[sheets]]"], "sheets"])
-      expect(() => pkg.parse("near", { ...node, to })).toThrow(/to/);
+      expect(() => schema.parse("near", { ...node, to })).toThrow(/to/);
   });
 
   it("is refused with a field its type does not declare", () => {
@@ -185,7 +185,7 @@ describe("a node", () => {
     );
   });
 
-  it("is refused for a type the package does not hold, or a name the object prototype has, by code without types", () => {
+  it("is refused for a type the schema does not hold, or a name the object prototype has, by code without types", () => {
     // @ts-expect-error: the compiler refuses verb too; this is the check for code without types.
     expect(() => things.parse("verb", fabric)).toThrow(/verb/);
     // @ts-expect-error: as above.
@@ -193,9 +193,9 @@ describe("a node", () => {
   });
 });
 
-// A package of the fixture's types and one more type: the checks run in definePackage.
+// A schema of the fixture's types and one more type: the checks run in defineSchema.
 const withType = (type: Type) =>
-  definePackage({
+  defineSchema({
     name: "p",
     description: "d",
     types: {
@@ -208,14 +208,14 @@ const withType = (type: Type) =>
 const plainType = (fields: z.ZodRawShape = {}) =>
   defineType({ name: "t", description: "d", fields });
 
-describe("a package", () => {
+describe("a schema", () => {
   it("is refused with a name that is not a slug, of itself or of a type", () => {
     expect(() =>
-      definePackage({ name: "My Things", description: "d", types: {} }),
+      defineSchema({ name: "My Things", description: "d", types: {} }),
     ).toThrow();
     const thing = defineType({ name: "Thing", description: "d", fields: {} });
     expect(() =>
-      definePackage({ name: "p", description: "d", types: { Thing: thing } }),
+      defineSchema({ name: "p", description: "d", types: { Thing: thing } }),
     ).toThrow(/Thing/);
   });
 
@@ -280,27 +280,27 @@ describe("a package", () => {
         label: z.string(),
         kids: z.array(z.lazy(tree)).optional(),
       });
-    const pkg = withType(plainType({ outline: tree() }));
+    const schema = withType(plainType({ outline: tree() }));
     const node = {
       name: "n",
       type: "t",
       description: "d",
       outline: { label: "a", kids: [{ label: "b" }] },
     };
-    expect(pkg.parse("t", node)).toEqual(node);
+    expect(schema.parse("t", node)).toEqual(node);
   });
 
-  it("is refused with a name that is not a slug by a plain Error that names the package, not a ZodError", () => {
+  it("is refused with a name that is not a slug by a plain Error that names the schema, not a ZodError", () => {
     let error: unknown;
     try {
-      definePackage({ name: "My Things", description: "d", types: {} });
+      defineSchema({ name: "My Things", description: "d", types: {} });
     } catch (caught) {
       error = caught;
     }
     expect(error).not.toBeInstanceOf(z.ZodError);
     expect(error).toEqual(
       expect.objectContaining({
-        message: expect.stringMatching(/package My Things.*slug/),
+        message: expect.stringMatching(/schema My Things.*slug/),
       }),
     );
   });
@@ -323,7 +323,7 @@ describe("a package", () => {
 
   it("is refused when a link ends at a type it does not hold, or at another type of the same name", () => {
     expect(() =>
-      definePackage({ name: "p", description: "d", types: { object } }),
+      defineSchema({ name: "p", description: "d", types: { object } }),
     ).toThrow(/livesIn.*source/);
     const other = defineType({
       name: "source",
@@ -331,7 +331,7 @@ describe("a package", () => {
       fields: { role: z.string() },
     });
     expect(() =>
-      definePackage({
+      defineSchema({
         name: "p",
         description: "d",
         types: { object, source: other, "external-object": externalObject },
@@ -341,7 +341,7 @@ describe("a package", () => {
 
   it("is refused with a type under a key that is not its name, so two types of one name cannot be held, made without TypeScript", () => {
     expect(() =>
-      definePackage({
+      defineSchema({
         name: "p",
         description: "d",
         types: { source, other: source } as unknown as {
@@ -379,13 +379,13 @@ describe("a type", () => {
     const fields: Record<string, z.ZodType> = { to: one(() => source) };
     const t = defineType({ name: "t", description: "d", fields });
     fields.to = z.string();
-    const pkg = definePackage({
+    const schema = defineSchema({
       name: "p",
       description: "d",
       types: { source, t },
     });
     expect(linksOf(t).map((link) => link.name)).toEqual(["to"]);
-    expect(pkg.parse("t", node)).toEqual({ ...node, to: "sheets" });
+    expect(schema.parse("t", node)).toEqual({ ...node, to: "sheets" });
   });
 
   it("reads a getter in its fields once", () => {
@@ -400,13 +400,13 @@ describe("a type", () => {
         },
       },
     });
-    const pkg = definePackage({
+    const schema = defineSchema({
       name: "p",
       description: "d",
       types: { source, t },
     });
     expect(linksOf(t).map((link) => link.name)).toEqual(["to"]);
-    expect(pkg.parse("t", node)).toEqual({ ...node, to: "sheets" });
+    expect(schema.parse("t", node)).toEqual({ ...node, to: "sheets" });
     expect(reads).toBe(1);
   });
 
@@ -437,14 +437,14 @@ describe("a link with several targets", () => {
     ]);
   });
 
-  it("is refused by a package that does not hold each of its types", () => {
+  it("is refused by a schema that does not hold each of its types", () => {
     expect(() =>
-      definePackage({ name: "p", description: "d", types: { source, holder } }),
+      defineSchema({ name: "p", description: "d", types: { source, holder } }),
     ).toThrow(
-      "The link a of holder ends at domain, which is not a type of the package p or its imports.",
+      "The link a of holder ends at domain, which is not a type of the schema p or its imports.",
     );
     expect(() =>
-      definePackage({
+      defineSchema({
         name: "p",
         description: "d",
         types: { source, domain, holder },
@@ -533,14 +533,14 @@ describe("a type that extends a type", () => {
     fields: { stage: z.string() },
     key: ["title", "stage"],
   });
-  // A package made by code without types: the compiler refuses an extension of a base that core does not hold.
+  // A schema made by code without types: the compiler refuses an extension of a base that core does not hold.
   const withCapability = (type: Type) =>
-    definePackage({
+    defineSchema({
       name: "p",
       description: "d",
       imports: [core],
       types: { capability: type },
-    } as unknown as Parameters<typeof definePackage>[0]);
+    } as unknown as Parameters<typeof defineSchema>[0]);
 
   it("can add a key over its own fields and its base's, when its base has none", () => {
     expect(keyedCapability.key).toEqual(["title", "stage"]);
@@ -563,19 +563,19 @@ describe("a type that extends a type", () => {
   });
 });
 
-describe("a package's types", () => {
+describe("a schema's types", () => {
   it("are frozen when they are checked, so parse goes on with the types that were checked", () => {
     const other = defineType({
       name: "source",
       description: "Another source.",
       fields: { place: z.string() },
     });
-    const pkg = definePackage({
+    const schema = defineSchema({
       name: "p",
       description: "d",
       types: { source },
     });
-    const wide: { source: Type } = pkg.types;
+    const wide: { source: Type } = schema.types;
     expect(() => {
       wide.source = other;
     }).toThrow(TypeError);
@@ -585,14 +585,14 @@ describe("a package's types", () => {
       description: "d",
       role: "entry",
     };
-    expect(pkg.parse("source", sheets)).toEqual(sheets);
-    const spread = { ...pkg, types: { ...pkg.types } };
+    expect(schema.parse("source", sheets)).toEqual(sheets);
+    const spread = { ...schema, types: { ...schema.types } };
     spread.parse("source", sheets);
     expect(Object.isFrozen(spread.types)).toBe(true);
   });
 });
 
-describe("a package spread with other types", () => {
+describe("a schema spread with other types", () => {
   const sheets = {
     name: "sheets",
     type: "source",
@@ -603,10 +603,14 @@ describe("a package spread with other types", () => {
     description: "Another source.",
     fields: { place: z.string() },
   });
-  const pkg = definePackage({ name: "p", description: "d", types: { source } });
+  const schema = defineSchema({
+    name: "p",
+    description: "d",
+    types: { source },
+  });
 
   it("parses by its own types", () => {
-    const spread = { ...pkg, types: { ...pkg.types, source: other } };
+    const spread = { ...schema, types: { ...schema.types, source: other } };
     expect(spread.parse("source", { ...sheets, place: "here" })).toEqual({
       ...sheets,
       place: "here",
@@ -618,7 +622,7 @@ describe("a package spread with other types", () => {
 
   it("is refused with a type defineType did not make, or a link that ends outside its types", () => {
     const made = {
-      ...pkg,
+      ...schema,
       types: {
         source: {
           name: "source",
@@ -635,7 +639,7 @@ describe("a package spread with other types", () => {
   });
 });
 
-describe("a package that imports another", () => {
+describe("a schema that imports another", () => {
   const ship = {
     name: "ship",
     type: "capability",
@@ -643,9 +647,9 @@ describe("a package that imports another", () => {
     title: "Ship",
   };
   const shipHere = { ...ship, stage: "live", heldBy: "[[ana]]" };
-  // A package made by code without types: the compiler would refuse it.
-  const untyped = (pkg: unknown) =>
-    definePackage(pkg as Parameters<typeof definePackage>[0]);
+  // A schema made by code without types: the compiler would refuse it.
+  const untyped = (schema: unknown) =>
+    defineSchema(schema as Parameters<typeof defineSchema>[0]);
 
   it("holds a type that extends an imported one under its name, parsed with the base's fields and its own", () => {
     expect(companyCapability.name).toBe("capability");
@@ -661,7 +665,7 @@ describe("a package that imports another", () => {
     ).toThrow(/title/);
   });
 
-  it("leaves the imported package as it was", () => {
+  it("leaves the imported schema as it was", () => {
     expect(Object.keys(core.types)).toEqual(["agent", "capability", "case"]);
     expect(core.types.capability).toBe(capability);
     expect(core.imports).toEqual([]);
@@ -685,7 +689,7 @@ describe("a package that imports another", () => {
     }
   });
 
-  it("is refused with a type that extends a type of no package it imports, made without TypeScript", () => {
+  it("is refused with a type that extends a type of no schema it imports, made without TypeScript", () => {
     expect(() =>
       untyped({
         name: "p",
@@ -693,7 +697,7 @@ describe("a package that imports another", () => {
         types: { capability: companyCapability },
       }),
     ).toThrow(
-      /capability of p extends capability, which is not a type of the package p or its imports/,
+      /capability of p extends capability, which is not a type of the schema p or its imports/,
     );
   });
 
@@ -709,7 +713,7 @@ describe("a package that imports another", () => {
       fields: { to: one(() => stranger), by: one(() => agent) },
     });
     expect(() =>
-      definePackage({
+      defineSchema({
         name: "p",
         description: "d",
         imports: [core],
@@ -717,7 +721,7 @@ describe("a package that imports another", () => {
       }),
     ).toThrow(/to of near ends at stranger/);
     expect(() =>
-      definePackage({
+      defineSchema({
         name: "p",
         description: "d",
         imports: [core],
@@ -735,7 +739,7 @@ describe("a package that imports another", () => {
   it("is refused with a type of an imported type's name that does not extend it: one owner per name", () => {
     const other = defineType({ name: "agent", description: "d", fields: {} });
     expect(() =>
-      definePackage({
+      defineSchema({
         name: "p",
         description: "d",
         imports: [core],
@@ -745,7 +749,7 @@ describe("a package that imports another", () => {
   });
 
   it("is refused with two imports that give two types of one name, unless one extends the other", () => {
-    const elsewhere = definePackage({
+    const elsewhere = defineSchema({
       name: "elsewhere",
       description: "d",
       types: {
@@ -753,7 +757,7 @@ describe("a package that imports another", () => {
       },
     });
     expect(() =>
-      definePackage({
+      defineSchema({
         name: "p",
         description: "d",
         imports: [core, elsewhere],
@@ -761,7 +765,7 @@ describe("a package that imports another", () => {
       }),
     ).toThrow(/agent.*core.*elsewhere/);
     expect(() =>
-      definePackage({
+      defineSchema({
         name: "p",
         description: "d",
         imports: [core, company],
@@ -771,7 +775,7 @@ describe("a package that imports another", () => {
   });
 
   it("is refused with two imports that each extend one base: two owners of one name", () => {
-    const studio = definePackage({
+    const studio = defineSchema({
       name: "studio",
       description: "d",
       imports: [core],
@@ -780,7 +784,7 @@ describe("a package that imports another", () => {
       },
     });
     expect(() =>
-      definePackage({
+      defineSchema({
         name: "p",
         description: "d",
         imports: [company, studio],
@@ -798,7 +802,7 @@ describe("a package that imports another", () => {
       fields: { by: one(() => core.types.agent) },
     });
     expect(() =>
-      definePackage({
+      defineSchema({
         name: "deep",
         description: "d",
         imports: [company],
@@ -815,25 +819,25 @@ describe("a package that imports another", () => {
         imports: [{ ...core, name: "Not A Slug" }],
         types: {},
       }),
-    ).toThrow(/package Not A Slug is not named by a lowercase slug/);
+    ).toThrow(/schema Not A Slug is not named by a lowercase slug/);
   });
 
-  it("is refused when it sees two different packages of one name, and the error names where each one is", () => {
-    const studio = definePackage({
+  it("is refused when it sees two different schemas of one name, and the error names where each one is", () => {
+    const studio = defineSchema({
       name: "studio",
       description: "d",
       imports: [{ ...core }],
       types: {},
     });
     expect(() =>
-      definePackage({
+      defineSchema({
         name: "p",
         description: "d",
         imports: [company, studio],
         types: {},
       }),
     ).toThrow(
-      /p sees two packages named core: at p > company > core, and at p > studio > core/,
+      /p sees two schemas named core: at p > company > core, and at p > studio > core/,
     );
     expect(() =>
       untyped({
@@ -858,7 +862,7 @@ describe("a package that imports another", () => {
     ).toThrow(/core has agent, which defineType did not make/);
   });
 
-  it("is refused with a cycle of imports, found by package name", () => {
+  it("is refused with a cycle of imports, found by schema name", () => {
     const looped = { ...core, imports: [company] };
     expect(() =>
       looped.parse("agent", {

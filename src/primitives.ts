@@ -1,5 +1,5 @@
 /**
- * The primitives as code: a type, a link, and a package that holds them.
+ * The primitives as code: a type, a link, and a schema that holds them.
  * A node is a note: its frontmatter holds its fields, and its file name is its name.
  * The world is closed: a node carries the fields of its type, its properties and the links
  * that start from it, and nothing else.
@@ -84,14 +84,14 @@ type KeyField<F extends z.ZodRawShape> = Exclude<
   keyof typeof base
 >;
 
-/** A copy of a key, frozen. A value that is not a list is kept, and the package refuses it. */
+/** A copy of a key, frozen. A value that is not a list is kept, and the schema refuses it. */
 const keyCopy = <K extends readonly string[]>(key: K | undefined) =>
   Object.freeze(Array.isArray(key) ? [...key] : (key ?? []));
 
-/** The types defineType made. A package holds no other: a type's schema is made from its fields, once. */
+/** The types defineType made. A schema holds no other: a type's zod schema is made from its fields, once. */
 const madeTypes = new WeakSet<Type>();
 
-/** A kind of node, and the fields its nodes carry beside the base. The package that holds it checks it. */
+/** A kind of node, and the fields its nodes carry beside the base. The schema that holds it checks it. */
 export function defineType<
   const N extends string,
   const F extends z.ZodRawShape,
@@ -102,7 +102,8 @@ export function defineType<
   const made = Object.freeze({
     name: type.name,
     description: type.description,
-    // The fields last: spread before them, the literal keeps its type. A field named type is refused by the package.
+    // The fields last: spread before them, the literal keeps its type. A field named type is refused by the schema
+    // that holds the type.
     schema: z.strictObject({ ...base, type: z.literal(type.name), ...fields }),
     key: keyCopy(type.key),
   });
@@ -112,7 +113,7 @@ export function defineType<
 
 /**
  * A type that extends another: the same kind of note, under the base's name and description, with the base's fields
- * and more. Its schema is the base's, extended by zod. The package that holds it checks it.
+ * and more. Its zod schema is the base's, extended. The schema that holds it checks it.
  * The base's shape and config are inferred from its schema, so the extension's schema is zod's own type for it.
  * It has the base's key. When the base has none, it can add one, over its own fields and the base's.
  */
@@ -362,53 +363,53 @@ function typeProblems(type: Type): string[] {
   return [...problems, ...keyProblems(type, fields)];
 }
 
-export interface Package<
+export interface Schema<
   T extends Record<string, Type> = Record<string, Type>,
-  I extends readonly AnyPackage[] = readonly AnyPackage[],
+  I extends readonly AnySchema[] = readonly AnySchema[],
 > {
   name: string;
   description: string;
   /** Its own types, each by its name. A type that extends an imported one is under that name. */
   types: T;
-  /** The packages it imports: its links can point at their types, and its types can extend them. */
+  /** The schemas it imports: its links can point at their types, and its types can extend them. */
   imports: I;
   /**
-   * The node, parsed by the schema of its type, in the own types of the package it is called on. Throws when the
-   * node does not fit. A note of an imported type is parsed by the package that holds it.
+   * The node, parsed by the zod schema of its type, in the own types of the schema it is called on. Throws when the
+   * node does not fit. A note of an imported type is parsed by the schema that holds it.
    */
-  parse<This extends Package, N extends keyof This["types"] & string>(
+  parse<This extends Schema, N extends keyof This["types"] & string>(
     this: This,
     type: N,
     node: unknown,
   ): z.output<This["types"][N]["schema"]>;
 }
 
-/** Any package, as an import: its own imports are any packages. A type parameter cannot name its own interface. */
-export interface AnyPackage extends Package {
-  imports: readonly AnyPackage[];
+/** Any schema, as an import: its own imports are any schemas. A type parameter cannot name its own interface. */
+export interface AnySchema extends Schema {
+  imports: readonly AnySchema[];
 }
 
-/** The types a package sees through its imports, at every depth. */
-type TypesSeen<I extends readonly AnyPackage[]> = I[number] extends infer P
-  ? P extends Package<infer U, infer J extends readonly AnyPackage[]>
+/** The types a schema sees through its imports, at every depth. */
+type TypesSeen<I extends readonly AnySchema[]> = I[number] extends infer P
+  ? P extends Schema<infer U, infer J extends readonly AnySchema[]>
     ? U[keyof U] | TypesSeen<J>
     : never
   : never;
 
-/** A type that extends another must extend one its package sees. */
-type ExtendsSeen<X, I extends readonly AnyPackage[]> = X extends {
+/** A type that extends another must extend one its schema sees. */
+type ExtendsSeen<X, I extends readonly AnySchema[]> = X extends {
   extends: Type;
 }
   ? { extends: TypesSeen<I> }
   : unknown;
 
-/** For each types object, the imports it was checked with. A spread package is checked on its first parse. */
+/** For each types object, the imports it was checked with. A spread schema is checked on its first parse. */
 const checkedWith = new WeakMap<object, WeakSet<object>>();
 
-/** A package name is a slug. A plain Error, as for the other checks: the lint takes a ZodError as a note's problem. */
+/** A schema name is a slug. A plain Error, as for the other checks: the lint takes a ZodError as a note's problem. */
 function checkName(name: string) {
   if (!Name.safeParse(name).success)
-    throw new Error(`The package ${name} is not named by a lowercase slug.`);
+    throw new Error(`The schema ${name} is not named by a lowercase slug.`);
 }
 
 /** Whether a type extends another, at any depth. */
@@ -423,86 +424,86 @@ type Layer<P> = {
 };
 
 /**
- * The types a package sees, each by its name, with the package that holds it: its imports' at every depth, then its
- * own. An extension takes the name of what it extends. Throws on a cycle of imports, by package name, on two
- * packages of one name, and on two owners of one type name.
+ * The types a schema sees, each by its name, with the schema that holds it: its imports' at every depth, then its
+ * own. An extension takes the name of what it extends. Throws on a cycle of imports, by schema name, on two
+ * schemas of one name, and on two owners of one type name.
  */
 export function seenTypes<P extends Layer<P>>(
-  pkg: P,
+  schema: P,
   path: string[] = [],
-  packages = new Map<string, { pkg: P; path: string[] }>(),
+  schemas = new Map<string, { schema: P; path: string[] }>(),
 ): Map<string, { type: Type; owner: P }> {
-  const here = [...path, pkg.name];
-  if (path.includes(pkg.name))
+  const here = [...path, schema.name];
+  if (path.includes(schema.name))
     throw new Error(
       `The imports of ${path[0]} make a cycle: ${here.join(" imports ")}.`,
     );
-  // One owner per package name, as for types: one object, wherever it is seen.
-  const known = packages.get(pkg.name);
-  if (known && known.pkg !== pkg)
+  // One owner per schema name, as for types: one object, wherever it is seen.
+  const known = schemas.get(schema.name);
+  if (known && known.schema !== schema)
     throw new Error(
-      `The package ${here[0]} sees two packages named ${pkg.name}: at ${known.path.join(" > ")}, and at ${here.join(" > ")}.`,
+      `The schema ${here[0]} sees two schemas named ${schema.name}: at ${known.path.join(" > ")}, and at ${here.join(" > ")}.`,
     );
-  packages.set(pkg.name, { pkg, path: here });
+  schemas.set(schema.name, { schema, path: here });
   const seen = new Map<string, { type: Type; owner: P }>();
-  for (const imported of pkg.imports) {
-    for (const [name, at] of seenTypes(imported, here, packages)) {
+  for (const imported of schema.imports) {
+    for (const [name, at] of seenTypes(imported, here, schemas)) {
       const had = seen.get(name);
       if (!had || extendsType(at.type, had.type)) seen.set(name, at);
       else if (had.type !== at.type && !extendsType(had.type, at.type))
         throw new Error(
-          `The package ${pkg.name} imports two types named ${name}, from ${had.owner.name} and from ${at.owner.name}, and neither extends the other.`,
+          `The schema ${schema.name} imports two types named ${name}, from ${had.owner.name} and from ${at.owner.name}, and neither extends the other.`,
         );
     }
   }
-  for (const [name, type] of Object.entries(pkg.types)) {
+  for (const [name, type] of Object.entries(schema.types)) {
     const had = seen.get(name);
     if (had && !extendsType(type, had.type))
       throw new Error(
-        `The type ${name} of ${pkg.name} has the name of a type of ${had.owner.name}, and does not extend it: a name has one owner.`,
+        `The type ${name} of ${schema.name} has the name of a type of ${had.owner.name}, and does not extend it: a name has one owner.`,
       );
     if (type.extends && !had)
       throw new Error(
-        `The type ${name} of ${pkg.name} extends ${type.extends.name}, which is not a type of the package ${pkg.name} or its imports.`,
+        `The type ${name} of ${schema.name} extends ${type.extends.name}, which is not a type of the schema ${schema.name} or its imports.`,
       );
-    seen.set(name, { type, owner: pkg });
+    seen.set(name, { type, owner: schema });
   }
   return seen;
 }
 
-/** What definePackage checks: the name, each type, its imports, and the links between them. Throws on the first kind of problem. */
-function checkPackage(
+/** What defineSchema checks: the name, each type, its imports, and the links between them. Throws on the first kind of problem. */
+function checkSchema(
   name: string,
   types: Record<string, Type>,
-  imports: readonly AnyPackage[],
+  imports: readonly AnySchema[],
 ) {
   checkName(name);
   const entries = Object.entries(types);
   const notMade = entries.filter(([, type]) => !madeTypes.has(type));
   if (notMade.length > 0)
     throw new Error(
-      `The package ${name} has ${notMade.map(([key]) => key).join(", ")}, which defineType did not make.`,
+      `The schema ${name} has ${notMade.map(([key]) => key).join(", ")}, which defineType did not make.`,
     );
   const problems = entries.flatMap(([key, type]) => [
     ...typeProblems(type),
     ...(key === type.name
       ? []
       : [
-          `The package ${name} has the type ${type.name} under the key ${key}: a type is under its name.`,
+          `The schema ${name} has the type ${type.name} under the key ${key}: a type is under its name.`,
         ]),
   ]);
   if (problems.length > 0) throw new Error(problems.join("\n"));
-  const seen = seenTypes<Package | Layer<Package>>({ name, types, imports });
-  // Each import as definePackage checks it: a spread package is another object, checked on its own first use.
+  const seen = seenTypes<Schema | Layer<Schema>>({ name, types, imports });
+  // Each import as defineSchema checks it: a spread schema is another object, checked on its own first use.
   for (const imported of imports) checked(imported);
   for (const type of entries.map(([, type]) => type)) {
     for (const link of linksOf(type)) {
       for (const end of link.to()) {
-        // A link to a base the package sees an extension of: the extension is the same kind of note.
+        // A link to a base the schema sees an extension of: the extension is the same kind of note.
         const at = seen.get(end.name)?.type;
         if (!at || !(at === end || extendsType(at, end)))
           throw new Error(
-            `The link ${link.name} of ${type.name} ends at ${end.name}, which is not a type of the package ${name} or its imports.`,
+            `The link ${link.name} of ${type.name} ends at ${end.name}, which is not a type of the schema ${name} or its imports.`,
           );
       }
     }
@@ -513,17 +514,17 @@ function checkPackage(
 }
 
 /**
- * A package, checked as definePackage checks it, once for its types and imports. The name on each call: a package
+ * A schema, checked as defineSchema checks it, once for its types and imports. The name on each call: a schema
  * spread with another name keeps the types and imports that were checked.
  */
-export function checked(pkg: {
+export function checked(schema: {
   name: string;
   types: Record<string, Type>;
-  imports: readonly AnyPackage[];
+  imports: readonly AnySchema[];
 }) {
-  checkName(pkg.name);
-  if (!checkedWith.get(pkg.types)?.has(pkg.imports))
-    checkPackage(pkg.name, pkg.types, pkg.imports);
+  checkName(schema.name);
+  if (!checkedWith.get(schema.types)?.has(schema.imports))
+    checkSchema(schema.name, schema.types, schema.imports);
 }
 
 /** A type by its key. Generic, so the type is the one under that key, not any type of the record. */
@@ -533,38 +534,38 @@ const typeIn = <T extends Record<string, Type>, K extends keyof T>(
 ): T[K] => types[key];
 
 /**
- * One package: its types, each under its own name, and through their fields the links between them, and the packages
+ * One schema: its types, each under its own name, and through their fields the links between them, and the schemas
  * it imports. It checks every type it holds, however it was made, and throws before any note is read.
  */
-export function definePackage<
+export function defineSchema<
   const T extends Record<string, Type> & {
     [K in keyof T]: { name: K } & ExtendsSeen<T[K], I>;
   },
-  const I extends readonly AnyPackage[] = readonly [],
->(pkg: {
+  const I extends readonly AnySchema[] = readonly [],
+>(schema: {
   name: string;
   description: string;
   types: T;
   imports?: I;
-}): Package<T, I | readonly []> {
-  const imports = pkg.imports ?? [];
-  checkPackage(pkg.name, pkg.types, imports);
+}): Schema<T, I | readonly []> {
+  const imports = schema.imports ?? [];
+  checkSchema(schema.name, schema.types, imports);
   return {
-    ...pkg,
+    ...schema,
     imports,
-    parse<This extends Package, N extends keyof This["types"] & string>(
+    parse<This extends Schema, N extends keyof This["types"] & string>(
       this: This,
       type: N,
       node: unknown,
     ) {
       checked(this);
       if (!Object.hasOwn(this.types, type))
-        throw new Error(`The package ${this.name} has no type ${type}.`);
-      const schema: This["types"][N]["schema"] = typeIn(
+        throw new Error(`The schema ${this.name} has no type ${type}.`);
+      const typeSchema: This["types"][N]["schema"] = typeIn(
         this.types,
         type,
       ).schema;
-      return schema.parse(node);
+      return typeSchema.parse(node);
     },
   };
 }
