@@ -569,15 +569,3 @@ export function defineSchema<
     },
   };
 }
-
-/** @deprecated The old name of `defineSchema`. It is kept until que and cc use the new name. */
-export const definePackage = defineSchema;
-
-/** @deprecated The old name of `Schema`. */
-export type Package<
-  T extends Record<string, Type> = Record<string, Type>,
-  I extends readonly AnySchema[] = readonly AnySchema[],
-> = Schema<T, I>;
-
-/** @deprecated The old name of `AnySchema`. */
-export type AnyPackage = AnySchema;
