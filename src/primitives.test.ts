@@ -9,7 +9,6 @@ import {
 } from "../fixtures/layers.ts";
 import things, { externalObject, object, source } from "../fixtures/things.ts";
 import {
-  definePackage,
   defineSchema,
   defineType,
   extendType,
@@ -210,10 +209,6 @@ const plainType = (fields: z.ZodRawShape = {}) =>
   defineType({ name: "t", description: "d", fields });
 
 describe("a schema", () => {
-  it("is made by definePackage too, the old name of defineSchema", () => {
-    expect(definePackage).toBe(defineSchema);
-  });
-
   it("is refused with a name that is not a slug, of itself or of a type", () => {
     expect(() =>
       defineSchema({ name: "My Things", description: "d", types: {} }),

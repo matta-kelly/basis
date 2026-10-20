@@ -1,7 +1,6 @@
 // What basis exports.
 export {
   base,
-  definePackage,
   defineSchema,
   defineType,
   extendType,
@@ -12,14 +11,7 @@ export {
   one,
   oneOrNone,
 } from "./primitives.ts";
-export type {
-  AnyPackage,
-  AnySchema,
-  Link,
-  Package,
-  Schema,
-  Type,
-} from "./primitives.ts";
+export type { AnySchema, Link, Schema, Type } from "./primitives.ts";
 export {
   loadFolder,
   readNote,
