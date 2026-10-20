@@ -1,4 +1,4 @@
-// A small schema for the tests: three types from the lotusandluna ontology, and the links between them.
+// A small schema for the tests: three types of a made-up bakery, and the links between them.
 import * as z from "zod";
 import {
   defineSchema,

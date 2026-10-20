@@ -1,6 +1,6 @@
 ---
 type: object
 description: "Missing its key."
-livesIn: ["[[sheets]]"]
+livesIn: ["[[slate]]"]
 states: [drafted]
 ---

@@ -24,30 +24,30 @@ const note = (path: string, frontmatter: Record<string, unknown>): Note => ({
   body: "",
 });
 
-const sheets = note("sheets.md", {
+const slate = note("slate.md", {
   type: "source",
-  description: "Where product information is typed.",
+  description: "Where recipes are written.",
   role: "entry",
 });
-const odoo = note("odoo.md", {
+const till = note("till.md", {
   type: "source",
-  description: "The ERP.",
+  description: "The shop's till.",
   role: "projection",
 });
-const fabric = note("fabric.md", {
+const loaf = note("loaf.md", {
   type: "object",
-  description: "One print on one cloth.",
-  key: "fabric_code",
-  livesIn: ["[[sheets]]"],
+  description: "One bake of one dough.",
+  key: "loaf_code",
+  livesIn: ["[[slate]]"],
   states: ["drafted", "complete"],
-  representedAs: ["[[odoo-attribute-value]]"],
+  representedAs: ["[[till-item]]"],
 });
-const attributeValue = note("odoo-attribute-value.md", {
+const tillItem = note("till-item.md", {
   type: "external-object",
-  description: "A fabric as Odoo holds it.",
-  heldIn: "[[odoo]]",
+  description: "A loaf as the till holds it.",
+  heldIn: "[[till]]",
 });
-const right = [sheets, odoo, fabric, attributeValue];
+const right = [slate, till, loaf, tillItem];
 
 // The notes that are right, with one note changed.
 const withNote = (changed: Note) => [
@@ -75,15 +75,15 @@ describe("the lint", () => {
     const problems = lint(
       things,
       withNote(
-        edit(without(fabric, "key"), {
-          ...without(fabric, "key").frontmatter,
+        edit(without(loaf, "key"), {
+          ...without(loaf, "key").frontmatter,
           colour: "blue",
           size: "large",
         }),
       ),
     );
     expect(problems).toHaveLength(3);
-    expect(problems.every((p) => p.path === "fabric.md")).toBe(true);
+    expect(problems.every((p) => p.path === "loaf.md")).toBe(true);
     for (const field of ["key", "colour", "size"]) {
       expect(problems.some((p) => p.message.includes(field))).toBe(true);
     }
@@ -93,56 +93,50 @@ describe("the lint", () => {
     expect(
       lint(
         things,
-        withNote(edit(sheets, { ...sheets.frontmatter, type: "verb" })),
+        withNote(edit(slate, { ...slate.frontmatter, type: "verb" })),
       ),
-    ).toEqual([{ path: "sheets.md", message: expect.stringMatching(/verb/) }]);
+    ).toEqual([{ path: "slate.md", message: expect.stringMatching(/verb/) }]);
     expect(
       lint(
         things,
-        withNote(edit(sheets, { ...sheets.frontmatter, type: "constructor" })),
+        withNote(edit(slate, { ...slate.frontmatter, type: "constructor" })),
       ),
     ).toEqual([
-      { path: "sheets.md", message: expect.stringMatching(/constructor/) },
+      { path: "slate.md", message: expect.stringMatching(/constructor/) },
     ]);
-    expect(lint(things, withNote(without(sheets, "type")))).toEqual([
-      { path: "sheets.md", message: expect.stringMatching(/no type/) },
-    ]);
-    expect(
-      lint(
-        things,
-        withNote(edit(sheets, { ...sheets.frontmatter, type: null })),
-      ),
-    ).toEqual([
-      { path: "sheets.md", message: expect.stringMatching(/no type/) },
+    expect(lint(things, withNote(without(slate, "type")))).toEqual([
+      { path: "slate.md", message: expect.stringMatching(/no type/) },
     ]);
     expect(
-      lint(things, withNote(edit(sheets, { ...sheets.frontmatter, type: 5 }))),
+      lint(things, withNote(edit(slate, { ...slate.frontmatter, type: null }))),
     ).toEqual([
-      { path: "sheets.md", message: expect.stringMatching(/5 is not a name/) },
+      { path: "slate.md", message: expect.stringMatching(/no type/) },
     ]);
     expect(
-      lint(things, withNote(edit(sheets, { ...sheets.frontmatter, type: "" }))),
+      lint(things, withNote(edit(slate, { ...slate.frontmatter, type: 5 }))),
     ).toEqual([
-      { path: "sheets.md", message: expect.stringMatching(/no type/) },
+      { path: "slate.md", message: expect.stringMatching(/5 is not a name/) },
+    ]);
+    expect(
+      lint(things, withNote(edit(slate, { ...slate.frontmatter, type: "" }))),
+    ).toEqual([
+      { path: "slate.md", message: expect.stringMatching(/no type/) },
     ]);
     const loop: unknown[] = [];
     loop.push(loop);
     expect(
-      lint(
-        things,
-        withNote(edit(sheets, { ...sheets.frontmatter, type: loop })),
-      ),
+      lint(things, withNote(edit(slate, { ...slate.frontmatter, type: loop }))),
     ).toEqual([
-      { path: "sheets.md", message: expect.stringMatching(/is not a name/) },
+      { path: "slate.md", message: expect.stringMatching(/is not a name/) },
     ]);
     expect(
       lint(
         things,
-        withNote(edit(sheets, { ...sheets.frontmatter, type: ["source"] })),
+        withNote(edit(slate, { ...slate.frontmatter, type: ["source"] })),
       ),
     ).toEqual([
       {
-        path: "sheets.md",
+        path: "slate.md",
         message: expect.stringMatching(/source.* is not a name/),
       },
     ]);
@@ -152,8 +146,8 @@ describe("the lint", () => {
     const problems = lint(
       things,
       withNote(
-        edit(without(fabric, "key"), {
-          ...without(fabric, "key").frontmatter,
+        edit(without(loaf, "key"), {
+          ...without(loaf, "key").frontmatter,
           livesIn: ["[[nowhere]]"],
         }),
       ),
@@ -165,18 +159,18 @@ describe("the lint", () => {
   });
 
   it("checks a link against a read note when an unread note has the same name, and reports the read one as a duplicate", () => {
-    const elm = note("b/elm.md", {
+    const oven = note("b/oven.md", {
       type: "external-object",
       description: "Read, and of the wrong type for livesIn.",
-      heldIn: "[[odoo]]",
+      heldIn: "[[till]]",
     });
-    const linking = edit(fabric, {
-      ...fabric.frontmatter,
-      livesIn: ["[[sheets]]", "[[elm]]"],
+    const linking = edit(loaf, {
+      ...loaf.frontmatter,
+      livesIn: ["[[slate]]", "[[oven]]"],
     });
-    expect(lint(things, [...withNote(linking), elm], ["a/elm.md"])).toEqual([
-      { path: "b/elm.md", message: expect.stringContaining("a/elm.md") },
-      { path: "fabric.md", message: expect.stringMatching(/elm.*source/) },
+    expect(lint(things, [...withNote(linking), oven], ["a/oven.md"])).toEqual([
+      { path: "b/oven.md", message: expect.stringContaining("a/oven.md") },
+      { path: "loaf.md", message: expect.stringMatching(/oven.*source/) },
     ]);
   });
 
@@ -184,13 +178,9 @@ describe("the lint", () => {
     expect(
       lint(
         things,
-        withNote(
-          edit(fabric, { ...fabric.frontmatter, livesIn: ["[[nowhere]]"] }),
-        ),
+        withNote(edit(loaf, { ...loaf.frontmatter, livesIn: ["[[nowhere]]"] })),
       ),
-    ).toEqual([
-      { path: "fabric.md", message: expect.stringMatching(/nowhere/) },
-    ]);
+    ).toEqual([{ path: "loaf.md", message: expect.stringMatching(/nowhere/) }]);
   });
 
   it("gives a problem for a link to a note of the wrong type", () => {
@@ -198,38 +188,35 @@ describe("the lint", () => {
       lint(
         things,
         withNote(
-          edit(fabric, {
-            ...fabric.frontmatter,
-            representedAs: ["[[sheets]]"],
+          edit(loaf, {
+            ...loaf.frontmatter,
+            representedAs: ["[[slate]]"],
           }),
         ),
       ),
     ).toEqual([
       {
-        path: "fabric.md",
-        message: expect.stringMatching(/sheets.*external-object/),
+        path: "loaf.md",
+        message: expect.stringMatching(/slate.*external-object/),
       },
     ]);
   });
 
   it("gives no problem for a link to a note that has its own problems", () => {
-    const problems = lint(
-      things,
-      withNote(without(attributeValue, "description")),
-    );
-    expect(problems.map((p) => p.path)).toEqual(["odoo-attribute-value.md"]);
+    const problems = lint(things, withNote(without(tillItem, "description")));
+    expect(problems.map((p) => p.path)).toEqual(["till-item.md"]);
   });
 
   it("gives a problem for each of two notes with one name, naming the other", () => {
-    const twin = { ...sheets, path: "copies/sheets.md" };
+    const twin = { ...slate, path: "copies/slate.md" };
     expect(lint(things, [...right, twin])).toEqual([
       {
-        path: "copies/sheets.md",
-        message: expect.stringContaining("sheets.md"),
+        path: "copies/slate.md",
+        message: expect.stringContaining("slate.md"),
       },
       {
-        path: "sheets.md",
-        message: expect.stringContaining("copies/sheets.md"),
+        path: "slate.md",
+        message: expect.stringContaining("copies/slate.md"),
       },
     ]);
   });
@@ -238,7 +225,7 @@ describe("the lint", () => {
     expect(
       lint(things, [
         ...right,
-        { ...odoo, path: "Bad_Name.md", name: "Bad_Name" },
+        { ...till, path: "Bad_Name.md", name: "Bad_Name" },
       ]),
     ).toEqual([
       {
@@ -254,9 +241,9 @@ describe("the lint", () => {
     expect(
       lint(
         things,
-        withNote(edit(sheets, { ...sheets.frontmatter, name: "sheets" })),
+        withNote(edit(slate, { ...slate.frontmatter, name: "slate" })),
       ),
-    ).toEqual([{ path: "sheets.md", message: expect.stringMatching(/name/) }]);
+    ).toEqual([{ path: "slate.md", message: expect.stringMatching(/name/) }]);
   });
 });
 
@@ -401,7 +388,7 @@ describe("the lint of a schema that imports another", () => {
 });
 
 describe("the lint of a type with a key", () => {
-  // Like cc's capability on que's: one capability for each agent and its name there.
+  // Like one company's capability on que's: one capability for each agent and its name there.
   const keyed = defineSchema({
     name: "keyed",
     description: "d",
@@ -497,7 +484,7 @@ describe("the lint of two types with a key", () => {
 });
 
 describe("the lint of a link with several targets", () => {
-  // Like cc's capability: held by a source or by a domain.
+  // Like one company's capability: held by a source or by a domain.
   const plain = <const N extends string>(name: N) =>
     defineType({ name, description: "d", fields: {} });
   const source = plain("source");
@@ -519,15 +506,15 @@ describe("the lint of a link with several targets", () => {
     types: { source, domain, verb, capability },
   });
   const notes = [
-    note("odoo.md", { type: "source", description: "d" }),
-    note("pim.md", { type: "domain", description: "d" }),
+    note("till.md", { type: "source", description: "d" }),
+    note("recipes.md", { type: "domain", description: "d" }),
     note("push.md", { type: "verb", description: "d" }),
   ];
   const capabilityNote = (
     path: string,
     heldBy: string,
     localName = "ship",
-    touches = ["[[odoo]]", "[[pim]]"],
+    touches = ["[[till]]", "[[recipes]]"],
   ) =>
     note(path, {
       type: "capability",
@@ -541,8 +528,8 @@ describe("the lint of a link with several targets", () => {
     expect(
       lint(schema, [
         ...notes,
-        capabilityNote("a.md", "odoo"),
-        capabilityNote("b.md", "pim"),
+        capabilityNote("a.md", "till"),
+        capabilityNote("b.md", "recipes"),
       ]),
     ).toEqual([]);
   });
@@ -571,7 +558,7 @@ describe("the lint of a link with several targets", () => {
     expect(
       lint(schema, [
         ...notes,
-        capabilityNote("a.md", "odoo", "ship", ["[[pim]]", "[[push]]"]),
+        capabilityNote("a.md", "till", "ship", ["[[recipes]]", "[[push]]"]),
       ]),
     ).toEqual([
       {
@@ -583,12 +570,12 @@ describe("the lint of a link with several targets", () => {
   });
 
   it("is a key field, compared by the name it points at", () => {
-    const key = 'heldBy "pim", localName "ship"';
+    const key = 'heldBy "recipes", localName "ship"';
     expect(
       lint(schema, [
         ...notes,
-        capabilityNote("a.md", "pim"),
-        capabilityNote("b.md", "pim"),
+        capabilityNote("a.md", "recipes"),
+        capabilityNote("b.md", "recipes"),
       ]),
     ).toEqual([
       {
@@ -606,21 +593,21 @@ describe("the lint of a link with several targets", () => {
 describe("the lint of a type with no key", () => {
   it("gives no problem for two notes with the same fields: only the name is one note's own", () => {
     expect(
-      lint(things, [...right, { ...fabric, path: "silk.md", name: "silk" }]),
+      lint(things, [...right, { ...loaf, path: "roll.md", name: "roll" }]),
     ).toEqual([]);
   });
 });
 
 describe("a folder", () => {
   it("is linted with the loader's problems and the lint's, in path order, and a link to a note the loader could not read is not a problem", async () => {
-    // elm.md cannot be read, and fabric.md, which is right, links to it.
+    // oven.md cannot be read, and loaf.md, which is right, links to it.
     const folder = fileURLToPath(new URL("../fixtures/lint", import.meta.url));
     const problems = await lintFolder(things, folder);
     expect(problems.map((p) => p.path)).toEqual([
-      "cotton.md",
-      "do-thing.md",
-      "elm.md",
-      "linen.md",
+      "bun.md",
+      "do-bake.md",
+      "oven.md",
+      "scone.md",
     ]);
   });
 
@@ -630,12 +617,12 @@ describe("a folder", () => {
     await mkdir(join(root, "a"));
     await mkdir(join(root, "b"));
     await writeFile(
-      join(root, "a/sheets.md"),
+      join(root, "a/slate.md"),
       '---\ntype: source\ndescription: "A source."\nrole: entry\n---\n',
     );
-    await symlink("../a/sheets.md", join(root, "b/sheets.md"));
+    await symlink("../a/slate.md", join(root, "b/slate.md"));
     const problems = await lintFolder(things, root);
-    expect(problems.map((p) => p.path)).toEqual(["b/sheets.md"]);
+    expect(problems.map((p) => p.path)).toEqual(["b/slate.md"]);
   });
 });
 
