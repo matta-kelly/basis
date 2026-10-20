@@ -19,8 +19,8 @@ if [ -e node_modules/basis/node_modules/zod ]; then
   exit 1
 fi
 
-printf -- '---\ntype: source\ndescription: "Where product information is typed."\nrole: entry\n---\n' >notes/sheets.md
-printf -- '---\ntype: source\nrole: entry\n---\n' >notes/elm.md
+printf -- '---\ntype: source\ndescription: "Where each bake is written."\nrole: entry\n---\n' >notes/slate.md
+printf -- '---\ntype: source\nrole: entry\n---\n' >notes/oven.md
 
 node --input-type=module -e '
 import * as z from "zod";
@@ -29,5 +29,5 @@ const source = defineType({ name: "source", description: "A place data lives.", 
 const schema = defineSchema({ name: "things", description: "Where data lives.", types: { source } });
 const problems = await lintFolder(schema, "notes");
 console.log(problems);
-if (problems.length !== 1 || !problems[0].path.endsWith("elm.md")) process.exit(1);
+if (problems.length !== 1 || !problems[0].path.endsWith("oven.md")) process.exit(1);
 '
