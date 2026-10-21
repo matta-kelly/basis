@@ -611,6 +611,23 @@ describe("a folder", () => {
     ]);
   });
 
+  it("lints no note under a path skip names", async () => {
+    const root = await mkdtemp(join(tmpdir(), "basis-lint-"));
+    made.push(root);
+    await mkdir(join(root, "code"));
+    await writeFile(
+      join(root, "slate.md"),
+      '---\ntype: source\ndescription: "A source."\nrole: entry\n---\n',
+    );
+    await writeFile(join(root, "code/README.md"), "No frontmatter.\n");
+    expect(await lintFolder(things, root)).toMatchObject([
+      { path: "code/README.md" },
+    ]);
+    expect(
+      await lintFolder(things, root, { skip: (path) => path === "code" }),
+    ).toEqual([]);
+  });
+
   it("gives a symbolic link its own problem, and none to the note it points at", async () => {
     const root = await mkdtemp(join(tmpdir(), "basis-lint-"));
     made.push(root);
