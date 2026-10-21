@@ -64,9 +64,19 @@ export function readNote(path: string, file: string): Read {
   };
 }
 
-/** The notes under a folder, by their paths from it, and a problem for each symbolic link and each folder that cannot be read. A file or folder whose name starts with a dot is skipped. */
+/** What a folder read leaves out, beside each file and folder whose name starts with a dot. */
+export type FolderOptions = {
+  /**
+   * True for a path to leave out, as if it were not there: a file, or a folder and all in it. The path is from the
+   * folder read, with `/` between parts. A folder that holds files that are not notes (a README, code) leaves them out.
+   */
+  skip?: (path: string) => boolean;
+};
+
+/** The notes under a folder, by their paths from it, and a problem for each symbolic link and each folder that cannot be read. A file or folder whose name starts with a dot is skipped, and so is a path `skip` names. */
 async function notePaths(
   root: string,
+  skip: FolderOptions["skip"],
   folder = "",
 ): Promise<{ paths: string[]; skipped: Problem[] }> {
   const paths: string[] = [];
@@ -86,13 +96,14 @@ async function notePaths(
   for (const entry of entries) {
     if (entry.name.startsWith(".")) continue;
     const path = folder ? `${folder}/${entry.name}` : entry.name;
+    if (skip?.(path)) continue;
     if (entry.isSymbolicLink()) {
       skipped.push({
         path,
         message: "A symbolic link: basis reads only files and folders.",
       });
     } else if (entry.isDirectory()) {
-      const inner = await notePaths(root, path);
+      const inner = await notePaths(root, skip, path);
       paths.push(...inner.paths);
       skipped.push(...inner.skipped);
     } else if (entry.isFile() && entry.name.endsWith(".md")) {
@@ -114,8 +125,9 @@ const utf8 = new TextDecoder("utf-8", { fatal: true });
 /** Every note in a folder and the folders in it, in path order, a problem for each note that cannot be read, and the paths of the notes found and not read. The files are read one at a time. */
 export async function loadFolder(
   folder: string,
+  { skip }: FolderOptions = {},
 ): Promise<{ notes: Note[]; problems: Problem[]; unread: string[] }> {
-  const { paths, skipped } = await notePaths(folder);
+  const { paths, skipped } = await notePaths(folder, skip);
   const notes: Note[] = [];
   const problems = [...skipped];
   // The notes found and not read: the files, not a link or a folder.

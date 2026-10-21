@@ -7,7 +7,13 @@
 import { basename } from "node:path";
 import { inspect } from "node:util";
 import * as z from "zod";
-import { byPath, loadFolder, type Note, type Problem } from "./loader.ts";
+import {
+  byPath,
+  type FolderOptions,
+  loadFolder,
+  type Note,
+  type Problem,
+} from "./loader.ts";
 import {
   checked,
   linksOf,
@@ -211,7 +217,8 @@ export function lint(
 export async function lintFolder(
   schema: Schema,
   folder: string,
+  options: FolderOptions = {},
 ): Promise<Problem[]> {
-  const { notes, problems, unread } = await loadFolder(folder);
+  const { notes, problems, unread } = await loadFolder(folder, options);
   return [...problems, ...lint(schema, notes, unread)].sort(byPath);
 }

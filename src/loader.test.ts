@@ -122,6 +122,28 @@ describe("a note", () => {
 });
 
 describe("a folder", () => {
+  it("leaves out each path skip names, as if it were not there: a file, a folder and all in it, and a symbolic link", async () => {
+    const root = await folderOf([
+      ["a.md", ""],
+      ["README.md", ""],
+      ["code/b.md", ""],
+      ["notes/c.md", ""],
+    ]);
+    await symlink(join(root, "a.md"), join(root, "linked.md"));
+    const skipped: string[] = [];
+    const skip = (path: string) => {
+      skipped.push(path);
+      return ["README.md", "code", "linked.md"].includes(path);
+    };
+    const { notes, problems, unread } = await loadFolder(root, { skip });
+    expect(notes.map((note) => note.path)).toEqual(["a.md", "notes/c.md"]);
+    expect(problems).toEqual([]);
+    expect(unread).toEqual([]);
+    // A skipped folder is not opened, so skip is not asked about what is in it.
+    expect(skipped).not.toContain("code/b.md");
+    expect(skipped).toContain("notes/c.md");
+  });
+
   it("is read into its notes and the problems of the notes it cannot read, in path order, and names those notes", async () => {
     const { notes, problems, unread } = await loadFolder(folder);
     expect(notes.map((note) => note.path)).toEqual([

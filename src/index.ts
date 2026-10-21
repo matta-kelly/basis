@@ -15,6 +15,7 @@ export type { AnySchema, Link, Schema, Type } from "./primitives.ts";
 export {
   loadFolder,
   readNote,
+  type FolderOptions,
   type Note,
   type Problem,
   type Read,

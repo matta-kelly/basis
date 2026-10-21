@@ -99,5 +99,5 @@ Define small pieces that build only downward, and check reality against them.
 	- `defineSchema` is also the compiler: a schema and its imports become one ontology. It refuses cycles, two schemas of one name and two owners of one type name
 	- what makes basis more than a zod wrapper: where schemas become one graph
 	- prior art: NixOS module merging
-2. loader: a folder in, notes out (path, frontmatter, body)
+2. loader: a folder in, notes out (path, frontmatter, body). A `skip` option leaves out the paths that are not notes, such as a README or code
 3. lint: a schema and the notes in, problems out, through the rule layers
