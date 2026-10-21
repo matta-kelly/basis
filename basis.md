@@ -78,7 +78,8 @@ Define small pieces that build only downward, and check reality against them.
 - one linter, not one per subgraph: separate linters drift, and none can check an edge that crosses subgraphs
 - front ends call the core (`lint`, `lintFolder`)
 	- que, which supplies basis to the folders it mounts and checks them
-	- not in the code yet: a CLI for a person and for CI, and an Obsidian plugin on save
+	- the CLI, `basis lint [folder]`, for a person, a hook and CI. It reads `basis.config.ts` (or `.js`) at the root of the folder: the schema, and the paths to skip. It gives each problem by its path from where it runs, and exits 0 when every note fits, 1 when one does not, and 2 when it cannot check. A `.ts` config needs Node 22.18 or later, which strips types
+	- not in the code yet: an Obsidian plugin on save
 
 ## Foundation
 
@@ -101,3 +102,4 @@ Define small pieces that build only downward, and check reality against them.
 	- prior art: NixOS module merging
 2. loader: a folder in, notes out (path, frontmatter, body). A `skip` option leaves out the paths that are not notes, such as a README or code
 3. lint: a schema and the notes in, problems out, through the rule layers
+4. cli: `basis lint [folder]`, the lint run on a folder with the schema and skip of its config. The one command a person, a hook and a pipeline run

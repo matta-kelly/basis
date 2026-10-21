@@ -1,13 +1,19 @@
 {
   "name": "basis",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
+  },
+  "bin": {
+    "basis": "./dist/bin.js"
   },
   "files": [
     "dist"

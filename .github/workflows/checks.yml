@@ -1,4 +1,4 @@
-# The checks every pull request must pass, and that main is held to.
+# The checks every push to main runs, and every pull request.
 # The check set is in `scripts/check.sh`, which `just check` runs too: this file sets up the toolchain and calls it.
 name: checks
 
@@ -16,7 +16,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # The one name the ruleset on main requires.
   checks:
     runs-on: ubuntu-latest
     timeout-minutes: 10

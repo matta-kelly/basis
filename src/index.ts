@@ -21,3 +21,4 @@ export {
   type Read,
 } from "./loader.ts";
 export { lint, lintFolder } from "./lint.ts";
+export { configNames, run, type Config, type Out } from "./cli.ts";

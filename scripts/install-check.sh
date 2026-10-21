@@ -31,3 +31,27 @@ const problems = await lintFolder(schema, "notes");
 console.log(problems);
 if (problems.length !== 1 || !problems[0].path.endsWith("oven.md")) process.exit(1);
 '
+
+# The command, as a project runs it: npx finds basis's bin, and the config at the folder's root names the schema.
+# One folder has a config in JavaScript, the other in TypeScript, which Node strips outside node_modules.
+cat >things.js <<'JS'
+import * as z from "zod";
+import { defineType, defineSchema } from "basis";
+const source = defineType({ name: "source", description: "A place data lives.", fields: { role: z.enum(["entry", "record"]) } });
+export default defineSchema({ name: "things", description: "Where data lives.", types: { source } });
+JS
+printf 'import things from "../things.js";\nexport default { schema: things, skip: ["README.md"] };\n' >notes/basis.config.js
+printf 'No frontmatter.\n' >notes/README.md
+mkdir typed
+cp notes/slate.md typed/
+printf 'import type { Config } from "basis";\nimport things from "../things.js";\nexport default { schema: things } satisfies Config;\n' >typed/basis.config.ts
+
+set +e
+out=$(npx --no-install basis lint notes)
+code=$?
+set -e
+echo "$out"
+case "$out" in *"oven.md: "*) ;; *) echo "basis lint did not name oven.md" >&2; exit 1 ;; esac
+case "$out" in *README.md*) echo "basis lint read a skipped path" >&2; exit 1 ;; esac
+if [ "$code" -ne 1 ]; then echo "basis lint gave $code for a note that does not fit, not 1" >&2; exit 1; fi
+npx --no-install basis lint typed
