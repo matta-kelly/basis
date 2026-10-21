@@ -1,5 +1,6 @@
 ---
 type: source
-description: "The shop's till."
+description: The shop's till.
 role: projection
 ---
+

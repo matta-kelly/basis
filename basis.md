@@ -63,8 +63,8 @@ Define small pieces that build only downward, and check reality against them.
 	- shape: the file parses, the frontmatter is valid YAML
 	- schema: the fields match the type (zod)
 	- reference: each link resolves, to a thing of the right type
-	- graph: no cycles, one owner per name, imports only down
-	- convention: the rules each schema brings (the ESLint model: a small core, rules from plugins)
+	- graph: no cycles, one owner per name, imports only down. `defineSchema` refuses these when a schema is built, before any note is read
+	- convention: the rules each schema brings (the ESLint model: a small core, rules from plugins). Not in the code yet: a package that needs its own rules runs them beside basis's lint, as cc does
 - each rule has a severity, and a schema sets it per rule: error, warning or off. Not in the code yet: today every problem is an error
 	- error: the note is wrong. The check fails, and so does CI
 	- warning: the note is valid but maybe not complete ("fabric has no outside copy yet"). It is reported, and the check passes
@@ -76,10 +76,9 @@ Define small pieces that build only downward, and check reality against them.
 	- eval: an agent, run, graded on the end state
 - parse, don't validate (Alexis King): zod turns raw frontmatter into a typed value. After the lint passes, code downstream trusts the shape
 - one linter, not one per subgraph: separate linters drift, and none can check an edge that crosses subgraphs
-- front ends call the core
-	- CLI (`just lint`), for a person and for CI
-	- que, so an agent checks its own work
-	- an Obsidian plugin, on save, in the editor
+- front ends call the core (`lint`, `lintFolder`)
+	- que, which supplies basis to the folders it mounts and checks them
+	- not in the code yet: a CLI for a person and for CI, and an Obsidian plugin on save
 
 ## Foundation
 

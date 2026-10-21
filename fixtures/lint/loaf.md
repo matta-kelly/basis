@@ -1,8 +1,15 @@
 ---
 type: object
-description: "One bake of one dough."
+description: One bake of one dough.
 key: loaf_code
-livesIn: ["[[slate]]", "[[daybook]]", "[[oven]]"]
-states: [drafted, complete]
-representedAs: ["[[till-item]]"]
+livesIn:
+  - "[[slate]]"
+  - "[[daybook]]"
+  - "[[oven]]"
+states:
+  - drafted
+  - complete
+representedAs:
+  - "[[till-item]]"
 ---
+

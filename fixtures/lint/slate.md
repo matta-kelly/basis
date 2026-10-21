@@ -1,5 +1,6 @@
 ---
 type: source
-description: "Where recipes are written."
+description: Where recipes are written.
 role: entry
 ---
+
