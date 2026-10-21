@@ -1,7 +1,10 @@
 ---
 type: object
-description: "Lives nowhere."
+description: Lives nowhere.
 key: bun_code
-livesIn: ["[[nowhere]]"]
-states: [drafted]
+livesIn:
+  - "[[nowhere]]"
+states:
+  - drafted
 ---
+

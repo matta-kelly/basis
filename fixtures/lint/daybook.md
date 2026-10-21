@@ -1,5 +1,6 @@
 ---
 type: source
-description: "The record of what exists."
+description: The record of what exists.
 role: record
 ---
+
