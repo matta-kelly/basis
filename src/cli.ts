@@ -129,6 +129,8 @@ export async function run(
   }
   // A path from the folder the command runs in, so a shell, an editor and a pipeline open it as given.
   for (const problem of problems)
-    out.log(`${relative(cwd, join(folder, problem.path))}: ${problem.message}`);
+    out.log(
+      `${relative(cwd, join(folder, problem.path))}:${problem.field ? ` ${problem.field}:` : ""} ${problem.message}${problem.rule ? ` (${problem.rule})` : ""}`,
+    );
   return problems.length > 0 ? 1 : 0;
 }

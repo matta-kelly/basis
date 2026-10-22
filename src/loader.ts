@@ -17,8 +17,18 @@ export type Note = {
   body: string;
 };
 
-/** A note that could not be read, and why. */
-export type Problem = { path: string; message: string };
+/**
+ * What is wrong, and where: a SARIF result's parts (ruleId, a location, message), as ESLint's LintMessage. `rule` is
+ * the id of the rule that found it. `field` is the field of the note, as a JSON Pointer ("/states/0"). A path that
+ * cannot be read as a note is `fatal`, of no rule, as ESLint's fatal message.
+ */
+export type Problem = {
+  path: string;
+  rule?: string;
+  field?: string;
+  message: string;
+  fatal?: true;
+};
 
 export type Read = { ok: true; note: Note } | { ok: false; problem: Problem };
 
@@ -37,7 +47,7 @@ export function readNote(path: string, file: string): Read {
   const name = basename(path, ".md");
   const problem = (message: string): Read => ({
     ok: false,
-    problem: { path, message },
+    problem: { path, message, fatal: true },
   });
   const block = frontmatterBlock.exec(text);
   if (!block) {

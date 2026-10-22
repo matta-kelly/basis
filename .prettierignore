@@ -1,3 +1,5 @@
 # The vault's own files, and notes, which are written by hand.
 .obsidian
 *.md
+# The official SARIF 2.1.0 schema, byte for byte as OASIS publishes it.
+fixtures/sarif-schema-2.1.0.json

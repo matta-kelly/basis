@@ -97,7 +97,7 @@ describe("the lint", () => {
     expect(problems).toHaveLength(3);
     expect(problems.every((p) => p.path === "loaf.md")).toBe(true);
     for (const field of ["key", "colour", "size"]) {
-      expect(problems.some((p) => p.message.includes(field))).toBe(true);
+      expect(problems.some((p) => p.field === `/${field}`)).toBe(true);
     }
   });
 
@@ -107,39 +107,76 @@ describe("the lint", () => {
         things,
         withNote(edit(slate, { ...slate.frontmatter, type: "verb" })),
       ),
-    ).toEqual([{ path: "slate.md", message: expect.stringMatching(/verb/) }]);
+    ).toEqual([
+      {
+        path: "slate.md",
+        rule: "basis/type",
+        field: "/type",
+        message: expect.stringMatching(/verb/),
+      },
+    ]);
     expect(
       lint(
         things,
         withNote(edit(slate, { ...slate.frontmatter, type: "constructor" })),
       ),
     ).toEqual([
-      { path: "slate.md", message: expect.stringMatching(/constructor/) },
+      {
+        path: "slate.md",
+        rule: "basis/type",
+        field: "/type",
+        message: expect.stringMatching(/constructor/),
+      },
     ]);
     expect(lint(things, withNote(without(slate, "type")))).toEqual([
-      { path: "slate.md", message: expect.stringMatching(/no type/) },
+      {
+        path: "slate.md",
+        rule: "basis/type",
+        field: "/type",
+        message: expect.stringMatching(/no type/),
+      },
     ]);
     expect(
       lint(things, withNote(edit(slate, { ...slate.frontmatter, type: null }))),
     ).toEqual([
-      { path: "slate.md", message: expect.stringMatching(/no type/) },
+      {
+        path: "slate.md",
+        rule: "basis/type",
+        field: "/type",
+        message: expect.stringMatching(/no type/),
+      },
     ]);
     expect(
       lint(things, withNote(edit(slate, { ...slate.frontmatter, type: 5 }))),
     ).toEqual([
-      { path: "slate.md", message: expect.stringMatching(/5 is not a name/) },
+      {
+        path: "slate.md",
+        rule: "basis/type",
+        field: "/type",
+        message: expect.stringMatching(/5 is not a name/),
+      },
     ]);
     expect(
       lint(things, withNote(edit(slate, { ...slate.frontmatter, type: "" }))),
     ).toEqual([
-      { path: "slate.md", message: expect.stringMatching(/no type/) },
+      {
+        path: "slate.md",
+        rule: "basis/type",
+        field: "/type",
+        message: expect.stringMatching(/no type/),
+      },
     ]);
     const loop: unknown[] = [];
     loop.push(loop);
     expect(
       lint(things, withNote(edit(slate, { ...slate.frontmatter, type: loop }))),
     ).toEqual([
-      { path: "slate.md", message: expect.stringMatching(/is not a name/) },
+      {
+        path: "slate.md",
+        rule: "basis/type",
+        field: "/type",
+        message: expect.stringMatching(/is not a name/),
+      },
     ]);
     expect(
       lint(
@@ -149,6 +186,8 @@ describe("the lint", () => {
     ).toEqual([
       {
         path: "slate.md",
+        rule: "basis/type",
+        field: "/type",
         message: expect.stringMatching(/source.* is not a name/),
       },
     ]);
@@ -164,9 +203,9 @@ describe("the lint", () => {
         }),
       ),
     );
-    expect(problems.map((p) => p.message)).toEqual([
-      expect.stringMatching(/key/),
-      expect.stringMatching(/nowhere/),
+    expect(problems.map((p) => [p.rule, p.field])).toEqual([
+      ["basis/fields", "/key"],
+      ["basis/link", "/livesIn"],
     ]);
   });
 
@@ -181,8 +220,17 @@ describe("the lint", () => {
       livesIn: ["[[slate]]", "[[oven]]"],
     });
     expect(lint(things, [...withNote(linking), oven], ["a/oven.md"])).toEqual([
-      { path: "b/oven.md", message: expect.stringContaining("a/oven.md") },
-      { path: "loaf.md", message: expect.stringMatching(/oven.*source/) },
+      {
+        path: "b/oven.md",
+        rule: "basis/unique-name",
+        message: expect.stringContaining("a/oven.md"),
+      },
+      {
+        path: "loaf.md",
+        rule: "basis/link",
+        field: "/livesIn",
+        message: expect.stringMatching(/oven.*source/),
+      },
     ]);
   });
 
@@ -192,7 +240,14 @@ describe("the lint", () => {
         things,
         withNote(edit(loaf, { ...loaf.frontmatter, livesIn: ["[[nowhere]]"] })),
       ),
-    ).toEqual([{ path: "loaf.md", message: expect.stringMatching(/nowhere/) }]);
+    ).toEqual([
+      {
+        path: "loaf.md",
+        rule: "basis/link",
+        field: "/livesIn",
+        message: expect.stringMatching(/nowhere/),
+      },
+    ]);
   });
 
   it("gives a problem for a link to a note of the wrong type", () => {
@@ -209,6 +264,8 @@ describe("the lint", () => {
     ).toEqual([
       {
         path: "loaf.md",
+        rule: "basis/link",
+        field: "/representedAs",
         message: expect.stringMatching(/slate.*external-object/),
       },
     ]);
@@ -224,10 +281,12 @@ describe("the lint", () => {
     expect(lint(things, [...right, twin])).toEqual([
       {
         path: "copies/slate.md",
+        rule: "basis/unique-name",
         message: expect.stringContaining("slate.md"),
       },
       {
         path: "slate.md",
+        rule: "basis/unique-name",
         message: expect.stringContaining("copies/slate.md"),
       },
     ]);
@@ -242,6 +301,7 @@ describe("the lint", () => {
     ).toEqual([
       {
         path: "Bad_Name.md",
+        rule: "basis/name",
         message: expect.stringMatching(
           /file name Bad_Name is not a lowercase slug/,
         ),
@@ -255,7 +315,14 @@ describe("the lint", () => {
         things,
         withNote(edit(slate, { ...slate.frontmatter, name: "slate" })),
       ),
-    ).toEqual([{ path: "slate.md", message: expect.stringMatching(/name/) }]);
+    ).toEqual([
+      {
+        path: "slate.md",
+        rule: "basis/name",
+        field: "/name",
+        message: expect.stringMatching(/name/),
+      },
+    ]);
   });
 });
 
@@ -325,6 +392,8 @@ describe("the lint of a schema that imports another", () => {
     ).toEqual([
       {
         path: "ship-review.md",
+        rule: "basis/link",
+        field: "/of",
         message: expect.stringMatching(
           /ana, which is a agent, not a capability/,
         ),
@@ -347,15 +416,25 @@ describe("the lint of a schema that imports another", () => {
 
   it("parses a note of an extended type by the extension, and a note of an imported type by its own", () => {
     expect(lint(company, changed(ship, { stage: undefined }))).toEqual([
-      { path: "ship.md", message: expect.stringMatching(/stage/) },
+      {
+        path: "ship.md",
+        rule: "basis/fields",
+        field: "/stage",
+        message: expect.stringMatching(/^Missing: /),
+      },
     ]);
     expect(lint(company, changed(ana, { role: undefined }))).toEqual([
-      { path: "ana.md", message: expect.stringMatching(/role/) },
+      {
+        path: "ana.md",
+        rule: "basis/fields",
+        field: "/role",
+        message: expect.stringMatching(/^Missing: /),
+      },
     ]);
     // By core alone, a company capability has fields core does not know.
-    expect(lint(core, layered).map((p) => p.message)).toEqual([
-      expect.stringMatching(/stage/),
-      expect.stringMatching(/heldBy/),
+    expect(lint(core, layered).map((p) => [p.rule, p.field])).toEqual([
+      ["basis/fields", "/stage"],
+      ["basis/fields", "/heldBy"],
     ]);
   });
 
@@ -363,14 +442,18 @@ describe("the lint of a schema that imports another", () => {
     expect(lint(company, changed(ship, { heldBy: "[[nobody]]" }))).toEqual([
       {
         path: "ship.md",
+        rule: "basis/link",
+        field: "/heldBy",
         message: expect.stringMatching(
-          /heldBy points at nobody, which is not a note/,
+          /It points at nobody, which is not a note/,
         ),
       },
     ]);
     expect(lint(company, changed(ship, { heldBy: "[[ship-works]]" }))).toEqual([
       {
         path: "ship.md",
+        rule: "basis/link",
+        field: "/heldBy",
         message: expect.stringMatching(
           /ship-works, which is a case, not a agent/,
         ),
@@ -381,6 +464,8 @@ describe("the lint of a schema that imports another", () => {
     ).toEqual([
       {
         path: "ship-works.md",
+        rule: "basis/link",
+        field: "/capability",
         message: expect.stringMatching(
           /ana, which is a agent, not a capability/,
         ),
@@ -392,6 +477,8 @@ describe("the lint of a schema that imports another", () => {
     expect(lint(company, changed(ana, { type: "verb" }))).toEqual([
       {
         path: "ana.md",
+        rule: "basis/type",
+        field: "/type",
         message: expect.stringMatching(
           /verb is not a type of the schema company or its imports/,
         ),
@@ -435,10 +522,12 @@ describe("the lint of a type with a key", () => {
     expect(lint(keyed, [...agents, ship, twin])).toEqual([
       {
         path: "copies/ana-ship.md",
+        rule: "basis/key",
         message: `The key ${key} of the type capability is also the key of ship.md.`,
       },
       {
         path: "ship.md",
+        rule: "basis/key",
         message: `The key ${key} of the type capability is also the key of copies/ana-ship.md.`,
       },
     ]);
@@ -468,7 +557,12 @@ describe("the lint of a type with a key", () => {
     ]);
     const unlinked = capabilityNote("ana-ship.md", "ana", "ship");
     expect(lint(keyed, [...agents, ship, unlinked])).toEqual([
-      { path: "ana-ship.md", message: expect.stringMatching(/heldBy/) },
+      {
+        path: "ana-ship.md",
+        rule: "basis/fields",
+        field: "/heldBy",
+        message: 'Not a wikilink, "[[name]]".',
+      },
     ]);
   });
 });
@@ -559,12 +653,16 @@ describe("the lint of a link with several targets", () => {
     ).toEqual([
       {
         path: "a.md",
+        rule: "basis/link",
+        field: "/heldBy",
         message:
-          "The link heldBy points at push, which is a verb, not a source or a domain.",
+          "It points at push, which is a verb, not a source or a domain.",
       },
       {
         path: "b.md",
-        message: "The link heldBy points at nobody, which is not a note.",
+        rule: "basis/link",
+        field: "/heldBy",
+        message: "It points at nobody, which is not a note.",
       },
     ]);
   });
@@ -578,8 +676,10 @@ describe("the lint of a link with several targets", () => {
     ).toEqual([
       {
         path: "a.md",
+        rule: "basis/link",
+        field: "/touches",
         message:
-          "The link touches points at push, which is a verb, not a source or a domain.",
+          "It points at push, which is a verb, not a source or a domain.",
       },
     ]);
   });
@@ -595,10 +695,12 @@ describe("the lint of a link with several targets", () => {
     ).toEqual([
       {
         path: "a.md",
+        rule: "basis/key",
         message: `The key ${key} of the type capability is also the key of b.md.`,
       },
       {
         path: "b.md",
+        rule: "basis/key",
         message: `The key ${key} of the type capability is also the key of a.md.`,
       },
     ]);
@@ -622,7 +724,12 @@ describe("the lint of a type note", () => {
       abstract: false,
     });
     expect(lint(things, [...right, typeNote])).toEqual([
-      { path: "source.md", message: expect.stringMatching(/^abstract: /) },
+      {
+        path: "source.md",
+        rule: "basis/fields",
+        field: "/abstract",
+        message: expect.stringMatching(/^Invalid/),
+      },
     ]);
   });
 });
@@ -654,7 +761,12 @@ describe("the lint of a type note, in a schema that imports an extension of the 
   it("parses a type note by the extension, with or without an import of basis", () => {
     for (const schema of [above, withBasis]) {
       expect(lint(schema, [typeNote])).toEqual([
-        { path: "source.md", message: expect.stringMatching(/^owner: /) },
+        {
+          path: "source.md",
+          rule: "basis/fields",
+          field: "/owner",
+          message: expect.stringMatching(/^Missing: /),
+        },
       ]);
       expect(lint(schema, [ownedNote])).toEqual([]);
     }
@@ -749,11 +861,13 @@ describe("the type notes of a folder", () => {
     const problems = await lintFolder(kitchen, types);
     expect(problems).toContainEqual({
       path: "kitchen/bun.md",
+      rule: "basis/type-note",
       message:
         "The type bun of kitchen has no type note: make this note, of type type, with the description of bun.",
     });
     expect(problems).toContainEqual({
       path: "kitchen/pan.md",
+      rule: "basis/type-note",
       message:
         "The type pan of kitchen has no type note: make this note, of type type, with the description of pan.",
     });
@@ -762,8 +876,10 @@ describe("the type notes of a folder", () => {
   it("gives a problem for a type note whose description is not its type's", async () => {
     expect(await lintFolder(kitchen, types)).toContainEqual({
       path: "kitchen/loaf.md",
+      rule: "basis/type-note-agrees",
+      field: "/description",
       message:
-        'Its description is not the description of the type loaf of kitchen: make it "A loaf of bread."',
+        'Not the description of the type loaf of kitchen: make it "A loaf of bread."',
     });
   });
 
@@ -771,19 +887,24 @@ describe("the type notes of a folder", () => {
     const problems = await lintFolder(kitchen, types);
     expect(problems).toContainEqual({
       path: "kitchen/oven.md",
+      rule: "basis/type-note-agrees",
+      field: "/abstract",
       message:
-        "The type oven of kitchen is abstract, and its type note does not say so: add abstract: true.",
+        "Missing: the type oven of kitchen is abstract, so add abstract: true.",
     });
     expect(problems).toContainEqual({
       path: "kitchen/scone.md",
+      rule: "basis/type-note-agrees",
+      field: "/abstract",
       message:
-        "Its abstract is true, and the type scone of kitchen is not abstract: remove abstract.",
+        "True, and the type scone of kitchen is not abstract: remove it.",
     });
   });
 
   it("gives a problem for a type note in a schema's folder that names no type of that schema", async () => {
     expect(await lintFolder(kitchen, types)).toContainEqual({
       path: "kitchen/till.md",
+      rule: "basis/type-note-type",
       message:
         "The schema kitchen has no type till: remove this type note, or give it the name of a type of kitchen.",
     });
@@ -795,6 +916,7 @@ describe("the type notes of a folder", () => {
       {
         path: "kitchen/crumb.md",
         message: "The frontmatter has no closing line of ---.",
+        fatal: true,
       },
     ]);
   });
@@ -802,6 +924,7 @@ describe("the type notes of a folder", () => {
   it("gives a problem for a type note in the folder it lints that is in the folder of no schema it sees", async () => {
     expect(await lintFolder(kitchen, types)).toContainEqual({
       path: "things/source.md",
+      rule: "basis/type-note-folder",
       message:
         "A type note outside the folder of the type notes of each schema the lint sees: move it to the folder of its schema, one of ../../types, kitchen.",
     });
@@ -816,6 +939,7 @@ describe("the type notes of a folder", () => {
     });
     expect(await lintFolder(away, types)).toContainEqual({
       path: "away/bun.md",
+      rule: "basis/type-note",
       message:
         "The type bun of away has no type note: make this note, of type type, with the description of bun.",
     });
@@ -865,10 +989,10 @@ describe("the type notes of a folder", () => {
     const root = await mkdtemp(join(tmpdir(), "basis-lint-"));
     made.push(root);
     const problems = await lintFolder(schema, root);
-    expect(problems.map((p) => p.message)).toEqual([
-      "The note writes name: its name is its file name.",
-      expect.stringMatching(/^abstract: /),
-      "The field extra is not a field of its type.",
+    expect(problems.map((p) => [p.rule, p.field])).toEqual([
+      ["basis/name", "/name"],
+      ["basis/fields", "/abstract"],
+      ["basis/fields", "/extra"],
     ]);
   });
 
@@ -903,6 +1027,7 @@ describe("the type notes of a folder", () => {
     expect(await lintFolder(schema, root)).toEqual([
       {
         path: "loose/roll.md",
+        rule: "basis/type-note-folder",
         message: `A type note outside the folder of the type notes of each schema the lint sees: move it to the folder of its schema, one of ${relative(await realpath(root), basisTypes)}, ..`,
       },
     ]);
@@ -999,6 +1124,8 @@ describe("the lint of abstract types", () => {
     expect(lint(bakery, [rye, spelt, top, loose])).toEqual([
       {
         path: "loose.md",
+        rule: "basis/type",
+        field: "/type",
         message:
           "The type grain is abstract: a note is of a type that inherits it.",
       },
@@ -1015,8 +1142,9 @@ describe("the lint of abstract types", () => {
     expect(lint(bakery, [rye, spelt, other, wrong])).toEqual([
       {
         path: "top.md",
-        message:
-          "The link holds points at other, which is a shelf, not a grain.",
+        rule: "basis/link",
+        field: "/holds",
+        message: "It points at other, which is a shelf, not a grain.",
       },
     ]);
   });
@@ -1026,11 +1154,15 @@ describe("the lint of abstract types", () => {
     expect(lint(bakery, [rye, sameMill, top])).toEqual([
       {
         path: "rye.md",
+        rule: "basis/key",
+        field: "/mill",
         message:
           'The key mill "north" of the type grain is also the key of spelt.md.',
       },
       {
         path: "spelt.md",
+        rule: "basis/key",
+        field: "/mill",
         message:
           'The key mill "north" of the type grain is also the key of rye.md.',
       },

@@ -44,23 +44,129 @@ import {
   type Type,
 } from "./primitives.ts";
 
+/**
+ * The rules of basis itself: a closed list, exported here, each by its id, under the schema name basis, which no other
+ * schema can take. An id, once released, keeps its name. A note that cannot be read is fatal, and of no rule.
+ */
+export const coreRules = Object.freeze([
+  {
+    id: "basis/name",
+    description:
+      "A note's name is its file name, a lowercase slug, and the note does not write it.",
+  },
+  {
+    id: "basis/unique-name",
+    description: "No two notes have one name.",
+  },
+  {
+    id: "basis/type",
+    description:
+      "A note has a type, one the schema or its imports have, and not an abstract one.",
+  },
+  {
+    id: "basis/fields",
+    description: "A note's fields are the fields of its type, and fit them.",
+  },
+  {
+    id: "basis/link",
+    description:
+      "Each link points at a note, of the type the link points at or of a type that inherits it.",
+  },
+  {
+    id: "basis/key",
+    description: "No two notes of a type have one key.",
+  },
+  {
+    id: "basis/type-note",
+    description:
+      "Each type a schema owns has its type note, in the folder the schema declares.",
+  },
+  {
+    id: "basis/type-note-agrees",
+    description:
+      "A type note has its type's description, and abstract: true when its type is abstract.",
+  },
+  {
+    id: "basis/type-note-type",
+    description:
+      "Each type note in a schema's folder explains a type of that schema.",
+  },
+  {
+    id: "basis/type-note-folder",
+    description:
+      "Each type note sits in the folder of type notes of a schema the lint sees.",
+  },
+] as const);
+
+/** The id of a rule of basis. */
+type CoreRule = (typeof coreRules)[number]["id"];
+
+/** A field of a note, as a JSON Pointer (RFC 6901): "/states/0". A "~" in a key is "~0", and a "/" is "~1". */
+export const pointer = (path: readonly PropertyKey[]): string =>
+  path
+    .map(
+      (part) => `/${String(part).replaceAll("~", "~0").replaceAll("/", "~1")}`,
+    )
+    .join("");
+
+/** The keys of a JSON Pointer, or none when it is not one. */
+const pointerKeys = (field: string): string[] | undefined =>
+  field.startsWith("/")
+    ? field
+        .slice(1)
+        .split("/")
+        .map((part) => part.replaceAll("~1", "/").replaceAll("~0", "~"))
+    : undefined;
+
+/** The value at a path in the frontmatter, or undefined when there is none. */
+const valueAt = (frontmatter: unknown, path: readonly PropertyKey[]): unknown =>
+  path.reduce<unknown>(
+    (value, key) =>
+      typeof value === "object" && value !== null
+        ? (value as Record<PropertyKey, unknown>)[key]
+        : undefined,
+    frontmatter,
+  );
+
 /** A parse's issues as problems, one for each field. A note's name is its file name, so a bad name is a bad file name. */
 function fieldProblems(note: Note, error: z.ZodError): Problem[] {
   const path = note.path;
-  return error.issues.flatMap((issue) => {
+  return error.issues.flatMap((issue): Problem[] => {
     if (issue.code === "unrecognized_keys")
       return issue.keys.map((key) => ({
         path,
-        message: `The field ${key} is not a field of its type.`,
+        rule: "basis/fields",
+        field: pointer([...issue.path, key]),
+        message: "Not a field of its type: remove it, or add it to the type.",
       }));
     if (issue.path.length === 1 && issue.path[0] === "name")
       return [
         {
           path,
-          message: `The file name ${note.name} is not ${issue.message}.`,
+          rule: "basis/name",
+          message: `The file name ${note.name} is not a lowercase slug.`,
         },
       ];
-    return [{ path, message: `${issue.path.join(".")}: ${issue.message}` }];
+    // A field the note does not have, whatever zod's code for it: what its type needs there is the fix.
+    const missing =
+      issue.path.length > 0 &&
+      valueAt(note.frontmatter, issue.path) === undefined;
+    const needed =
+      issue.code === "invalid_type"
+        ? `a ${issue.expected}`
+        : issue.code === "invalid_value"
+          ? `one of ${issue.values.map((value) => JSON.stringify(value)).join(", ")}`
+          : "a value";
+    return [
+      {
+        path,
+        rule: "basis/fields",
+        ...(issue.path.length > 0 && { field: pointer(issue.path) }),
+        message: missing
+          ? `Missing: its type needs ${needed} here.`
+          : issue.message,
+      },
+    ];
   });
 }
 
@@ -88,24 +194,39 @@ function noteProblems(
   unread: Set<string>,
   parsed?: Map<Note, unknown>,
 ): Problem[] {
-  const problem = (message: string): Problem => ({ path: note.path, message });
+  const problem = (
+    rule: CoreRule,
+    field: string,
+    message: string,
+  ): Problem => ({ path: note.path, rule, field: pointer([field]), message });
   const problems: Problem[] = [];
   if (Object.hasOwn(note.frontmatter, "name"))
-    problems.push(problem("The note writes name: its name is its file name."));
+    problems.push(
+      problem(
+        "basis/name",
+        "name",
+        "A note does not write its name: its name is its file name. Remove it.",
+      ),
+    );
   const type = note.frontmatter.type;
   if (type === undefined || type === null || type === "")
-    return [...problems, problem("The note has no type.")];
+    return [
+      ...problems,
+      problem("basis/type", "type", "The note has no type."),
+    ];
   if (typeof type !== "string")
     return [
       ...problems,
       // inspect, not JSON: a YAML alias can make a value that holds itself.
-      problem(`The type ${inspect(type)} is not a name.`),
+      problem("basis/type", "type", `The type ${inspect(type)} is not a name.`),
     ];
   const at = noteType(seen, note);
   if (!at)
     return [
       ...problems,
       problem(
+        "basis/type",
+        "type",
         `The type ${type} is not a type of the schema ${schema.name} or its imports.`,
       ),
     ];
@@ -114,6 +235,8 @@ function noteProblems(
     return [
       ...problems,
       problem(
+        "basis/type",
+        "type",
         `The type ${type} is abstract: a note is of a type that inherits it.`,
       ),
     ];
@@ -137,7 +260,9 @@ function noteProblems(
         if (unread.has(name)) continue;
         problems.push(
           problem(
-            `The link ${link.name} points at ${name}, which is not a note.`,
+            "basis/link",
+            link.name,
+            `It points at ${name}, which is not a note.`,
           ),
         );
       } else if (
@@ -151,7 +276,9 @@ function noteProblems(
       ) {
         problems.push(
           problem(
-            `The link ${link.name} points at ${name}, which is a ${String(targets[0]?.frontmatter.type)}, not a ${to.join(" or a ")}.`,
+            "basis/link",
+            link.name,
+            `It points at ${name}, which is a ${String(targets[0]?.frontmatter.type)}, not a ${to.join(" or a ")}.`,
           ),
         );
       }
@@ -175,7 +302,7 @@ function keyProblems(seen: Seen, notes: Note[]): Problem[] {
   };
   const byKey = new Map<
     string,
-    { note: Note; over: string; values: string }[]
+    { note: Note; over: string; key: readonly string[]; values: string }[]
   >();
   for (const note of notes) {
     const type = noteType(seen, note)?.type;
@@ -192,6 +319,7 @@ function keyProblems(seen: Seen, notes: Note[]): Problem[] {
       same.push({
         note,
         over,
+        key,
         values: key
           .map((field, i) => `${field} ${JSON.stringify(values[i])}`)
           .join(", "),
@@ -202,8 +330,10 @@ function keyProblems(seen: Seen, notes: Note[]): Problem[] {
   return [...byKey.values()].flatMap((same) =>
     same.length < 2
       ? []
-      : same.map(({ note, over, values }) => ({
+      : same.map(({ note, over, key, values }) => ({
           path: note.path,
+          rule: "basis/key",
+          ...(key.length === 1 && { field: pointer(key) }),
           message: `The key ${values} of the type ${over} is also the key of ${same
             .filter((other) => other.note !== note)
             .map((other) => other.note.path)
@@ -211,6 +341,12 @@ function keyProblems(seen: Seen, notes: Note[]): Problem[] {
         })),
   );
 }
+
+/** What a rule gives for each thing wrong: the field it is in, if one, and the message. */
+const Report = z.strictObject({
+  field: z.string().min(1).optional(),
+  message: z.string().min(1),
+});
 
 /** A value, frozen through its arrays and objects, so a rule cannot change what the next one reads. A Date is not frozen by this. */
 function deepFreeze<V>(value: V): V {
@@ -222,9 +358,9 @@ function deepFreeze<V>(value: V): V {
 }
 
 /**
- * What the rules of each schema the lint sees find wrong: each rule runs on each node of its type that parsed. A
- * problem is the rule's message, named by the rule and its schema. A check that throws, or gives something other than
- * a list of messages, is a fault of the rule, not of the note: the lint throws, naming both.
+ * What the rules of each schema the lint sees find wrong: each rule runs on each node of its type that parsed, and
+ * each `{ field?, message }` it gives is a problem of rule `<schema>/<rule>`. A check that throws, or gives something
+ * other than a list of `{ field?, message }`, is a fault of the rule, not of the note: the lint throws, naming both.
  */
 function ruleProblems(
   schema: Schema,
@@ -269,26 +405,41 @@ function ruleProblems(
   };
   const problems: Problem[] = [];
   for (const { rule, owner } of rulesSeen(schema)) {
-    const of = `The rule ${rule.name} of ${owner.name}`;
+    const id = `${owner.name}/${rule.name}`;
     for (const [note, node] of nodesOf(rule.on)) {
-      let messages: unknown;
+      let reports: unknown;
       try {
-        messages = rule.check(node as never, graph);
+        reports = rule.check(node as never, graph);
       } catch (error) {
         throw new Error(
-          `${of} threw on ${note.path}: ${error instanceof Error ? error.message : String(error)}`,
+          `The rule ${id} threw on ${note.path}: ${error instanceof Error ? error.message : String(error)}`,
           { cause: error },
         );
       }
-      if (
-        !Array.isArray(messages) ||
-        !messages.every((message) => typeof message === "string")
-      )
+      const parsedReports = Report.array().safeParse(reports);
+      if (!parsedReports.success)
         throw new Error(
-          `${of} gave something other than a list of messages for ${note.path}.`,
+          `The rule ${id} gave something other than a list of { field?, message } for ${note.path}.`,
         );
-      for (const message of messages as string[])
-        problems.push({ path: note.path, message: `${of}: ${message}` });
+      const type = noteType(seen, note)?.type;
+      for (const { field, message } of parsedReports.data) {
+        const head = field === undefined ? undefined : pointerKeys(field)?.[0];
+        if (
+          field !== undefined &&
+          (head === undefined ||
+            head === "name" ||
+            !(type && Object.hasOwn(type.schema.shape, head)))
+        )
+          throw new Error(
+            `The rule ${id} gave the field ${field} for ${note.path}, which is not a JSON Pointer to a field its type ${String(type?.name)} gives a note.`,
+          );
+        problems.push({
+          path: note.path,
+          rule: id,
+          ...(field !== undefined && { field }),
+          message,
+        });
+      }
     }
   }
   return problems;
@@ -329,6 +480,7 @@ export function lint(
       if (others.length === 0) continue;
       problems.push({
         path: note.path,
+        rule: "basis/unique-name",
         message: `The name ${note.name} is also the name of ${others.join(", ")}.`,
       });
     }
@@ -376,26 +528,35 @@ function typeNoteProblems(
   owner: Schema,
   type: Type,
   typeNote: Note | undefined,
-): string[] {
+): { rule: CoreRule; field?: string; message: string }[] {
   const of = `the type ${type.name} of ${owner.name}`;
   if (!typeNote)
     return [
-      `The type ${type.name} of ${owner.name} has no type note: make this note, of type type, with the description of ${type.name}.`,
+      {
+        rule: "basis/type-note",
+        message: `The type ${type.name} of ${owner.name} has no type note: make this note, of type type, with the description of ${type.name}.`,
+      },
     ];
-  const problems: string[] = [];
+  const problems: { rule: CoreRule; field?: string; message: string }[] = [];
   if (typeNote.frontmatter.description !== type.description)
-    problems.push(
-      `Its description is not the description of ${of}: make it ${JSON.stringify(type.description)}`,
-    );
+    problems.push({
+      rule: "basis/type-note-agrees",
+      field: "/description",
+      message: `Not the description of ${of}: make it ${JSON.stringify(type.description)}`,
+    });
   const abstract = typeNote.frontmatter.abstract === true;
   if (abstract && !type.abstract)
-    problems.push(
-      `Its abstract is true, and ${of} is not abstract: remove abstract.`,
-    );
+    problems.push({
+      rule: "basis/type-note-agrees",
+      field: "/abstract",
+      message: `True, and ${of} is not abstract: remove it.`,
+    });
   if (!abstract && type.abstract)
-    problems.push(
-      `The type ${type.name} of ${owner.name} is abstract, and its type note does not say so: add abstract: true.`,
-    );
+    problems.push({
+      rule: "basis/type-note-agrees",
+      field: "/abstract",
+      message: `Missing: ${of} is abstract, so add abstract: true.`,
+    });
   return problems;
 }
 
@@ -462,17 +623,18 @@ async function typeNotesOf(
     for (const type of own) {
       if (unread.has(type.name)) continue;
       const path = from(join(typesFolder, `${type.name}.md`));
-      for (const message of typeNoteProblems(
+      for (const problem of typeNoteProblems(
         owner,
         type,
         typeNotes.get(type.name),
       ))
-        problems.push({ path, message });
+        problems.push({ path, ...problem });
     }
     for (const typeNote of typeNotes.values())
       if (!own.some((type) => type.name === typeNote.name))
         problems.push({
           path: typeNote.path,
+          rule: "basis/type-note-type",
           message: `The schema ${owner.name} has no type ${typeNote.name}: remove this type note, or give it the name of a type of ${owner.name}.`,
         });
   }
@@ -485,6 +647,7 @@ async function typeNotesOf(
     if (!folders.includes(dirname(join(realRoot, note.path))))
       problems.push({
         path: note.path,
+        rule: "basis/type-note-folder",
         message: `A type note outside the folder of the type notes of each schema the lint sees: move it to the folder of its schema, one of ${folders.map(from).join(", ")}.`,
       });
   return problems;

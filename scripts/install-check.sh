@@ -56,7 +56,7 @@ out=$(npx --no-install basis lint notes)
 code=$?
 set -e
 echo "$out"
-case "$out" in *"oven.md: "*) ;; *) echo "basis lint did not name oven.md" >&2; exit 1 ;; esac
+case "$out" in *"oven.md: /description: Missing: "*"(basis/fields)") ;; *) echo "basis lint did not name oven.md" >&2; exit 1 ;; esac
 case "$out" in *README.md*) echo "basis lint read a skipped path" >&2; exit 1 ;; esac
 if [ "$code" -ne 1 ]; then echo "basis lint gave $code for a note that does not fit, not 1" >&2; exit 1; fi
 npx --no-install basis lint typed

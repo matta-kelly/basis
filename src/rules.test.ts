@@ -33,7 +33,10 @@ const derivedStates = defineRule({
   check: (node) =>
     (node.derived ?? [])
       .filter((state) => !node.states.includes(state))
-      .map((state) => `The derived state ${state} is not one of its states.`),
+      .map((state) => ({
+        field: "/derived",
+        message: `The derived state ${state} is not one of its states.`,
+      })),
 });
 
 // A rule across a link: an object lives in at least one source of record.
@@ -44,7 +47,7 @@ const inRecord = defineRule({
   check: (node, graph) =>
     node.livesIn.some((name) => graph.get(name, source)?.role === "record")
       ? []
-      : [`It lives in no source of record.`],
+      : [{ field: "/livesIn", message: "It lives in no source of record." }],
 });
 
 const ruled = defineSchema({
@@ -152,12 +155,12 @@ describe("a schema with rules", () => {
       }),
     ).toThrow(
       new Error(
-        "The rule far-rule of blind runs on far, which is not a type of the schema blind or its imports.",
+        "The rule blind/far-rule runs on far, which is not a type of the schema blind or its imports.",
       ),
     );
   });
 
-  it("is refused with two rules of one name, in it or in a schema it sees: a rule name has one owner", () => {
+  it("is refused with two rules of one name in it, and takes a rule of a name a schema it sees has: the id is <schema>/<rule>", () => {
     expect(() =>
       defineSchema({
         name: "twice",
@@ -167,33 +170,21 @@ describe("a schema with rules", () => {
         rules: [rule("same"), rule("same")],
       }),
     ).toThrow(new Error("The schema twice has two rules named same."));
-    expect(() =>
-      defineSchema({
-        name: "again",
-        description: "d",
-        imports: [ruled],
-        types: {},
-        rules: [rule("in-record")],
-      }),
-    ).toThrow(
-      new Error(
-        "The schemas ruled and again both have a rule named in-record: a rule name has one owner.",
-      ),
-    );
-    // The same rule, held again: a second owner, not the same rule seen twice.
-    expect(() =>
-      defineSchema({
-        name: "copy",
-        description: "d",
-        imports: [ruled],
-        types: {},
-        rules: [inRecord],
-      }),
-    ).toThrow(
-      new Error(
-        "The schemas ruled and copy both have a rule named in-record: a rule name has one owner.",
-      ),
-    );
+    const again = defineSchema({
+      name: "again",
+      description: "d",
+      imports: [ruled],
+      types: {},
+      rules: [inRecord],
+    });
+    const lost = note("loaf.md", {
+      ...loaf.frontmatter,
+      livesIn: ["[[till]]"],
+    });
+    expect(lint(again, [till, lost]).map((p) => p.rule)).toEqual([
+      "ruled/in-record",
+      "again/in-record",
+    ]);
   });
 
   it("sees one rule once, through two imports", () => {
@@ -219,8 +210,9 @@ describe("a schema with rules", () => {
     expect(lint(both, [till, note("loaf.md", lost)])).toEqual([
       {
         path: "loaf.md",
-        message:
-          "The rule in-record of ruled: It lives in no source of record.",
+        rule: "ruled/in-record",
+        field: "/livesIn",
+        message: "It lives in no source of record.",
       },
     ]);
   });
@@ -234,29 +226,6 @@ describe("a schema with rules", () => {
         rules: inRecord as never,
       }),
     ).toThrow(new Error("The rules of odd are not a list."));
-  });
-
-  it("is refused with two schemas it sees that have a rule of one name, though it has no rules of its own", () => {
-    const holding = (name: string) =>
-      defineSchema({
-        name,
-        description: "d",
-        imports: [things],
-        types: {},
-        rules: [rule("in-record")],
-      });
-    expect(() =>
-      defineSchema({
-        name: "over",
-        description: "d",
-        imports: [holding("left"), holding("right")],
-        types: {},
-      }),
-    ).toThrow(
-      new Error(
-        "The schemas left and right both have a rule named in-record: a rule name has one owner.",
-      ),
-    );
   });
 
   it("checks the rules of each schema it sees, so a spread import cannot bring a rule defineRule did not make", () => {
@@ -309,7 +278,7 @@ describe("the lint of rules", () => {
     expect(lint(ruled, [ledger, till, loaf])).toEqual([]);
   });
 
-  it("gives each message of a rule as a problem of its note, named by the rule and its schema", () => {
+  it("gives each report of a rule as a problem of its note, with the rule's id <schema>/<rule>", () => {
     const wrong = note("loaf.md", {
       ...loaf.frontmatter,
       livesIn: ["[[till]]"],
@@ -318,18 +287,21 @@ describe("the lint of rules", () => {
     expect(lint(ruled, [ledger, till, wrong])).toEqual([
       {
         path: "loaf.md",
-        message:
-          "The rule derived-states of ruled: The derived state burnt is not one of its states.",
+        rule: "ruled/derived-states",
+        field: "/derived",
+        message: "The derived state burnt is not one of its states.",
       },
       {
         path: "loaf.md",
-        message:
-          "The rule derived-states of ruled: The derived state stale is not one of its states.",
+        rule: "ruled/derived-states",
+        field: "/derived",
+        message: "The derived state stale is not one of its states.",
       },
       {
         path: "loaf.md",
-        message:
-          "The rule in-record of ruled: It lives in no source of record.",
+        rule: "ruled/in-record",
+        field: "/livesIn",
+        message: "It lives in no source of record.",
       },
     ]);
   });
@@ -346,7 +318,7 @@ describe("the lint of rules", () => {
       livesIn: ["[[till]]"],
     });
     expect(lint(top, [till, lost])).toMatchObject([
-      { path: "loaf.md", message: /^The rule in-record of ruled:/ },
+      { path: "loaf.md", rule: "ruled/in-record" },
     ]);
   });
 
@@ -358,7 +330,10 @@ describe("the lint of rules", () => {
     });
     const problems = lint(ruled, [till, broken]);
     expect(problems).toHaveLength(1);
-    expect(problems[0]?.message).toMatch(/^states:/);
+    expect(problems[0]).toMatchObject({
+      rule: "basis/fields",
+      field: "/states",
+    });
   });
 
   it("gives the graph the parsed nodes: a link as a name, and none for a missing note, a note of another type, a note that does not parse, or a name two notes share", () => {
@@ -474,7 +449,7 @@ describe("the lint of rules", () => {
       name: "owned",
       description: "Every tool has an owner.",
       on: tool,
-      check: (node) => (node.owner ? [] : ["It has no owner."]),
+      check: (node) => (node.owner ? [] : [{ message: "It has no owner." }]),
     });
     const shed = defineSchema({
       name: "shed",
@@ -486,7 +461,7 @@ describe("the lint of rules", () => {
     expect(
       lint(shed, [note("k.md", { type: "knife", description: "d" })]),
     ).toEqual([
-      { path: "k.md", message: "The rule owned of shed: It has no owner." },
+      { path: "k.md", rule: "shed/owned", message: "It has no owner." },
     ]);
   });
 
@@ -507,7 +482,7 @@ describe("the lint of rules", () => {
       colour: "brown",
     });
     expect(lint(wider, [till, lost])).toMatchObject([
-      { path: "loaf.md", message: /^The rule in-record of ruled:/ },
+      { path: "loaf.md", rule: "ruled/in-record" },
     ]);
   });
 
@@ -521,7 +496,9 @@ describe("the lint of rules", () => {
       name: "reads",
       description: "d",
       on: object,
-      check: (_node, graph) => [String(graph.get("ledger", other)?.needed)],
+      check: (_node, graph) => [
+        { message: String(graph.get("ledger", other)?.needed) },
+      ],
     });
     const schema = defineSchema({
       name: "reading",
@@ -532,7 +509,7 @@ describe("the lint of rules", () => {
     });
     expect(() => lint(schema, [ledger, loaf])).toThrow(
       new Error(
-        "The rule reads of reading threw on loaf.md: The type source is not a type of the schema reading or its imports.",
+        "The rule reading/reads threw on loaf.md: The type source is not a type of the schema reading or its imports.",
       ),
     );
   });
@@ -545,7 +522,7 @@ describe("the lint of rules", () => {
       name: "coloured",
       description: "d",
       on: colouredObject,
-      check: (node) => [`It is ${node.colour}.`],
+      check: (node) => [{ message: `It is ${node.colour}.` }],
     });
     const ext = defineSchema({
       name: "ext",
@@ -580,7 +557,7 @@ describe("the lint of rules", () => {
         note("roll.md", { ...loaf.frontmatter, type: "bun", key: "r" }),
       ]),
     ).toEqual([
-      { path: "brown.md", message: "The rule coloured of ext: It is brown." },
+      { path: "brown.md", rule: "ext/coloured", message: "It is brown." },
     ]);
   });
 
@@ -629,11 +606,11 @@ describe("the lint of rules", () => {
       rules: [change],
     });
     expect(() => lint(schema, [ledger, loaf])).toThrow(
-      /^The rule change of changing threw on loaf\.md:/,
+      /^The rule changing\/change threw on loaf\.md:/,
     );
   });
 
-  it("throws, naming the rule and the note, when a check throws or gives something other than a list of messages", () => {
+  it("throws, naming the rule and the note, when a check throws or gives something other than a list of { field?, message }", () => {
     const fails = (name: string, check: () => unknown) =>
       defineSchema({
         name,
@@ -656,7 +633,7 @@ describe("the lint of rules", () => {
         }),
         [ledger, loaf],
       ),
-    ).toThrow(new Error("The rule bad-rule of bad threw on loaf.md: no oven"));
+    ).toThrow(new Error("The rule bad/bad-rule threw on loaf.md: no oven"));
     expect(() =>
       lint(
         fails("odd", () => "wrong"),
@@ -664,7 +641,7 @@ describe("the lint of rules", () => {
       ),
     ).toThrow(
       new Error(
-        "The rule odd-rule of odd gave something other than a list of messages for loaf.md.",
+        "The rule odd/odd-rule gave something other than a list of { field?, message } for loaf.md.",
       ),
     );
   });
@@ -693,8 +670,9 @@ describe("the lint of rules", () => {
       expect(problems.filter((p) => p.path === "loaf.md")).toEqual([
         {
           path: "loaf.md",
-          message:
-            "The rule in-record of folder-ruled: It lives in no source of record.",
+          rule: "folder-ruled/in-record",
+          field: "/livesIn",
+          message: "It lives in no source of record.",
         },
       ]);
     } finally {

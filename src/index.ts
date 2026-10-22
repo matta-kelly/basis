@@ -18,6 +18,7 @@ export type {
   AnySchema,
   Graph,
   Link,
+  Report,
   Rule,
   Schema,
   Type,
@@ -30,5 +31,5 @@ export {
   type Problem,
   type Read,
 } from "./loader.ts";
-export { lint, lintFolder } from "./lint.ts";
+export { coreRules, lint, lintFolder, pointer } from "./lint.ts";
 export { configNames, run, type Config, type Out } from "./cli.ts";

@@ -10,7 +10,9 @@ import { fileURLToPath } from "node:url";
 import * as z from "zod";
 
 /** A node is named by a short slug, so one node can point at another by name. */
-export const Name = z.string().regex(/^[a-z][a-z0-9-]*$/, "a lowercase slug");
+export const Name = z
+  .string()
+  .regex(/^[a-z][a-z0-9-]*$/, "Not a lowercase slug.");
 
 /**
  * What every node has, as PG-Schema has it: its identity, its label and a property. The name is its identity, from its
@@ -33,7 +35,7 @@ const isPrototypeName = (field: string) =>
 const wikilinkOf = () =>
   z
     .string()
-    .regex(/^\[\[[a-z][a-z0-9-]*\]\]$/, 'a wikilink, "[[name]]"')
+    .regex(/^\[\[[a-z][a-z0-9-]*\]\]$/, 'Not a wikilink, "[[name]]".')
     .transform((link) => link.slice(2, -2));
 export const wikilink = wikilinkOf();
 
@@ -757,15 +759,19 @@ export interface Graph {
 
 /**
  * A check a schema brings, beside basis's own (the ESLint model: a small core, rules from plugins). It runs on each
- * node of its type that parsed, and gives what is wrong, one message each.
+ * node of its type that parsed, and gives what is wrong. Its name is unique in its schema, and its id is
+ * `<schema>/<name>`, as ESLint's `plugin/rule`.
  */
 export type Rule = {
   name: string;
   description: string;
   /** The type it runs on: each node of it, or of a type that inherits it. */
   on: Type;
-  check: (node: never, graph: Graph) => readonly string[];
+  check: (node: never, graph: Graph) => readonly Report[];
 };
+
+/** One thing a rule finds wrong: the field of the node it is in, as a path ("states.0"), if one, and what is wrong. */
+export type Report = { field?: string; message: string };
 
 const madeRules = new WeakSet<object>();
 
@@ -774,7 +780,7 @@ export function defineRule<const T extends Type>(rule: {
   name: string;
   description: string;
   on: T;
-  check: (node: z.output<T["schema"]>, graph: Graph) => readonly string[];
+  check: (node: z.output<T["schema"]>, graph: Graph) => readonly Report[];
 }): Rule {
   if (!Name.safeParse(rule.name).success)
     throw new Error(`The rule ${rule.name} is not named by a lowercase slug.`);
@@ -817,34 +823,29 @@ export const seesType = (
 
 /**
  * What defineSchema checks of the rules of a schema and of each schema it sees, as it checks each import's types: a
- * list, each made by defineRule, each on a type its schema sees, and one owner per rule name. A plain Error, as for
- * the other checks.
+ * list, each made by defineRule, each on a type its schema sees, and no two of one name in one schema. A plain Error,
+ * as for the other checks.
  */
 export function checkRules(schema: SchemaParts) {
-  const owners = new Map<string, { owner: string; rule: unknown }>();
   for (const at of schemasSeen(schema)) {
     const { name, rules } = at;
     if (rules === undefined) continue;
     if (!Array.isArray(rules))
       throw new Error(`The rules of ${name} are not a list.`);
     const seen = seenTypes(at);
+    const names = new Set<string>();
     for (const rule of rules as unknown[]) {
       if (typeof rule !== "object" || rule === null || !madeRules.has(rule))
         throw new Error(
           `The schema ${name} has the rule ${String((rule as { name?: unknown } | null)?.name)}, which defineRule did not make.`,
         );
       const { name: ruleName, on } = rule as Rule;
-      const had = owners.get(ruleName);
-      if (had?.owner === name)
+      if (names.has(ruleName))
         throw new Error(`The schema ${name} has two rules named ${ruleName}.`);
-      if (had)
-        throw new Error(
-          `The schemas ${had.owner} and ${name} both have a rule named ${ruleName}: a rule name has one owner.`,
-        );
-      owners.set(ruleName, { owner: name, rule });
+      names.add(ruleName);
       if (!seesType(seen, on))
         throw new Error(
-          `The rule ${ruleName} of ${name} runs on ${on.name}, which is not a type of the schema ${name} or its imports.`,
+          `The rule ${name}/${ruleName} runs on ${on.name}, which is not a type of the schema ${name} or its imports.`,
         );
     }
   }

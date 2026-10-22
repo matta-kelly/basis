@@ -60,7 +60,11 @@ describe("basis lint", () => {
     });
     const { code, log, error } = await cli(["lint"], root);
     expect(code).toBe(1);
-    expect(log).toEqual([expect.stringMatching(/^oven\.md: description: /)]);
+    expect(log).toEqual([
+      expect.stringMatching(
+        /^oven\.md: \/description: Missing: .* \(basis\/fields\)$/,
+      ),
+    ]);
     expect(error).toEqual([]);
   });
 
@@ -77,7 +81,7 @@ describe("basis lint", () => {
     const { code, log } = await cli(["lint"], root);
     expect(code).toBe(1);
     expect(log).toContain(
-      `${relative(root, bun)}: The type bun of kitchen has no type note: make this note, of type type, with the description of bun.`,
+      `${relative(root, bun)}: The type bun of kitchen has no type note: make this note, of type type, with the description of bun. (basis/type-note)`,
     );
   });
 
@@ -89,7 +93,11 @@ describe("basis lint", () => {
     const { code, log } = await cli(["lint", "notes"], root);
     expect(code).toBe(1);
     // By its path from the folder the command runs in, so it opens as given.
-    expect(log).toEqual([expect.stringMatching(/^notes\/oven\.md: /)]);
+    expect(log).toEqual([
+      expect.stringMatching(
+        /^notes\/oven\.md: \/description: Missing: .* \(basis\/fields\)$/,
+      ),
+    ]);
   });
 
   it("leaves out each path its skip names, with all in it, and only that path", async () => {
@@ -102,7 +110,9 @@ describe("basis lint", () => {
     });
     const { code, log } = await cli(["lint"], root);
     expect(code).toBe(1);
-    expect(log).toEqual([expect.stringMatching(/^codebook\.md: /)]);
+    expect(log).toEqual([
+      "codebook.md: /type: The note has no type. (basis/type)",
+    ]);
   });
 
   it("takes a skip that is a function", async () => {
