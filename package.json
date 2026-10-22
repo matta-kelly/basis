@@ -1,5 +1,5 @@
 {
-  "name": "@matta-kelly/basis",
+  "name": "@mku1tra/basis",
   "version": "0.14.0",
   "description": "The root package for semantic subgraphs: the primitives, the compiler and the lint core that every subgraph imports.",
   "license": "MIT",
@@ -13,7 +13,7 @@
   },
   "exports": {
     ".": {
-      "@matta-kelly/source": "./src/index.ts",
+      "@mku1tra/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
