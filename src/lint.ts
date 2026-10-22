@@ -1,7 +1,8 @@
 /**
  * The lint: notes and a schema in, problems out. It changes nothing. The notes are checked against the schema and
  * the schemas it imports, as one set.
- * Each note is parsed by its type, and each link it writes must point at a note of the type the link points at.
+ * Each note is parsed by its type, and each link it writes must point at a note of the type the link points at, or of
+ * a type that inherits it. No note is of an abstract type.
  */
 
 import { basename } from "node:path";
@@ -16,6 +17,8 @@ import {
 } from "./loader.ts";
 import {
   checked,
+  keysOf,
+  lineageOf,
   linksOf,
   seenTypes,
   wikilink,
@@ -88,6 +91,14 @@ function noteProblems(
       ),
     ];
 
+  if (at.type.abstract)
+    return [
+      ...problems,
+      problem(
+        `The type ${type} is abstract: a note is of a type that inherits it.`,
+      ),
+    ];
+
   try {
     // By the schema that holds the type: a note of an imported type is that schema's.
     at.owner.parse(type, { ...note.frontmatter, name: note.name });
@@ -111,7 +122,11 @@ function noteProblems(
       } else if (
         // A note with no type of the schema has that problem itself.
         targets.every((t) => noteType(seen, t)) &&
-        !targets.some((t) => to.some((type) => t.frontmatter.type === type))
+        !targets.some((t) => {
+          const at = noteType(seen, t);
+          const lineage = at ? lineageOf(at.type) : new Set<string>();
+          return to.some((type) => lineage.has(type));
+        })
       ) {
         problems.push(
           problem(
@@ -125,7 +140,8 @@ function noteProblems(
 }
 
 /**
- * Two notes of one type with one key: a problem on each, naming the others. Each key field is parsed by its own zod
+ * Two notes with one key: a problem on each, naming the others. A key holds over the notes of its type and of every
+ * type that inherits it. Each key field is parsed by its own zod
  * schema, so a link is the name it points at, a note with a problem in another field is compared, and a note whose
  * key field has a problem is not: it has that problem.
  */
@@ -136,33 +152,38 @@ function keyProblems(seen: Seen, notes: Note[]): Problem[] {
     if (!ids.has(value)) ids.set(value, ids.size);
     return ids.get(value);
   };
-  const byKey = new Map<string, { note: Note; values: string }[]>();
+  const byKey = new Map<
+    string,
+    { note: Note; over: string; values: string }[]
+  >();
   for (const note of notes) {
     const type = noteType(seen, note)?.type;
-    const key = type?.key ?? [];
-    if (!type || key.length === 0) continue;
+    if (!type) continue;
     const shape = type.schema.shape;
-    const parsed = z
-      .object(Object.fromEntries(key.map((field) => [field, shape[field]])))
-      .safeParse(note.frontmatter);
-    if (!parsed.success) continue;
-    const values = key.map((field) => parsed.data[field]);
-    const id = [type.name, ...values.map(idOf)].join(" ");
-    const same = byKey.get(id) ?? [];
-    same.push({
-      note,
-      values: key
-        .map((field, i) => `${field} ${JSON.stringify(values[i])}`)
-        .join(", "),
-    });
-    byKey.set(id, same);
+    for (const { over, key } of keysOf(type)) {
+      const parsed = z
+        .object(Object.fromEntries(key.map((field) => [field, shape[field]])))
+        .safeParse(note.frontmatter);
+      if (!parsed.success) continue;
+      const values = key.map((field) => parsed.data[field]);
+      const id = [over, ...values.map(idOf)].join(" ");
+      const same = byKey.get(id) ?? [];
+      same.push({
+        note,
+        over,
+        values: key
+          .map((field, i) => `${field} ${JSON.stringify(values[i])}`)
+          .join(", "),
+      });
+      byKey.set(id, same);
+    }
   }
   return [...byKey.values()].flatMap((same) =>
     same.length < 2
       ? []
-      : same.map(({ note, values }) => ({
+      : same.map(({ note, over, values }) => ({
           path: note.path,
-          message: `The key ${values} of the type ${String(note.frontmatter.type)} is also the key of ${same
+          message: `The key ${values} of the type ${over} is also the key of ${same
             .filter((other) => other.note !== note)
             .map((other) => other.note.path)
             .join(", ")}.`,

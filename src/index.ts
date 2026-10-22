@@ -1,6 +1,5 @@
 // What basis exports.
 export {
-  base,
   defineSchema,
   defineType,
   extendType,
@@ -8,6 +7,7 @@ export {
   many,
   manyOrNone,
   Name,
+  node,
   one,
   oneOrNone,
 } from "./primitives.ts";

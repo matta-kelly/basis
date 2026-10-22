@@ -37,7 +37,7 @@ type ExternalNote = Parsed<typeof things, "external-object">;
 type SourceNote = Parsed<typeof things, "source">;
 
 describe("a parsed note's type", () => {
-  it("has the base, its type's name, its type's fields, and its links as names", () => {
+  it("has the fields every node has, its type's name, its type's fields, and its links as names", () => {
     expectTypeOf<ObjectNote["name"]>().toEqualTypeOf<string>();
     expectTypeOf<ObjectNote["description"]>().toEqualTypeOf<string>();
     expectTypeOf<ObjectNote["type"]>().toEqualTypeOf<"object">();
@@ -83,7 +83,7 @@ describe("a parsed note's type", () => {
     void (() => things.parse("verb", {}));
   });
 
-  it("has no field but the base for a type with no fields", () => {
+  it("has no field but those every node has for a type with no fields", () => {
     const thing = defineType({ name: "thing", description: "d", fields: {} });
     const schema = defineSchema({
       name: "p",
@@ -212,7 +212,7 @@ describe("a parsed note's type", () => {
 });
 
 describe("a type that extends another, in a schema that imports it", () => {
-  it("parses with the base's fields and its own, under the base's name", () => {
+  it("parses with the extended type's fields and its own, under that type's name", () => {
     expectTypeOf(parserOf(company, "capability")).returns.toEqualTypeOf<{
       name: string;
       description: string;
@@ -225,7 +225,7 @@ describe("a type that extends another, in a schema that imports it", () => {
     expectTypeOf(companyCapability.extends).toEqualTypeOf(capability);
   });
 
-  it("leaves the base and the imported schema as they were", () => {
+  it("leaves the extended type and the imported schema as they were", () => {
     expectTypeOf(parserOf(core, "capability")).returns.toEqualTypeOf<{
       name: string;
       description: string;
@@ -234,7 +234,7 @@ describe("a type that extends another, in a schema that imports it", () => {
     }>();
   });
 
-  it("is refused by the compiler with a field the base has, its own or of the base of every node", () => {
+  it("is refused by the compiler with a field the extended type has, its own or one every node has", () => {
     void (() =>
       // @ts-expect-error: capability has title (the field's type is never).
       extendType(capability, { fields: { title: z.number() } }));
@@ -243,7 +243,7 @@ describe("a type that extends another, in a schema that imports it", () => {
       extendType(capability, { fields: { description: z.string() } }));
   });
 
-  it("is refused by the compiler in a schema that does not import its base", () => {
+  it("is refused by the compiler in a schema that does not import the type it extends", () => {
     void (() =>
       defineSchema({
         name: "p",
@@ -308,7 +308,7 @@ describe("a type that extends another, in a schema that imports it", () => {
 });
 
 describe("a type's key", () => {
-  it("is refused by the compiler with a field the type does not have, a field of the base, or a field a note can leave out", () => {
+  it("is refused by the compiler with a field the type does not have, a field every node has, or a field a note can leave out", () => {
     void (() =>
       defineType({
         name: "t",
@@ -322,7 +322,7 @@ describe("a type's key", () => {
           "title",
           // @ts-expect-error: t has no field colour.
           "colour",
-          // @ts-expect-error: name is a field of the base, not of t.
+          // @ts-expect-error: name is a field every node has, not of t.
           "name",
           // @ts-expect-error: a note of t can leave note out.
           "note",
@@ -367,7 +367,7 @@ describe("a type's key", () => {
     void t;
   });
 
-  it("takes, on an extension, its own fields and its base's, and is refused by the compiler when its base has a key", () => {
+  it("takes, on an extension, its own fields and the extended type's, and is refused by the compiler when that type has a key", () => {
     const keyed = extendType(capability, {
       fields: { stage: z.string() },
       key: ["title", "stage"],
@@ -378,7 +378,7 @@ describe("a type's key", () => {
         key: [
           // @ts-expect-error: a note can leave budget out.
           "budget",
-          // @ts-expect-error: description is a field of the base of every node.
+          // @ts-expect-error: description is a field every node has.
           "description",
         ],
       }));
@@ -393,5 +393,45 @@ describe("a type's key", () => {
   it("adds no second description of a type: the key names fields of its schema", () => {
     expectTypeOf<Type>().not.toHaveProperty("fields");
     expectTypeOf<NonNullable<Type["key"]>>().toEqualTypeOf<readonly string[]>();
+  });
+});
+
+describe("a type that inherits parents", () => {
+  const grain = defineType({
+    name: "grain",
+    description: "d",
+    abstract: true,
+    fields: { mill: z.string() },
+  });
+  const bread = defineType({
+    name: "bread",
+    description: "d",
+    parents: [grain],
+    fields: { crust: z.enum(["soft", "hard"]) },
+  });
+  const bakery = defineSchema({
+    name: "bakery",
+    description: "d",
+    types: { grain, bread },
+  });
+  it("has the fields every node has, its parents' fields and its own", () => {
+    expectTypeOf(parserOf(bakery, "bread")).returns.toEqualTypeOf<{
+      name: string;
+      type: "bread";
+      description: string;
+      mill: string;
+      crust: "soft" | "hard";
+    }>();
+  });
+
+  it("has the same type as a type given the same fields itself", () => {
+    const flat = defineType({
+      name: "bread",
+      description: "d",
+      fields: { mill: z.string(), crust: z.enum(["soft", "hard"]) },
+    });
+    expectTypeOf(flat.schema.parse).returns.toEqualTypeOf<
+      ReturnType<typeof bread.schema.parse>
+    >();
   });
 });

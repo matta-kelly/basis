@@ -10,14 +10,18 @@ import * as z from "zod";
 /** A node is named by a short slug, so one node can point at another by name. */
 export const Name = z.string().regex(/^[a-z][a-z0-9-]*$/, "a lowercase slug");
 
-/** What every node carries, whatever its type. Every type extends it, and fixes the value of `type` to its own name. */
-export const base = {
+/**
+ * What every node has, as PG-Schema has it: its identity, its label and a property. The name is its identity, from its
+ * file name, and no two nodes share one. The type is its label: every type fixes it to its own name. The description
+ * says what the node is.
+ */
+const nodeShape = {
   name: Name,
   type: Name,
   description: z.string().min(1),
 };
 
-const isBaseField = (field: string) => Object.hasOwn(base, field);
+const isNodeField = (field: string) => Object.hasOwn(nodeShape, field);
 
 /** A name the object prototype has (`constructor`, `toString`). A parse reads `node[name]`, and would find the prototype's value. */
 const isPrototypeName = (field: string) =>
@@ -57,19 +61,58 @@ function partsOf(schema: z.ZodType): object[] {
   return [...found];
 }
 
-/** A kind of node: the one closed schema of its nodes, the base and its fields. */
+/** A kind of node: the one closed schema of its nodes, with the fields every node has, its parents' and its own. */
 export type Type = {
   name: string;
   description: string;
   schema: z.ZodObject;
-  /** The type it extends: the same kind of note, with more fields. */
+  /** No node is of it (PG-Schema's ABSTRACT, GraphQL's interface): its nodes are of the types that inherit it. */
+  abstract?: boolean;
+  /** The types it inherits (PG-Schema's &): their fields and keys are its own. Every type inherits node, unlisted. */
+  parents?: readonly Type[];
+  /** The type it extends (GraphQL's extend type): the same type, under its name, with more fields. */
   extends?: Type;
   /** Its identity rule: fields of its schema that, together, no two of its nodes share. None when empty. */
   key?: readonly string[];
 };
 
 /**
- * The fields a key can name: fields beside the base that every node has, each one string, number or boolean.
+ * The parent of every type: what every node has. It is abstract, so no node is of node alone. It is the root of the
+ * graph of types, not a type of a schema, and a link cannot point at it.
+ */
+export const node = Object.freeze({
+  name: "node",
+  description: "What every node has: its name, its type and its description.",
+  abstract: true,
+  parents: Object.freeze([]),
+  schema: z.strictObject(nodeShape),
+  key: Object.freeze([]),
+} as const);
+
+/** One type made from a union of them: the fields every parent gives, as one shape. */
+type Intersection<U> = (U extends unknown ? (u: U) => void : never) extends (
+  i: infer I,
+) => void
+  ? I
+  : never;
+
+/** The fields a type gets from its parents, beside the fields every node has. */
+type Inherited<P extends readonly Type[]> = P extends readonly []
+  ? Record<never, never>
+  : Omit<Intersection<P[number]["schema"]["shape"]>, keyof typeof nodeShape>;
+
+/** The fields each parent gives, beside the fields every node has: the first parent's schema for a field, in order. */
+function inheritedOf(parents: readonly Type[]): z.ZodRawShape {
+  const inherited: Record<string, z.core.$ZodType> = {};
+  for (const parent of parents)
+    for (const [field, schema] of Object.entries(parent.schema.shape))
+      if (!isNodeField(field) && !Object.hasOwn(inherited, field))
+        inherited[field] = schema;
+  return inherited;
+}
+
+/**
+ * The fields a key can name: fields beside those every node has, each one string, number or boolean.
  * zod marks a field a node can leave out (optional, exactOptional), whatever it gives. A key is checked against the
  * schema, not described again.
  */
@@ -81,7 +124,7 @@ type KeyField<F extends z.ZodRawShape> = Exclude<
         ? K
         : never;
   }[keyof F & string],
-  keyof typeof base
+  keyof typeof nodeShape
 >;
 
 /** A copy of a key, frozen. A value that is not a list is kept, and the schema refuses it. */
@@ -91,31 +134,56 @@ const keyCopy = <K extends readonly string[]>(key: K | undefined) =>
 /** The types defineType made. A schema holds no other: a type's zod schema is made from its fields, once. */
 const madeTypes = new WeakSet<Type>();
 
-/** A kind of node, and the fields its nodes carry beside the base. The schema that holds it checks it. */
+/** The names of the fields each type was given, apart from those it inherits. */
+const ownFields = new WeakMap<Type, readonly string[]>();
+
+/**
+ * A kind of node, and the fields its nodes carry beside those every node has: its parents' and its own. An abstract
+ * type has no nodes; the types that inherit it do. The schema that holds it checks it.
+ */
 export function defineType<
   const N extends string,
   const F extends z.ZodRawShape,
-  const K extends readonly KeyField<F>[] = readonly [],
->(type: { name: N; description: string; fields: F; key?: K }) {
+  const P extends readonly Type[] = readonly [],
+  const K extends readonly KeyField<F & Inherited<P>>[] = readonly [],
+>(type: {
+  name: N;
+  description: string;
+  abstract?: boolean;
+  parents?: P;
+  fields: F;
+  key?: K;
+}) {
   // One copy of the fields, so each getter is read once. zod copies the shape again: the schema is the one description.
   const fields: F = { ...type.fields };
+  const parents: P = Object.freeze([...(type.parents ?? [])]) as unknown as P;
+  const inherited = inheritedOf(parents) as Inherited<P>;
   const made = Object.freeze({
     name: type.name,
     description: type.description,
-    // The fields last: spread before them, the literal keeps its type. A field named type is refused by the schema
-    // that holds the type.
-    schema: z.strictObject({ ...base, type: z.literal(type.name), ...fields }),
+    abstract: type.abstract === true,
+    parents,
+    // The fields every node has first, then the parents', then its own. Spread before the fields, the literal keeps
+    // its type. A field a parent has, or named type, is refused by the schema that holds the type.
+    schema: z.strictObject({
+      ...nodeShape,
+      type: z.literal(type.name),
+      ...inherited,
+      ...fields,
+    }),
     key: keyCopy(type.key),
   });
   madeTypes.add(made);
+  ownFields.set(made, Object.freeze(Object.keys(fields)));
   return made;
 }
 
 /**
- * A type that extends another: the same kind of note, under the base's name and description, with the base's fields
- * and more. Its zod schema is the base's, extended. The schema that holds it checks it.
- * The base's shape and config are inferred from its schema, so the extension's schema is zod's own type for it.
- * It has the base's key. When the base has none, it can add one, over its own fields and the base's.
+ * A type that extends another, as GraphQL's extend type: the same type, under its name and description, with its
+ * fields and more, in a schema that imports it. Its zod schema is the extended type's, extended. It is abstract when
+ * that type is, and has its parents. The schema that holds it checks it.
+ * The extended type's shape and config are inferred from its schema, so the extension's schema is zod's own type for
+ * it. It has the extended type's key. When that type has none, it can add one, over its own fields and that type's.
  */
 export function extendType<
   B extends Type,
@@ -126,22 +194,24 @@ export function extendType<
 >(
   extended: B & { schema: z.ZodObject<S, C> },
   type: {
-    /** No field of the base: extend, never override. */
+    /** No field of the type it extends: extend, never override. */
     fields: F & { [K in keyof S]?: never };
-    /** None when the base has a key: extend, never override. */
+    /** None when the type it extends has a key: extend, never override. */
     key?: [NonNullable<B["key"]>[number]] extends [never] ? K : never;
   },
 ) {
   const fields: F = { ...type.fields };
-  const parent: B = extended;
-  const name: B["name"] = parent.name;
+  const original: B = extended;
+  const name: B["name"] = original.name;
   const schema: z.ZodObject<S, C> = extended.schema;
   const made = Object.freeze({
     name,
-    description: parent.description,
-    extends: parent,
+    description: original.description,
+    abstract: original.abstract === true,
+    parents: original.parents ?? Object.freeze([]),
+    extends: original,
     schema: schema.extend(fields),
-    key: keyCopy(type.key ?? parent.key),
+    key: keyCopy(type.key ?? original.key),
   });
   madeTypes.add(made);
   return made;
@@ -205,27 +275,27 @@ export const linksOf = (type: Type): Link[] =>
     return target ? [{ name, ...target }] : [];
   });
 
-/** A type's fields: its schema's shape, without the base. */
+/** A type's fields: its schema's shape, without the fields every node has. Its parents' fields are its own. */
 function fieldsOf(type: Type): z.ZodRawShape {
   return Object.fromEntries(
-    Object.entries(type.schema.shape).filter(([field]) => !isBaseField(field)),
+    Object.entries(type.schema.shape).filter(([field]) => !isNodeField(field)),
   );
 }
 
-/** The base fields a type's fields replaced: the shape has another schema there than the base's, or than its literal. */
-function redefinedBase(type: Type): string[] {
+/** The fields of node a type's fields replaced: the shape has another schema there than node's, or than its literal. */
+function redefinedNode(type: Type): string[] {
   const shape = type.schema.shape;
   const literal = shape.type;
   return [
-    ...(shape.name === base.name ? [] : ["name"]),
-    ...(shape.description === base.description ? [] : ["description"]),
+    ...(shape.name === nodeShape.name ? [] : ["name"]),
+    ...(shape.description === nodeShape.description ? [] : ["description"]),
     ...(literal instanceof z.ZodLiteral && literal.value === type.name
       ? []
       : ["type"]),
   ];
 }
 
-/** The fields of a base whose schema in the extension is not the base's own. */
+/** The fields of the extended type whose schema in the extension is not that type's own. */
 function overriddenBy(type: Type, extended: Type): string[] {
   const shape = type.schema.shape;
   return Object.entries(extended.schema.shape)
@@ -267,7 +337,7 @@ function givesScalar(field: z.core.$ZodType): boolean {
 
 /**
  * What is wrong with a type's key: not a list, a field named twice, a field it does not have, one a node can leave
- * out or one that gives other than one string, number or boolean, or a key its base has changed.
+ * out or one that gives other than one string, number or boolean, or a key the type it extends has changed.
  */
 function keyProblems(type: Type, fields: z.ZodRawShape): string[] {
   const key = type.key ?? [];
@@ -309,6 +379,67 @@ function keyProblems(type: Type, fields: z.ZodRawShape): string[] {
   return problems;
 }
 
+/** The type itself, and each type it inherits, at every depth: the names a link to any of them accepts. */
+export function lineageOf(type: Type): Set<string> {
+  const names = new Set<string>();
+  const walk = (at: Type) => {
+    if (names.has(at.name)) return;
+    names.add(at.name);
+    for (const parent of at.parents ?? []) walk(parent);
+  };
+  walk(type);
+  return names;
+}
+
+/**
+ * The keys a note of a type must keep unique: its own, and each one a type it inherits has, among the notes of every
+ * type that inherits it (PG-Schema's keys). Each key with the name of the type it holds over.
+ */
+export function keysOf(type: Type): { over: string; key: readonly string[] }[] {
+  const keys = new Map<string, readonly string[]>();
+  const walk = (at: Type) => {
+    if (keys.has(at.name)) return;
+    keys.set(at.name, at.key ?? []);
+    for (const parent of at.parents ?? []) walk(parent);
+  };
+  walk(type);
+  return [...keys]
+    .filter(([, key]) => key.length > 0)
+    .map(([over, key]) => ({ over, key }));
+}
+
+/** What is wrong with what a type inherits: a parent not made by defineType, two parents that differ on a field, or a field of its own that a parent has. */
+function parentProblems(type: Type): string[] {
+  const parents = type.parents ?? [];
+  if (!Array.isArray(parents))
+    return [`The parents of ${type.name} are not a list of types.`];
+  const notMade = parents.filter((parent) => !madeTypes.has(parent));
+  if (notMade.length > 0)
+    return [
+      `The type ${type.name} inherits ${notMade.map((p) => String(p?.name)).join(", ")}, which defineType did not make.`,
+    ];
+  const problems: string[] = [];
+  const from = new Map<string, { schema: unknown; parent: string }>();
+  for (const parent of parents)
+    for (const [field, schema] of Object.entries(parent.schema.shape)) {
+      if (isNodeField(field)) continue;
+      const had = from.get(field);
+      if (!had) from.set(field, { schema, parent: parent.name });
+      else if (had.schema !== schema)
+        problems.push(
+          `The type ${type.name} inherits ${field} from ${had.parent} and from ${parent.name}, which differ: extend, never override.`,
+        );
+    }
+  for (const field of ownFields.get(type) ?? []) {
+    const had = from.get(field);
+    if (had)
+      problems.push(
+        `The type ${type.name} redefines ${field}, a field of its parent ${had.parent}: extend, never override.`,
+      );
+  }
+  return problems;
+}
+
 /** A property or a link is a frontmatter key: camelCase. */
 const Key = z.string().regex(/^[a-z][A-Za-z0-9]*$/, "a camelCase key");
 
@@ -318,7 +449,7 @@ function typeProblems(type: Type): string[] {
     ? []
     : [`The type ${type.name} is not named by a lowercase slug.`];
   const fields = fieldsOf(type);
-  const taken = type.extends ? [] : redefinedBase(type);
+  const taken = type.extends ? [] : redefinedNode(type);
   const overridden = type.extends ? overriddenBy(type, type.extends) : [];
   if (overridden.length > 0)
     problems.push(
@@ -326,8 +457,9 @@ function typeProblems(type: Type): string[] {
     );
   if (taken.length > 0)
     problems.push(
-      `The type ${type.name} redefines ${taken.join(", ")}, a field of the base.`,
+      `The type ${type.name} redefines ${taken.join(", ")}, a field every node has.`,
     );
+  if (!type.extends) problems.push(...parentProblems(type));
   const notKeys = Object.keys(fields).filter(
     (field) => !Key.safeParse(field).success,
   );
@@ -497,9 +629,16 @@ function checkSchema(
   // Each import as defineSchema checks it: a spread schema is another object, checked on its own first use.
   for (const imported of imports) checked(imported);
   for (const type of entries.map(([, type]) => type)) {
+    for (const parent of type.extends ? [] : (type.parents ?? [])) {
+      const at = seen.get(parent.name)?.type;
+      if (!at || !(at === parent || extendsType(at, parent)))
+        throw new Error(
+          `The type ${type.name} of ${name} inherits ${parent.name}, which is not a type of the schema ${name} or its imports.`,
+        );
+    }
     for (const link of linksOf(type)) {
       for (const end of link.to()) {
-        // A link to a base the schema sees an extension of: the extension is the same kind of note.
+        // A link to a type the schema sees an extension of: the extension is the same type.
         const at = seen.get(end.name)?.type;
         if (!at || !(at === end || extendsType(at, end)))
           throw new Error(
@@ -561,10 +700,12 @@ export function defineSchema<
       checked(this);
       if (!Object.hasOwn(this.types, type))
         throw new Error(`The schema ${this.name} has no type ${type}.`);
-      const typeSchema: This["types"][N]["schema"] = typeIn(
-        this.types,
-        type,
-      ).schema;
+      const held = typeIn(this.types, type);
+      if (held.abstract)
+        throw new Error(
+          `The type ${type} is abstract: a node is of a type that inherits it.`,
+        );
+      const typeSchema: This["types"][N]["schema"] = held.schema;
       return typeSchema.parse(node);
     },
   };

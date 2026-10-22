@@ -1,12 +1,12 @@
 ---
 type: moc
-description: "basis: the base package for semantic subgraphs. The meta primitives, the compiler and the lint core that every subgraph imports. Read for what basis is and what it is made of."
+description: "basis: the root package for semantic subgraphs. The primitives, the compiler and the lint core that every subgraph imports. Read for what basis is and what it is made of."
 status: active
 ---
 Code defines, markdown describes, and the lint checks that they agree.
 - [[#Thesis]] why an ontology, and what a subgraph is
 - [[#Seam]] what code holds, what markdown holds, and how the two meet
-- [[#Primitives]] the meta vocabulary, and the rules for how schemas combine
+- [[#Primitives]] the vocabulary, and the rules for how schemas combine
 - [[#Lint]] what a linter is, and the layers of its rules
 - [[#Foundation]] the language and the libraries
 - [[#Components]] the parts of basis, in the order they depend on each other
@@ -38,22 +38,25 @@ Code defines, markdown describes, and the lint checks that they agree.
 	- its body says what the type is for, and when to use it over another. It is the template for a new node of that type
 	- not in the code yet: `it` (`scripts/types-agree.ts`) and cc (`lint.ts`) each check this. The check moves into basis
 - package: an npm package. It exports a schema and its type notes, and imports the schemas it builds on
-- the words are those of the property graph (PG-Schema): node, type, property, link, schema, interface. Content collections (Astro) use other words for the same parts: a type is a collection, a node is an entry, and a link is a `reference()`
+- the words are those of the property graph (PG-Schema): node, type, property, link, schema, abstract type. Content collections (Astro) use other words for the same parts: a type is a collection, a node is an entry, and a link is a `reference()`
 
 ## Primitives
 
 - the vocabulary: what a subgraph is made of. Each one is in `src/primitives.ts`, and this section says what it means
-	- **node**: one actual thing, as one note. Its frontmatter holds its fields, and its file name is its name
-	- **base**: what every node carries, whatever its type: `name`, `type` and `description`. Every type extends it, and fixes `type` to its own name
-	- **type**: a kind of node. It has its fields beside the base, and an identity rule (its `key`: fields no two of its nodes share). Made with `defineType`
-		- a type can extend another type with `extendType`, and add fields. It cannot change the fields it extends
+	- **node**: one actual thing, as one note. Its frontmatter holds its fields
+		- every node has what PG-Schema gives every node: an identity, its `name`, from its file name, which no two nodes share; a label, its `type`, the name of its type; and a property, its `description`
+		- in code these are the fields of `node`, the abstract parent of every type
+	- **type**: a kind of node, with its fields beside those every node has. Made with `defineType`
+		- **key**: fields of a type that, together, no two of its nodes share (PG-Schema's key). A type has none unless it says
+		- **parents**: the types it inherits (PG-Schema's `&`). Their fields, links and keys are its own, and a key of a parent holds over the nodes of every type that inherits it. A field two parents give differently, or one it gives again, is refused: extend, never override
+		- **abstract**: a type no node is of (PG-Schema's `ABSTRACT`, GraphQL's interface). Its nodes are of the types that inherit it, and a link to it takes a node of any of them
+		- **extension**: the same type, under its name, with more fields, in a schema that imports it (GraphQL's `extend type`). Made with `extendType`. It cannot change the fields it extends
 	- **property**: a named field of a type, with a zod schema
 	- **constraint**: a rule on a field, such as required, a minimum or a pattern. It is the field's zod schema, not a primitive of its own
 	- **link**: a field of the type it starts from, whose schema records the type it points at. Written in a note as `[[name]]`
-		- one, oneOrNone, many (one or more), or manyOrNone (none, or an empty list). The lint checks each one points at a note of one of its types
+		- one, oneOrNone, many (one or more), or manyOrNone (none, or an empty list). The lint checks each one points at a note of one of its types, or of a type that inherits one
 		- data on a link itself is not supported yet
 		- whether an absent optional link is worth a warning is a lint rule, not a schema question
-	- **interface**: a type with no nodes of its own, so several types count as one kind. Not in the code yet
 	- **schema**: a named set of types, with the schemas it imports. Made with `defineSchema`
 - the world is closed and strict: every node matches a type, and nothing undeclared is allowed. So the lint is objective
 	- when the world does not hold a need, the ontology grows. The check does not loosen
@@ -65,7 +68,7 @@ Code defines, markdown describes, and the lint checks that they agree.
 		- the same word in two schemas is two things (`shopify:product`, `odoo:product`)
 		- outside copies of one thing link to it (the crosswalk pattern), and are not a second definition
 	- extend, never override: a type can extend an imported type, and cannot change it
-	- interface and implementation: others depend on what a schema exposes, never on its insides
+	- public and private: others depend on what a schema exposes, never on its insides
 - check: what makes a definition the source of truth. Without it, a definition is documentation and drifts
 
 ## Lint
@@ -108,7 +111,7 @@ Code defines, markdown describes, and the lint checks that they agree.
 
 ## Components
 
-1. primitives: `defineType`, `extendType`, the links `one`, `oneOrNone`, `many` and `manyOrNone`, and `defineSchema`. The vocabulary as code
+1. primitives: `node`, `defineType` (with `abstract` and `parents`), `extendType`, the links `one`, `oneOrNone`, `many` and `manyOrNone`, and `defineSchema`. The vocabulary as code
 	- `defineSchema` is also the compiler: a schema and its imports become one ontology. It refuses cycles, two schemas of one name and two owners of one type name
 	- what makes basis more than a zod wrapper: where schemas become one graph
 	- prior art: NixOS module merging

@@ -15,6 +15,7 @@ import {
   linksOf,
   many,
   manyOrNone,
+  node,
   one,
   oneOrNone,
   type Type,
@@ -62,7 +63,7 @@ const without = (node: Record<string, unknown>, field: string) =>
   Object.fromEntries(Object.entries(node).filter(([key]) => key !== field));
 
 describe("a node", () => {
-  it("parses with the base, its type's properties and its links, and its links come back as names", () => {
+  it("parses with the fields every node has, its type's properties and its links, and its links come back as names", () => {
     expect(things.parse("object", loaf)).toEqual({
       ...loaf,
       livesIn: ["slate", "daybook"],
@@ -130,7 +131,7 @@ describe("a node", () => {
     );
   });
 
-  it("is refused with a field of the base or of its type missing", () => {
+  it("is refused with a field every node has, or one of its type, missing", () => {
     expect(() => things.parse("object", without(loaf, "description"))).toThrow(
       /description/,
     );
@@ -227,7 +228,7 @@ describe("a schema", () => {
     expect(() => withType(plainType({ loafCode2: z.string() }))).not.toThrow();
   });
 
-  it("is refused with a field, a property or a link, that redefines a field of the base, or has a name the object prototype has", () => {
+  it("is refused with a field, a property or a link, that redefines a field every node has, or has a name the object prototype has", () => {
     expect(() => withType(plainType({ description: z.number() }))).toThrow(
       /description/,
     );
@@ -461,7 +462,7 @@ describe("a type with a key", () => {
     expect(() => withType(t)).not.toThrow();
   });
 
-  it("is refused with a key field the type does not have, a field of the base among them, made without TypeScript", () => {
+  it("is refused with a key field the type does not have, a field every node has among them, made without TypeScript", () => {
     expect(() => withType(keyed(["colour"], { title: z.string() }))).toThrow(
       /key of t names colour, which is not a field of t/,
     );
@@ -527,7 +528,7 @@ describe("a type that extends a type", () => {
     fields: { stage: z.string() },
     key: ["title", "stage"],
   });
-  // A schema made by code without types: the compiler refuses an extension of a base that core does not hold.
+  // A schema made by code without types: the compiler refuses an extension of a type core does not hold.
   const withCapability = (type: Type) =>
     defineSchema({
       name: "p",
@@ -536,13 +537,13 @@ describe("a type that extends a type", () => {
       types: { capability: type },
     } as unknown as Parameters<typeof defineSchema>[0]);
 
-  it("can add a key over its own fields and its base's, when its base has none", () => {
+  it("can add a key over its own fields and the extended type's, when that type has none", () => {
     expect(keyedCapability.key).toEqual(["title", "stage"]);
     expect(capability.key).toEqual([]);
     expect(() => withCapability(keyedCapability)).not.toThrow();
   });
 
-  it("has the key of its base, and is refused with another, made without TypeScript", () => {
+  it("has the key of the type it extends, and is refused with another, made without TypeScript", () => {
     const deeper = extendType(keyedCapability, {
       fields: { budget: z.number() },
     });
@@ -645,7 +646,7 @@ describe("a schema that imports another", () => {
   const untyped = (schema: unknown) =>
     defineSchema(schema as Parameters<typeof defineSchema>[0]);
 
-  it("holds a type that extends an imported one under its name, parsed with the base's fields and its own", () => {
+  it("holds a type that extends an imported one under its name, parsed with the extended type's fields and its own", () => {
     expect(companyCapability.name).toBe("capability");
     expect(companyCapability.description).toBe(capability.description);
     expect(companyCapability.extends).toBe(capability);
@@ -667,7 +668,7 @@ describe("a schema that imports another", () => {
     expect(() => core.parse("capability", shipHere)).toThrow(/stage/);
   });
 
-  it("is refused with an extension that has a field of its base, made without TypeScript", () => {
+  it("is refused with an extension that has a field of the type it extends, made without TypeScript", () => {
     for (const field of ["title", "description", "type"]) {
       const over = extendType(capability, {
         fields: { [field]: z.string() } as Record<string, never>,
@@ -768,7 +769,7 @@ describe("a schema that imports another", () => {
     ).not.toThrow();
   });
 
-  it("is refused with two imports that each extend one base: two owners of one name", () => {
+  it("is refused with two imports that each extend one type: two owners of one name", () => {
     const studio = defineSchema({
       name: "studio",
       description: "d",
@@ -874,5 +875,175 @@ describe("a schema that imports another", () => {
         types: {},
       }),
     ).toThrow(/cycle: company imports company/);
+  });
+});
+
+describe("an abstract type and the types that inherit it", () => {
+  // Two abstract types and a type that inherits both, as PG-Schema writes (dough: grainType & bakedType).
+  const grain = defineType({
+    name: "grain",
+    description: "What is milled.",
+    abstract: true,
+    fields: { mill: z.string() },
+  });
+  const baked = defineType({
+    name: "baked",
+    description: "What comes out of the oven.",
+    abstract: true,
+    fields: { bakedOn: z.string() },
+  });
+  const bread = defineType({
+    name: "bread",
+    description: "A bread.",
+    parents: [grain, baked],
+    fields: { crust: z.enum(["soft", "hard"]) },
+  });
+  const bakery = defineSchema({
+    name: "bakery",
+    description: "d",
+    types: { grain, baked, bread },
+  });
+  const rye = {
+    name: "rye",
+    type: "bread",
+    description: "A dark loaf.",
+    mill: "north",
+    bakedOn: "monday",
+    crust: "hard",
+  };
+
+  it("parses a node with the fields every node has, each parent's, and its own", () => {
+    expect(bakery.parse("bread", rye)).toEqual(rye);
+    expect(() => bakery.parse("bread", without(rye, "mill"))).toThrow(/mill/);
+    expect(() => bakery.parse("bread", without(rye, "bakedOn"))).toThrow(
+      /bakedOn/,
+    );
+  });
+
+  it("is refused for a node of the abstract type itself", () => {
+    expect(() => bakery.parse("grain", { ...rye, type: "grain" })).toThrow(
+      /grain is abstract: a node is of a type that inherits it/,
+    );
+  });
+
+  it("keeps its parents, and node is the abstract parent of every type, unlisted", () => {
+    expect(bread.parents).toEqual([grain, baked]);
+    expect(grain.abstract).toBe(true);
+    expect(bread.abstract).toBe(false);
+    expect(node.abstract).toBe(true);
+    expect(Object.keys(node.schema.shape)).toEqual([
+      "name",
+      "type",
+      "description",
+    ]);
+    // Every node's fields first, then each parent's in order, then its own.
+    expect(Object.keys(bread.schema.shape)).toEqual([
+      "name",
+      "type",
+      "description",
+      "mill",
+      "bakedOn",
+      "crust",
+    ]);
+  });
+
+  it("gives the links of its parents as its own", () => {
+    const placed = defineType({
+      name: "placed",
+      description: "d",
+      abstract: true,
+      fields: { at: one(() => source) },
+    });
+    const shelf = defineType({
+      name: "shelf",
+      description: "d",
+      parents: [placed],
+      fields: {},
+    });
+    expect(linksOf(shelf).map((link) => link.name)).toEqual(["at"]);
+  });
+
+  it("is refused with a field a parent has: extend, never override", () => {
+    const over = defineType({
+      name: "over",
+      description: "d",
+      parents: [grain],
+      fields: { mill: z.number() },
+    });
+    expect(() =>
+      defineSchema({ name: "p", description: "d", types: { grain, over } }),
+    ).toThrow(/over redefines mill, a field of its parent grain/);
+  });
+
+  it("is refused with two parents that give one field differently, and takes one field from a shared parent", () => {
+    const wheat = defineType({
+      name: "wheat",
+      description: "d",
+      abstract: true,
+      fields: { mill: z.number() },
+    });
+    const mixed = defineType({
+      name: "mixed",
+      description: "d",
+      parents: [grain, wheat],
+      fields: {},
+    });
+    expect(() =>
+      defineSchema({
+        name: "p",
+        description: "d",
+        types: { grain, wheat, mixed },
+      }),
+    ).toThrow(/mixed inherits mill from grain and from wheat, which differ/);
+    const roll = defineType({
+      name: "roll",
+      description: "d",
+      parents: [bread, grain],
+      fields: {},
+    });
+    expect(() =>
+      defineSchema({
+        name: "p",
+        description: "d",
+        types: { grain, baked, bread, roll },
+      }),
+    ).not.toThrow();
+  });
+
+  it("is refused when a parent is not a type of the schema or its imports", () => {
+    expect(() =>
+      defineSchema({ name: "p", description: "d", types: { bread } }),
+    ).toThrow(
+      /bread of p inherits grain, which is not a type of the schema p or its imports/,
+    );
+  });
+
+  it("takes a link to an abstract type", () => {
+    const shelf = defineType({
+      name: "shelf",
+      description: "d",
+      fields: { holds: many(() => grain) },
+    });
+    expect(() =>
+      defineSchema({
+        name: "p",
+        description: "d",
+        types: { grain, baked, bread, shelf },
+      }),
+    ).not.toThrow();
+  });
+
+  it("can name inherited fields in its key", () => {
+    const milled = defineType({
+      name: "milled",
+      description: "d",
+      parents: [grain],
+      fields: {},
+      key: ["mill"],
+    });
+    expect(milled.key).toEqual(["mill"]);
+    expect(() =>
+      defineSchema({ name: "p", description: "d", types: { grain, milled } }),
+    ).not.toThrow();
   });
 });

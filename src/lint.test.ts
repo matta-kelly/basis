@@ -282,7 +282,7 @@ describe("the lint of a schema that imports another", () => {
     expect(lint(company, layered)).toEqual([]);
   });
 
-  it("resolves a link to an imported base that the schema extends", () => {
+  it("resolves a link to an imported type that the schema extends", () => {
     const reviews = defineSchema({
       name: "reviews",
       description: "d",
@@ -647,4 +647,102 @@ const made: string[] = [];
 afterEach(async () => {
   for (const root of made.splice(0))
     await rm(root, { recursive: true, force: true });
+});
+
+describe("the lint of abstract types", () => {
+  const grain = defineType({
+    name: "grain",
+    description: "What is milled.",
+    abstract: true,
+    fields: { mill: z.string() },
+    key: ["mill"],
+  });
+  const bread = defineType({
+    name: "bread",
+    description: "A bread.",
+    parents: [grain],
+    fields: {},
+  });
+  const flour = defineType({
+    name: "flour",
+    description: "A flour.",
+    parents: [grain],
+    fields: {},
+  });
+  const shelf = defineType({
+    name: "shelf",
+    description: "A shelf.",
+    fields: { holds: many(() => grain) },
+  });
+  const bakery = defineSchema({
+    name: "bakery",
+    description: "d",
+    types: { grain, bread, flour, shelf },
+  });
+  const rye = note("rye.md", {
+    type: "bread",
+    description: "d",
+    mill: "north",
+  });
+  const spelt = note("spelt.md", {
+    type: "flour",
+    description: "d",
+    mill: "south",
+  });
+  const top = note("top.md", {
+    type: "shelf",
+    description: "d",
+    holds: ["[[rye]]", "[[spelt]]"],
+  });
+
+  it("gives no problem for a link to an abstract type that points at notes of the types that inherit it", () => {
+    expect(lint(bakery, [rye, spelt, top])).toEqual([]);
+  });
+
+  it("gives a problem for a note of an abstract type", () => {
+    const loose = note("loose.md", {
+      type: "grain",
+      description: "d",
+      mill: "east",
+    });
+    expect(lint(bakery, [rye, spelt, top, loose])).toEqual([
+      {
+        path: "loose.md",
+        message:
+          "The type grain is abstract: a note is of a type that inherits it.",
+      },
+    ]);
+  });
+
+  it("gives a problem for a link to an abstract type that points at a note of a type that does not inherit it", () => {
+    const other = note("other.md", {
+      type: "shelf",
+      description: "d",
+      holds: ["[[rye]]"],
+    });
+    const wrong = edit(top, { ...top.frontmatter, holds: ["[[other]]"] });
+    expect(lint(bakery, [rye, spelt, other, wrong])).toEqual([
+      {
+        path: "top.md",
+        message:
+          "The link holds points at other, which is a shelf, not a grain.",
+      },
+    ]);
+  });
+
+  it("holds a key of an abstract type over the notes of every type that inherits it", () => {
+    const sameMill = edit(spelt, { ...spelt.frontmatter, mill: "north" });
+    expect(lint(bakery, [rye, sameMill, top])).toEqual([
+      {
+        path: "rye.md",
+        message:
+          'The key mill "north" of the type grain is also the key of spelt.md.',
+      },
+      {
+        path: "spelt.md",
+        message:
+          'The key mill "north" of the type grain is also the key of rye.md.',
+      },
+    ]);
+  });
 });
