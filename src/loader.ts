@@ -100,6 +100,7 @@ async function notePaths(
     skipped.push({
       path: folder,
       message: `The folder cannot be read: ${String(error)}`,
+      fatal: true,
     });
     return { paths, skipped };
   }
@@ -111,6 +112,7 @@ async function notePaths(
       skipped.push({
         path,
         message: "A symbolic link: basis reads only files and folders.",
+        fatal: true,
       });
     } else if (entry.isDirectory()) {
       const inner = await notePaths(root, skip, path);
@@ -150,6 +152,7 @@ export async function loadFolder(
       problems.push({
         path,
         message: `The file cannot be read: ${String(error)}`,
+        fatal: true,
       });
       unread.push(path);
       continue;

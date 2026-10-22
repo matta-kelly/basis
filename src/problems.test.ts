@@ -1,6 +1,16 @@
 // The contract of a problem: { path, rule?, field?, message }, checked over every kind of problem basis gives, and
 // against SARIF 2.1.0's own schema (fixtures/sarif-schema-2.1.0.json, from oasis-tcs/sarif-spec).
-import { readFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ajvDraft04 from "ajv-draft-04";
 import { describe, expect, it } from "vitest";
@@ -92,9 +102,27 @@ const notes = [
   note("bare.md", { type: "source", role: "record" }),
 ];
 
+/** A folder with a symbolic link, a file that cannot be read, and a folder that cannot be read. */
+async function unreadable(): Promise<Problem[]> {
+  const root = await mkdtemp(join(tmpdir(), "basis-problems-"));
+  try {
+    await writeFile(join(root, "shut.md"), "---\ntype: source\n---\n");
+    await chmod(join(root, "shut.md"), 0o000);
+    await mkdir(join(root, "closed"));
+    await chmod(join(root, "closed"), 0o000);
+    await symlink("shut.md", join(root, "link.md"));
+    return await lintFolder(things, root);
+  } finally {
+    await chmod(join(root, "shut.md"), 0o644);
+    await chmod(join(root, "closed"), 0o755);
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
 /** Every problem the fixtures give: the in-memory lint, type notes, notes that cannot be read, and a folder. */
 async function everyProblem(): Promise<Problem[]> {
   return [
+    ...(await unreadable()),
     ...lint(shop, notes),
     ...(await lintFolder(kitchen, fixture("types"))),
     ...(await lintFolder(things, fixture("loader"))),
@@ -126,6 +154,16 @@ describe("a problem", () => {
     for (const id of coreIds) expect(given).toContain(id);
     expect(given).toContain("shop/in-record");
     expect(given).toContain(undefined);
+    // Each kind of path that cannot be read is fatal: a symbolic link, a file and a folder that cannot be read.
+    const fatal = problems
+      .filter((problem) => problem.fatal)
+      .map((p) => p.message);
+    for (const start of [
+      "A symbolic link",
+      "The file cannot be read",
+      "The folder cannot be read",
+    ])
+      expect(fatal.some((message) => message.startsWith(start))).toBe(true);
   });
 
   it("has only the keys of the contract", async () => {

@@ -1011,10 +1011,12 @@ describe("the type notes of a folder", () => {
       {
         path: relative(root, join(folder, "bun.md")),
         message: expect.stringMatching(/^The file cannot be read: /),
+        fatal: true,
       },
       {
         path: relative(root, join(folder, "roll.md")),
         message: "A symbolic link: basis reads only files and folders.",
+        fatal: true,
       },
     ]);
   });
