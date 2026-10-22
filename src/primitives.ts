@@ -512,6 +512,8 @@ export interface Schema<
    * None when it holds no type of its own. `lintFolder` reads it from disk.
    */
   typeNotes?: URL;
+  /** Its rules: the checks of its own that the lint runs, beside basis's, on each schema that sees it. */
+  rules?: readonly Rule[];
   /**
    * The node, parsed by the zod schema of its type, in the own types of the schema it is called on. Throws when the
    * node does not fit. A note of an imported type is parsed by the schema that holds it.
@@ -692,6 +694,7 @@ type SchemaParts = {
   types: Record<string, Type>;
   imports: readonly SchemaParts[];
   typeNotes?: unknown;
+  rules?: unknown;
 };
 
 /** Each schema a schema sees, each one after its imports: the built-in one, its imports at every depth, and itself. */
@@ -741,6 +744,118 @@ function checkTypeNotes(schema: SchemaParts) {
   }
 }
 
+/**
+ * The nodes a rule can read: each node that parsed, its own too, by its name or by its type. A node of a type is one
+ * of that type, of an extension of it, or of a type that inherits one of those. The type is one the schema sees.
+ */
+export interface Graph {
+  /** The node of that name, when one note has it, it parsed, and it is of the type. Otherwise none. */
+  get<T extends Type>(name: string, type: T): z.output<T["schema"]> | undefined;
+  /** Each node of the type, in path order. */
+  all<T extends Type>(type: T): z.output<T["schema"]>[];
+}
+
+/**
+ * A check a schema brings, beside basis's own (the ESLint model: a small core, rules from plugins). It runs on each
+ * node of its type that parsed, and gives what is wrong, one message each.
+ */
+export type Rule = {
+  name: string;
+  description: string;
+  /** The type it runs on: each node of it, or of a type that inherits it. */
+  on: Type;
+  check: (node: never, graph: Graph) => readonly string[];
+};
+
+const madeRules = new WeakSet<object>();
+
+/** A rule: its name, what it checks, the type it runs on, and the check. The check gets the node parsed by its type. */
+export function defineRule<const T extends Type>(rule: {
+  name: string;
+  description: string;
+  on: T;
+  check: (node: z.output<T["schema"]>, graph: Graph) => readonly string[];
+}): Rule {
+  if (!Name.safeParse(rule.name).success)
+    throw new Error(`The rule ${rule.name} is not named by a lowercase slug.`);
+  if (!nodeShape.description.safeParse(rule.description).success)
+    throw new Error(`The rule ${rule.name} has no description.`);
+  if (!madeTypes.has(rule.on))
+    throw new Error(
+      `The rule ${rule.name} runs on ${String((rule.on as { name?: unknown } | undefined)?.name)}, which defineType did not make.`,
+    );
+  if (typeof rule.check !== "function")
+    throw new Error(`The rule ${rule.name} has no check function.`);
+  const made: Rule = Object.freeze({
+    name: rule.name,
+    description: rule.description,
+    on: rule.on,
+    check: rule.check,
+  });
+  madeRules.add(made);
+  return made;
+}
+
+/**
+ * Whether a node of one type is a node of another: the same type, an extension of it, or a type that inherits one of
+ * those. By the types themselves, not their names: a type that inherits a type an extension extends does not have the
+ * extension's fields.
+ */
+export const isOfType = (type: Type, of: Type): boolean =>
+  type === of ||
+  extendsType(type, of) ||
+  (type.parents ?? []).some((parent) => isOfType(parent, of));
+
+/** Whether a schema sees a type: the type it sees by that name is the type, or extends it. */
+export const seesType = (
+  seen: Map<string, { type: Type }>,
+  type: Type,
+): boolean => {
+  const at = seen.get(type.name)?.type;
+  return at !== undefined && (at === type || extendsType(at, type));
+};
+
+/**
+ * What defineSchema checks of the rules of a schema and of each schema it sees, as it checks each import's types: a
+ * list, each made by defineRule, each on a type its schema sees, and one owner per rule name. A plain Error, as for
+ * the other checks.
+ */
+export function checkRules(schema: SchemaParts) {
+  const owners = new Map<string, { owner: string; rule: unknown }>();
+  for (const at of schemasSeen(schema)) {
+    const { name, rules } = at;
+    if (rules === undefined) continue;
+    if (!Array.isArray(rules))
+      throw new Error(`The rules of ${name} are not a list.`);
+    const seen = seenTypes(at);
+    for (const rule of rules as unknown[]) {
+      if (typeof rule !== "object" || rule === null || !madeRules.has(rule))
+        throw new Error(
+          `The schema ${name} has the rule ${String((rule as { name?: unknown } | null)?.name)}, which defineRule did not make.`,
+        );
+      const { name: ruleName, on } = rule as Rule;
+      const had = owners.get(ruleName);
+      if (had?.owner === name)
+        throw new Error(`The schema ${name} has two rules named ${ruleName}.`);
+      if (had)
+        throw new Error(
+          `The schemas ${had.owner} and ${name} both have a rule named ${ruleName}: a rule name has one owner.`,
+        );
+      owners.set(ruleName, { owner: name, rule });
+      if (!seesType(seen, on))
+        throw new Error(
+          `The rule ${ruleName} of ${name} runs on ${on.name}, which is not a type of the schema ${name} or its imports.`,
+        );
+    }
+  }
+}
+
+/** The rules of each schema a schema sees, with the schema that holds each. checkRules has checked them. */
+export const rulesSeen = (schema: Schema): { rule: Rule; owner: Schema }[] =>
+  schemasSeen(schema).flatMap((owner) =>
+    (owner.rules ?? []).map((rule) => ({ rule, owner })),
+  );
+
 /** A type by its key. Generic, so the type is the one under that key, not any type of the record. */
 const typeIn = <T extends Record<string, Type>, K extends keyof T>(
   types: T,
@@ -762,13 +877,16 @@ export function defineSchema<
   types: T;
   imports?: I;
   typeNotes?: URL;
+  rules?: readonly Rule[];
 }): Schema<T, I | readonly []> {
   const imports = schema.imports ?? [];
   checkSchema(schema.name, schema.types, imports);
   checkTypeNotes({ ...schema, imports });
+  checkRules({ ...schema, imports });
   return {
     ...schema,
     imports,
+    ...(schema.rules && { rules: Object.freeze([...schema.rules]) }),
     parse<This extends Schema, N extends keyof This["types"] & string>(
       this: This,
       type: N,

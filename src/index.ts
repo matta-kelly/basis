@@ -1,6 +1,7 @@
 // What basis exports.
 export {
   basis,
+  defineRule,
   defineSchema,
   defineType,
   extendType,
@@ -13,7 +14,14 @@ export {
   oneOrNone,
   type,
 } from "./primitives.ts";
-export type { AnySchema, Link, Schema, Type } from "./primitives.ts";
+export type {
+  AnySchema,
+  Graph,
+  Link,
+  Rule,
+  Schema,
+  Type,
+} from "./primitives.ts";
 export {
   loadFolder,
   readNote,

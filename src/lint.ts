@@ -28,13 +28,18 @@ import {
 } from "./loader.ts";
 import {
   checked,
+  checkRules,
+  isOfType,
   keysOf,
   lineageOf,
   linksOf,
   ownTypesOf,
+  rulesSeen,
   schemasSeen,
+  seesType,
   seenTypes,
   wikilink,
+  type Graph,
   type Schema,
   type Type,
 } from "./primitives.ts";
@@ -81,6 +86,7 @@ function noteProblems(
   note: Note,
   byName: Map<string, Note[]>,
   unread: Set<string>,
+  parsed?: Map<Note, unknown>,
 ): Problem[] {
   const problem = (message: string): Problem => ({ path: note.path, message });
   const problems: Problem[] = [];
@@ -114,7 +120,9 @@ function noteProblems(
 
   try {
     // By the schema that holds the type: a note of an imported type is that schema's.
-    at.owner.parse(type, { ...note.frontmatter, name: note.name });
+    const node = at.owner.parse(type, { ...note.frontmatter, name: note.name });
+    // A copy: the caller's frontmatter stays as it was, and stays theirs.
+    parsed?.set(note, deepFreeze(structuredClone(node)));
   } catch (error) {
     if (!(error instanceof z.ZodError)) throw error;
     problems.push(...fieldProblems(note, error));
@@ -204,6 +212,88 @@ function keyProblems(seen: Seen, notes: Note[]): Problem[] {
   );
 }
 
+/** A value, frozen through its arrays and objects, so a rule cannot change what the next one reads. A Date is not frozen by this. */
+function deepFreeze<V>(value: V): V {
+  if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const item of Object.values(value)) deepFreeze(item);
+  }
+  return value;
+}
+
+/**
+ * What the rules of each schema the lint sees find wrong: each rule runs on each node of its type that parsed. A
+ * problem is the rule's message, named by the rule and its schema. A check that throws, or gives something other than
+ * a list of messages, is a fault of the rule, not of the note: the lint throws, naming both.
+ */
+function ruleProblems(
+  schema: Schema,
+  seen: Seen,
+  parsed: Map<Note, unknown>,
+  byName: Map<string, Note[]>,
+  unread: Set<string>,
+): Problem[] {
+  const isOf = (note: Note, type: Type) => {
+    const at = noteType(seen, note);
+    return at !== undefined && isOfType(at.type, type);
+  };
+  const nodes = [...parsed].sort(([a], [b]) => byPath(a, b));
+  const ofType = new Map<Type, [Note, unknown][]>();
+  const nodesOf = (type: Type) => {
+    if (!ofType.has(type))
+      ofType.set(
+        type,
+        nodes.filter(([note]) => isOf(note, type)),
+      );
+    return ofType.get(type) ?? [];
+  };
+  // A type the schema does not see is a fault of the rule that reads it: the check throws, and the lint names it.
+  const seenType = (type: Type) => {
+    if (!seesType(seen, type))
+      throw new Error(
+        `The type ${type.name} is not a type of the schema ${schema.name} or its imports.`,
+      );
+    return type;
+  };
+  const graph: Graph = {
+    get: (name, type) => {
+      seenType(type);
+      const same = byName.get(name);
+      const only =
+        same?.length === 1 && !unread.has(name) ? same[0] : undefined;
+      return only && parsed.has(only) && isOf(only, type)
+        ? (parsed.get(only) as never)
+        : undefined;
+    },
+    all: (type) => nodesOf(seenType(type)).map(([, node]) => node as never),
+  };
+  const problems: Problem[] = [];
+  for (const { rule, owner } of rulesSeen(schema)) {
+    const of = `The rule ${rule.name} of ${owner.name}`;
+    for (const [note, node] of nodesOf(rule.on)) {
+      let messages: unknown;
+      try {
+        messages = rule.check(node as never, graph);
+      } catch (error) {
+        throw new Error(
+          `${of} threw on ${note.path}: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
+        );
+      }
+      if (
+        !Array.isArray(messages) ||
+        !messages.every((message) => typeof message === "string")
+      )
+        throw new Error(
+          `${of} gave something other than a list of messages for ${note.path}.`,
+        );
+      for (const message of messages as string[])
+        problems.push({ path: note.path, message: `${of}: ${message}` });
+    }
+  }
+  return problems;
+}
+
 /**
  * What is wrong with the notes, by the schema, in path order. `unread` holds the paths of
  * notes that exist but could not be read: a link to one is not a problem, unless a read note has
@@ -222,6 +312,8 @@ export function lint(
   const unreadNames = new Set(unreadByName.keys());
   // The schema's own check once: a note of an imported type is parsed by its own schema, not by this one.
   checked(schema);
+  // A schema made another way than defineSchema, such as a spread, has its rules checked here.
+  checkRules(schema);
   const seen: Seen = seenTypes<Schema>(schema);
   const byName = new Map<string, Note[]>();
   for (const note of notes)
@@ -241,9 +333,16 @@ export function lint(
       });
     }
   }
+  // The parsed nodes, kept only for the rules to read.
+  const parsed =
+    rulesSeen(schema).length > 0 ? new Map<Note, unknown>() : undefined;
   for (const note of notes)
-    problems.push(...noteProblems(schema, seen, note, byName, unreadNames));
+    problems.push(
+      ...noteProblems(schema, seen, note, byName, unreadNames, parsed),
+    );
   problems.push(...keyProblems(seen, notes));
+  if (parsed)
+    problems.push(...ruleProblems(schema, seen, parsed, byName, unreadNames));
   return problems.sort(byPath);
 }
 

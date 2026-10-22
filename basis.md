@@ -53,7 +53,7 @@ Code defines, markdown describes, and the lint checks that they agree.
 		- **abstract**: a type no node is of (PG-Schema's `ABSTRACT`, GraphQL's interface). Its nodes are of the types that inherit it, and a link to it takes a node of any of them
 		- **extension**: the same type, under its name, with more fields, in a schema that imports it (GraphQL's `extend type`). Made with `extendType`. It cannot change the fields it extends
 	- **property**: a named field of a type, with a zod schema
-	- **constraint**: a rule on a field, such as required, a minimum or a pattern. It is the field's zod schema, not a primitive of its own
+	- **constraint**: a rule on a field, such as required, a minimum or a pattern. It is the field's zod schema, not a primitive of its own. A check over several fields, or several nodes, is a rule
 	- **link**: a field of the type it starts from, whose schema records the type it points at. Written in a note as `[[name]]`
 		- one, oneOrNone, many (one or more), or manyOrNone (none, or an empty list). The lint checks each one points at a note of one of its types, or of a type that inherits one
 		- data on a link itself is not supported yet
@@ -61,6 +61,11 @@ Code defines, markdown describes, and the lint checks that they agree.
 	- **schema**: a named set of types, with the schemas it imports. Made with `defineSchema`
 	- **built-in type**: `type`, the type of a type note, held in the built-in schema `basis`. Every schema sees it as if it imported `basis`, as every GraphQL schema has `__Type`. Like `node`, it is basis's own word: a schema can extend it, and cannot define another type named `type`
 		- its field `abstract` is `true` when the type the note explains is abstract, and is absent otherwise
+	- **rule**: a check a schema brings, beside basis's own. Made with `defineRule`, held by a schema (`defineSchema({ rules })`), and seen by every schema that imports it, as a type is. One owner per rule name
+		- it runs on a type (`on`): each node of that type, or of a type that inherits it, that parsed. A rule on an extension does not run on a type that inherits the type extended: that type does not have the extension's fields
+		- it gets the node, parsed by its type, and the graph: each node that parsed, its own too, by name (`get`) and by type (`all`), of a type the schema sees. It gives back what is wrong, one message each
+		- it sees the notes linted. A type note that `lintFolder` reads from outside the folder linted is not one of them
+		- a node that did not parse is not in the graph: it has its own problem, and a rule that reads it can give a second one, which goes when the first is fixed
 - the world is closed and strict: every node matches a type, and nothing undeclared is allowed. So the lint is objective
 	- when the world does not hold a need, the ontology grows. The check does not loosen
 - how schemas combine
@@ -83,7 +88,7 @@ Code defines, markdown describes, and the lint checks that they agree.
 	- reference: each link resolves, to a thing of the right type
 	- graph: no cycles, one owner per name, imports only down. `defineSchema` refuses these when a schema is built, before any note is read
 	- type notes: for each schema the lint sees, each type it owns has its type note in the folder it declares, with the type's description and abstract, and each type note there explains one of its types. Each type note in the folder linted is in the folder of a schema the lint sees. `lintFolder` and the CLI read each folder from disk, by its URL, also when it is outside the folder linted, and compare folders by their real paths. A type note outside the folder linted is also checked as a note of type `type`. The in-memory `lint` reads no folder
-	- convention: the rules each schema brings (the ESLint model: a small core, rules from plugins). Not in the code yet: a package that needs its own rules runs them beside basis's lint, as cc does
+	- convention: the rules each schema brings, made with `defineRule` (the ESLint model: a small core, rules from plugins). The lint runs the rules of every schema it sees, and names each problem by its rule and the schema that holds it. A rule that throws is a fault of the rule, not of the note: the lint throws, naming both
 - each rule has a severity, and a schema sets it per rule: error, warning or off. Not in the code yet: today every problem is an error
 	- error: the note is wrong. The check fails, and so does CI
 	- warning: the note is valid but maybe not complete ("fabric has no outside copy yet"). It is reported, and the check passes
@@ -94,7 +99,7 @@ Code defines, markdown describes, and the lint checks that they agree.
 	- test: code, run
 	- eval: an agent, run, graded on the end state
 - parse, don't validate (Alexis King): zod turns raw frontmatter into a typed value. After the lint passes, code downstream trusts the shape
-- one linter, not one per subgraph: separate linters drift, and none can check an edge that crosses subgraphs
+- one linter, not one per subgraph: separate linters drift, and none can check an edge that crosses subgraphs. A subgraph brings its rules to it, as it brings its types
 - front ends call the core (`lint`, `lintFolder`)
 	- que, which supplies basis to the folders it mounts and checks them
 	- the CLI, `basis lint [folder]`, for a person, a hook and CI. It reads `basis.config.ts` (or `.js`) at the root of the folder: the schema, and the paths to skip. It gives each problem by its path from where it runs, and exits 0 when every note fits, 1 when one does not, and 2 when it cannot check. A `.ts` config needs Node 22.18 or later, which strips types
@@ -115,10 +120,10 @@ Code defines, markdown describes, and the lint checks that they agree.
 
 ## Components
 
-1. primitives: `node`, `defineType` (with `abstract` and `parents`), `extendType`, the links `one`, `oneOrNone`, `many` and `manyOrNone`, `defineSchema`, and the built-in type `type` in the built-in schema `basis`. The vocabulary as code
-	- `defineSchema` is also the compiler: a schema and its imports become one ontology. It refuses cycles, two schemas of one name, a schema named `basis` that is not the built-in one, two owners of one type name, a schema that holds a type of its own and declares no folder of type notes (`typeNotes`), and two schemas it sees that declare one folder
+1. primitives: `node`, `defineType` (with `abstract` and `parents`), `extendType`, the links `one`, `oneOrNone`, `many` and `manyOrNone`, `defineRule`, `defineSchema`, and the built-in type `type` in the built-in schema `basis`. The vocabulary as code
+	- `defineSchema` is also the compiler: a schema and its imports become one ontology. It refuses cycles, two schemas of one name, a schema named `basis` that is not the built-in one, two owners of one type name, a schema that holds a type of its own and declares no folder of type notes (`typeNotes`), two schemas it sees that declare one folder, a rule on a type it does not see, and two owners of one rule name
 	- what makes basis more than a zod wrapper: where schemas become one graph
 	- prior art: NixOS module merging
 2. loader: a folder in, notes out (path, frontmatter, body). A `skip` option leaves out the paths that are not notes, such as a README or code
-3. lint: a schema and the notes in, problems out, through the rule layers. A folder's lint (`lintFolder`) also checks the type notes against the types
+3. lint: a schema and the notes in, problems out, through the rule layers, the rules of each schema it sees last. A folder's lint (`lintFolder`) also checks the type notes against the types
 4. cli: `basis lint [folder]`, the lint run on a folder with the schema and skip of its config. The one command a person, a hook and a pipeline run
