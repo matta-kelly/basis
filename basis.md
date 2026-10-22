@@ -34,10 +34,10 @@ Code defines, markdown describes, and the lint checks that they agree.
 - markdown: the nodes, one note each. A note's frontmatter is checked against its type
 - type note: the documentation of a type, as a docstring is the documentation of a function
 	- one per type, of type `type`, with the type's name as its file name. `type` is built into basis, and every schema sees it without an import
-	- basis's own type note is `types/type.md`
-	- its description is the type's description, and the lint checks that the two are the same
+	- it sits in the folder its schema declares: `defineSchema({ ..., typeNotes: new URL("./types/", import.meta.url) })`. basis's own type note is `types/type.md`, in its package
+	- its description is the type's description, and `abstract: true` is on it when the type is abstract. The lint checks that both are the code's
+	- an extension is the type it extends: its type note is the one of the schema that owns that type
 	- its body says what the type is for, and when to use it over another. It is the template for a new node of that type
-	- not in the code yet: `it` (`scripts/types-agree.ts`) and cc (`lint.ts`) each check this. The check moves into basis
 - package: an npm package. It exports a schema and its type notes, and imports the schemas it builds on
 - the words are those of the property graph (PG-Schema): node, type, property, link, schema, abstract type. Content collections (Astro) use other words for the same parts: a type is a collection, a node is an entry, and a link is a `reference()`
 
@@ -82,6 +82,7 @@ Code defines, markdown describes, and the lint checks that they agree.
 	- schema: the fields match the type (zod)
 	- reference: each link resolves, to a thing of the right type
 	- graph: no cycles, one owner per name, imports only down. `defineSchema` refuses these when a schema is built, before any note is read
+	- type notes: for each schema the lint sees, each type it owns has its type note in the folder it declares, with the type's description and abstract, and each type note there explains one of its types. Each type note in the folder linted is in the folder of a schema the lint sees. `lintFolder` and the CLI read each folder from disk, by its URL, also when it is outside the folder linted, and compare folders by their real paths. A type note outside the folder linted is also checked as a note of type `type`. The in-memory `lint` reads no folder
 	- convention: the rules each schema brings (the ESLint model: a small core, rules from plugins). Not in the code yet: a package that needs its own rules runs them beside basis's lint, as cc does
 - each rule has a severity, and a schema sets it per rule: error, warning or off. Not in the code yet: today every problem is an error
 	- error: the note is wrong. The check fails, and so does CI
@@ -115,9 +116,9 @@ Code defines, markdown describes, and the lint checks that they agree.
 ## Components
 
 1. primitives: `node`, `defineType` (with `abstract` and `parents`), `extendType`, the links `one`, `oneOrNone`, `many` and `manyOrNone`, `defineSchema`, and the built-in type `type` in the built-in schema `basis`. The vocabulary as code
-	- `defineSchema` is also the compiler: a schema and its imports become one ontology. It refuses cycles, two schemas of one name, a schema named `basis` that is not the built-in one, and two owners of one type name
+	- `defineSchema` is also the compiler: a schema and its imports become one ontology. It refuses cycles, two schemas of one name, a schema named `basis` that is not the built-in one, two owners of one type name, a schema that holds a type of its own and declares no folder of type notes (`typeNotes`), and two schemas it sees that declare one folder
 	- what makes basis more than a zod wrapper: where schemas become one graph
 	- prior art: NixOS module merging
 2. loader: a folder in, notes out (path, frontmatter, body). A `skip` option leaves out the paths that are not notes, such as a README or code
-3. lint: a schema and the notes in, problems out, through the rule layers
+3. lint: a schema and the notes in, problems out, through the rule layers. A folder's lint (`lintFolder`) also checks the type notes against the types
 4. cli: `basis lint [folder]`, the lint run on a folder with the schema and skip of its config. The one command a person, a hook and a pipeline run

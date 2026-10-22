@@ -1,6 +1,6 @@
 {
   "name": "basis",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -16,7 +16,8 @@
     "basis": "./dist/bin.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "types"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

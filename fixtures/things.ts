@@ -50,4 +50,5 @@ export default defineSchema({
   name: "things",
   description: "What exists, and where.",
   types: { source, object, "external-object": externalObject },
+  typeNotes: new URL("./types/things/", import.meta.url),
 });

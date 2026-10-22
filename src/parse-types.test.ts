@@ -7,6 +7,7 @@ import {
   companyCapability,
   core,
 } from "../fixtures/layers.ts";
+import { typeNotes } from "../fixtures/types.ts";
 import things, { source } from "../fixtures/things.ts";
 import {
   defineSchema,
@@ -68,6 +69,7 @@ describe("a parsed note's type", () => {
       name: "p",
       description: "d",
       types: { source, near },
+      typeNotes,
     });
     expectTypeOf(parserOf(schema, "near"))
       .returns.toHaveProperty("to")
@@ -90,6 +92,7 @@ describe("a parsed note's type", () => {
       name: "p",
       description: "d",
       types: { thing },
+      typeNotes,
     });
     type Thing = Parsed<typeof schema, "thing">;
     expectTypeOf(parserOf(schema, "thing")).returns.toEqualTypeOf<{
@@ -127,6 +130,7 @@ describe("a parsed note's type", () => {
       name: "p",
       description: "d",
       types: { source, near },
+      typeNotes,
     });
     expectTypeOf(parserOf(schema, "near"))
       .returns.toHaveProperty("to")
@@ -149,6 +153,7 @@ describe("a parsed note's type", () => {
       name: "p",
       description: "d",
       types: { a, b },
+      typeNotes,
     });
     expectTypeOf(parserOf(schema, "a"))
       .returns.toHaveProperty("b")
@@ -160,8 +165,13 @@ describe("a parsed note's type", () => {
 
   it("is refused by the compiler for a schema whose key for a type is not the type's name", () => {
     void (() =>
-      // @ts-expect-error: the key is other, the type's name is source.
-      defineSchema({ name: "p", description: "d", types: { other: source } }));
+      defineSchema({
+        name: "p",
+        description: "d",
+        // @ts-expect-error: the key is other, the type's name is source.
+        types: { other: source },
+        typeNotes,
+      }));
   });
 
   it("follows the types of the schema it is called on, so a spread schema parses by its own types", () => {
@@ -174,6 +184,7 @@ describe("a parsed note's type", () => {
       name: "p",
       description: "d",
       types: { source },
+      typeNotes,
     });
     const spread: Schema<{ source: typeof other }> = {
       ...schema,
@@ -256,6 +267,7 @@ describe("a type that extends another, in a schema that imports it", () => {
       name: "other",
       description: "d",
       types: { agent },
+      typeNotes,
     });
     void (() =>
       defineSchema({
@@ -294,7 +306,11 @@ describe("a type that extends another, in a schema that imports it", () => {
 
   it("is refused by the compiler for an extension of an extension of the built-in type, in a schema that does not import it", () => {
     const owned = extendType(type, { fields: { owner: z.string() } });
-    defineSchema({ name: "owned", description: "d", types: { type: owned } });
+    defineSchema({
+      name: "owned",
+      description: "d",
+      types: { type: owned },
+    });
     void (() =>
       defineSchema({
         name: "p",
@@ -445,6 +461,7 @@ describe("a type that inherits parents", () => {
     name: "bakery",
     description: "d",
     types: { grain, bread },
+    typeNotes,
   });
   it("has the fields every node has, its parents' fields and its own", () => {
     expectTypeOf(parserOf(bakery, "bread")).returns.toEqualTypeOf<{

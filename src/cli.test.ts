@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { run } from "./index.ts";
@@ -62,6 +62,23 @@ describe("basis lint", () => {
     expect(code).toBe(1);
     expect(log).toEqual([expect.stringMatching(/^oven\.md: description: /)]);
     expect(error).toEqual([]);
+  });
+
+  it("gives a type note's problem by its path from the folder it runs in, outside the folder it lints", async () => {
+    const kitchen = fileURLToPath(
+      new URL("../fixtures/kitchen.ts", import.meta.url),
+    );
+    const root = await folderOf({
+      "basis.config.ts": `import kitchen from ${JSON.stringify(kitchen)};\nexport default { schema: kitchen };\n`,
+    });
+    const bun = fileURLToPath(
+      new URL("../fixtures/types/kitchen/bun.md", import.meta.url),
+    );
+    const { code, log } = await cli(["lint"], root);
+    expect(code).toBe(1);
+    expect(log).toContain(
+      `${relative(root, bun)}: The type bun of kitchen has no type note: make this note, of type type, with the description of bun.`,
+    );
   });
 
   it("checks the folder it is given, from the folder it runs in", async () => {

@@ -26,6 +26,7 @@ export const core = defineSchema({
   name: "core",
   description: "Agents, capabilities and their cases.",
   types: { agent, capability, case: kase },
+  typeNotes: new URL("./types/core/", import.meta.url),
 });
 
 export const companyCapability = extendType(core.types.capability, {

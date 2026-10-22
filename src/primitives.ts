@@ -5,6 +5,8 @@
  * that start from it, and nothing else.
  */
 
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import * as z from "zod";
 
 /** A node is named by a short slug, so one node can point at another by name. */
@@ -506,6 +508,11 @@ export interface Schema<
   /** The schemas it imports: its links can point at their types, and its types can extend them. */
   imports: I;
   /**
+   * The folder of its type notes, one for each type of its own, as a file URL: `new URL("./types/", import.meta.url)`.
+   * None when it holds no type of its own. `lintFolder` reads it from disk.
+   */
+  typeNotes?: URL;
+  /**
    * The node, parsed by the zod schema of its type, in the own types of the schema it is called on. Throws when the
    * node does not fit. A note of an imported type is parsed by the schema that holds it.
    */
@@ -667,10 +674,71 @@ export function checked(schema: {
   name: string;
   types: Record<string, Type>;
   imports: readonly AnySchema[];
+  typeNotes?: unknown;
 }) {
   checkName(schema.name);
   if (!checkedWith.get(schema.types)?.has(schema.imports))
     checkSchema(schema.name, schema.types, schema.imports);
+  checkTypeNotes(schema);
+}
+
+/** The types a schema holds as their owner: each one but an extension, whose owner is the schema of the type it extends. */
+export const ownTypesOf = (types: Record<string, Type>): Type[] =>
+  Object.values(types).filter((type) => !type.extends);
+
+/** A schema as defineSchema takes it, or as a config gives it: the parts schemasSeen reads. */
+type SchemaParts = {
+  name: string;
+  types: Record<string, Type>;
+  imports: readonly SchemaParts[];
+  typeNotes?: unknown;
+};
+
+/** Each schema a schema sees, each one after its imports: the built-in one, its imports at every depth, and itself. */
+export function schemasSeen<S extends SchemaParts>(schema: S): S[] {
+  // The built-in schema, as it is made, sees only itself.
+  const found = new Set<SchemaParts>(
+    schema.types === builtInTypes ? [] : [basis],
+  );
+  const walk = (at: SchemaParts) => {
+    if (found.has(at)) return;
+    for (const imported of at.imports) walk(imported);
+    found.add(at);
+  };
+  walk(schema);
+  return [...found] as S[];
+}
+
+/**
+ * What defineSchema checks of the folder of type notes: a file URL, there when the schema holds a type of its own, and
+ * declared by no other schema it sees (one owner per folder, as per type name). A plain Error, as for the other checks.
+ */
+function checkTypeNotes(schema: SchemaParts) {
+  const { name, typeNotes } = schema;
+  const declare = 'typeNotes: new URL("./types/", import.meta.url)';
+  if (
+    typeNotes !== undefined &&
+    !(typeNotes instanceof URL && typeNotes.protocol === "file:")
+  )
+    throw new Error(
+      `The folder of type notes of ${name} is not a file URL: ${declare}.`,
+    );
+  const own = ownTypesOf(schema.types).map((type) => type.name);
+  if (typeNotes === undefined && own.length > 0)
+    throw new Error(
+      `The schema ${name} holds the type${own.length > 1 ? "s" : ""} ${own.join(", ")} of its own, and declares no folder of type notes: defineSchema({ ..., ${declare} }).`,
+    );
+  const owners = new Map<string, string>();
+  for (const at of schemasSeen(schema)) {
+    if (!(at.typeNotes instanceof URL)) continue;
+    const folder = resolve(fileURLToPath(at.typeNotes));
+    const had = owners.get(folder);
+    if (had !== undefined && had !== at.name)
+      throw new Error(
+        `The schemas ${had} and ${at.name} both declare ${folder} as the folder of their type notes: a folder has one owner.`,
+      );
+    owners.set(folder, at.name);
+  }
 }
 
 /** A type by its key. Generic, so the type is the one under that key, not any type of the record. */
@@ -693,9 +761,11 @@ export function defineSchema<
   description: string;
   types: T;
   imports?: I;
+  typeNotes?: URL;
 }): Schema<T, I | readonly []> {
   const imports = schema.imports ?? [];
   checkSchema(schema.name, schema.types, imports);
+  checkTypeNotes({ ...schema, imports });
   return {
     ...schema,
     imports,
@@ -743,4 +813,5 @@ export const basis = defineSchema({
   name: "basis",
   description: "The types basis gives every schema: the type of a type note.",
   types: builtInTypes,
+  typeNotes: new URL("../types/", import.meta.url),
 });

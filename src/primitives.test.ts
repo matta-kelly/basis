@@ -7,6 +7,7 @@ import {
   companyCapability,
   core,
 } from "../fixtures/layers.ts";
+import { typeNotes } from "../fixtures/types.ts";
 import things, { externalObject, object, source } from "../fixtures/things.ts";
 import {
   basis,
@@ -116,6 +117,7 @@ describe("a node", () => {
       name: "p",
       description: "d",
       types: { source, near },
+      typeNotes,
     });
     const node = { name: "n", type: "near", description: "d" };
     expect(schema.parse("near", node)).toEqual(node);
@@ -203,6 +205,7 @@ const withType = (type: Type) =>
       "external-object": externalObject,
       [type.name]: type,
     },
+    typeNotes,
   });
 const plainType = (fields: z.ZodRawShape = {}) =>
   defineType({ name: "t", description: "d", fields });
@@ -210,11 +213,20 @@ const plainType = (fields: z.ZodRawShape = {}) =>
 describe("a schema", () => {
   it("is refused with a name that is not a slug, of itself or of a type", () => {
     expect(() =>
-      defineSchema({ name: "My Things", description: "d", types: {} }),
+      defineSchema({
+        name: "My Things",
+        description: "d",
+        types: {},
+      }),
     ).toThrow();
     const thing = defineType({ name: "Thing", description: "d", fields: {} });
     expect(() =>
-      defineSchema({ name: "p", description: "d", types: { Thing: thing } }),
+      defineSchema({
+        name: "p",
+        description: "d",
+        types: { Thing: thing },
+        typeNotes,
+      }),
     ).toThrow(/Thing/);
   });
 
@@ -287,10 +299,83 @@ describe("a schema", () => {
     expect(schema.parse("t", node)).toEqual(node);
   });
 
+  it("is refused by a plain Error when it holds a type of its own and declares no folder of type notes", () => {
+    let error: unknown;
+    try {
+      defineSchema({ name: "p", description: "d", types: { source } });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).not.toBeInstanceOf(z.ZodError);
+    expect(error).toEqual(
+      new Error(
+        'The schema p holds the type source of its own, and declares no folder of type notes: defineSchema({ ..., typeNotes: new URL("./types/", import.meta.url) }).',
+      ),
+    );
+  });
+
+  it("declares no folder of type notes when it holds no type of its own, or only extensions", () => {
+    expect(() =>
+      defineSchema({
+        name: "p",
+        description: "d",
+        types: {},
+        imports: [core],
+      }),
+    ).not.toThrow();
+    expect(company.typeNotes).toBeUndefined();
+  });
+
+  it("is refused by a plain Error when it sees another schema that declares its folder of type notes: a folder has one owner", () => {
+    const bun = defineType({ name: "bun", description: "d", fields: {} });
+    const roll = defineType({ name: "roll", description: "d", fields: {} });
+    const folder = new URL("file:///notes/types/");
+    const s = defineSchema({
+      name: "s",
+      description: "d",
+      types: { bun },
+      typeNotes: folder,
+    });
+    expect(() =>
+      defineSchema({
+        name: "s2",
+        description: "d",
+        types: { roll },
+        imports: [s],
+        typeNotes: new URL("file:///notes/types"),
+      }),
+    ).toThrow(
+      new Error(
+        "The schemas s and s2 both declare /notes/types as the folder of their type notes: a folder has one owner.",
+      ),
+    );
+  });
+
+  it("is refused with a folder of type notes that is not a file URL", () => {
+    for (const typeNotes of [
+      new URL("https://example.com/types/"),
+      "./types/" as unknown as URL,
+    ])
+      expect(() =>
+        defineSchema({
+          name: "p",
+          description: "d",
+          types: { source },
+          typeNotes,
+        }),
+      ).toThrow(
+        'The folder of type notes of p is not a file URL: typeNotes: new URL("./types/", import.meta.url).',
+      );
+  });
+
   it("is refused with a name that is not a slug by a plain Error that names the schema, not a ZodError", () => {
     let error: unknown;
     try {
-      defineSchema({ name: "My Things", description: "d", types: {} });
+      defineSchema({
+        name: "My Things",
+        description: "d",
+        types: {},
+      });
     } catch (caught) {
       error = caught;
     }
@@ -320,7 +405,12 @@ describe("a schema", () => {
 
   it("is refused when a link ends at a type it does not hold, or at another type of the same name", () => {
     expect(() =>
-      defineSchema({ name: "p", description: "d", types: { object } }),
+      defineSchema({
+        name: "p",
+        description: "d",
+        types: { object },
+        typeNotes,
+      }),
     ).toThrow(/livesIn.*source/);
     const other = defineType({
       name: "source",
@@ -332,6 +422,7 @@ describe("a schema", () => {
         name: "p",
         description: "d",
         types: { object, source: other, "external-object": externalObject },
+        typeNotes,
       }),
     ).toThrow(/livesIn.*source/);
   });
@@ -344,6 +435,7 @@ describe("a schema", () => {
         types: { source, other: source } as unknown as {
           source: typeof source;
         },
+        typeNotes,
       }),
     ).toThrow(/other/);
   });
@@ -380,6 +472,7 @@ describe("a type", () => {
       name: "p",
       description: "d",
       types: { source, t },
+      typeNotes,
     });
     expect(linksOf(t).map((link) => link.name)).toEqual(["to"]);
     expect(schema.parse("t", node)).toEqual({ ...node, to: "slate" });
@@ -401,6 +494,7 @@ describe("a type", () => {
       name: "p",
       description: "d",
       types: { source, t },
+      typeNotes,
     });
     expect(linksOf(t).map((link) => link.name)).toEqual(["to"]);
     expect(schema.parse("t", node)).toEqual({ ...node, to: "slate" });
@@ -436,7 +530,12 @@ describe("a link with several targets", () => {
 
   it("is refused by a schema that does not hold each of its types", () => {
     expect(() =>
-      defineSchema({ name: "p", description: "d", types: { source, holder } }),
+      defineSchema({
+        name: "p",
+        description: "d",
+        types: { source, holder },
+        typeNotes,
+      }),
     ).toThrow(
       "The link a of holder ends at domain, which is not a type of the schema p or its imports.",
     );
@@ -445,6 +544,7 @@ describe("a link with several targets", () => {
         name: "p",
         description: "d",
         types: { source, domain, holder },
+        typeNotes,
       }),
     ).not.toThrow();
   });
@@ -571,6 +671,7 @@ describe("a schema's types", () => {
       name: "p",
       description: "d",
       types: { source },
+      typeNotes,
     });
     const wide: { source: Type } = schema.types;
     expect(() => {
@@ -604,6 +705,7 @@ describe("a schema spread with other types", () => {
     name: "p",
     description: "d",
     types: { source },
+    typeNotes,
   });
 
   it("parses by its own types", () => {
@@ -715,6 +817,7 @@ describe("a schema that imports another", () => {
         description: "d",
         imports: [core],
         types: { near },
+        typeNotes,
       }),
     ).toThrow(/to of near ends at stranger/);
     expect(() =>
@@ -729,6 +832,7 @@ describe("a schema that imports another", () => {
             fields: { by: one(() => agent) },
           }),
         },
+        typeNotes,
       }),
     ).not.toThrow();
   });
@@ -741,6 +845,7 @@ describe("a schema that imports another", () => {
         description: "d",
         imports: [core],
         types: { agent: other },
+        typeNotes,
       }),
     ).toThrow(/agent.*core/);
   });
@@ -752,6 +857,7 @@ describe("a schema that imports another", () => {
       types: {
         agent: defineType({ name: "agent", description: "d", fields: {} }),
       },
+      typeNotes,
     });
     expect(() =>
       defineSchema({
@@ -804,6 +910,7 @@ describe("a schema that imports another", () => {
         description: "d",
         imports: [company],
         types: { task },
+        typeNotes,
       }),
     ).not.toThrow();
   });
@@ -904,6 +1011,7 @@ describe("an abstract type and the types that inherit it", () => {
     name: "bakery",
     description: "d",
     types: { grain, baked, bread },
+    typeNotes,
   });
   const rye = {
     name: "rye",
@@ -973,7 +1081,12 @@ describe("an abstract type and the types that inherit it", () => {
       fields: { mill: z.number() },
     });
     expect(() =>
-      defineSchema({ name: "p", description: "d", types: { grain, over } }),
+      defineSchema({
+        name: "p",
+        description: "d",
+        types: { grain, over },
+        typeNotes,
+      }),
     ).toThrow(/over redefines mill, a field of its parent grain/);
   });
 
@@ -995,6 +1108,7 @@ describe("an abstract type and the types that inherit it", () => {
         name: "p",
         description: "d",
         types: { grain, wheat, mixed },
+        typeNotes,
       }),
     ).toThrow(/mixed inherits mill from grain and from wheat, which differ/);
     const roll = defineType({
@@ -1008,13 +1122,19 @@ describe("an abstract type and the types that inherit it", () => {
         name: "p",
         description: "d",
         types: { grain, baked, bread, roll },
+        typeNotes,
       }),
     ).not.toThrow();
   });
 
   it("is refused when a parent is not a type of the schema or its imports", () => {
     expect(() =>
-      defineSchema({ name: "p", description: "d", types: { bread } }),
+      defineSchema({
+        name: "p",
+        description: "d",
+        types: { bread },
+        typeNotes,
+      }),
     ).toThrow(
       /bread of p inherits grain, which is not a type of the schema p or its imports/,
     );
@@ -1031,6 +1151,7 @@ describe("an abstract type and the types that inherit it", () => {
         name: "p",
         description: "d",
         types: { grain, baked, bread, shelf },
+        typeNotes,
       }),
     ).not.toThrow();
   });
@@ -1045,7 +1166,12 @@ describe("an abstract type and the types that inherit it", () => {
     });
     expect(milled.key).toEqual(["mill"]);
     expect(() =>
-      defineSchema({ name: "p", description: "d", types: { grain, milled } }),
+      defineSchema({
+        name: "p",
+        description: "d",
+        types: { grain, milled },
+        typeNotes,
+      }),
     ).not.toThrow();
   });
 });
@@ -1061,6 +1187,12 @@ describe("the built-in type type", () => {
     expect(basis.name).toBe("basis");
     expect(basis.imports).toEqual([]);
     expect(basis.types).toEqual({ type });
+  });
+
+  it("declares basis's types folder as the folder of its type notes", () => {
+    expect(basis.typeNotes?.href).toBe(
+      new URL("../types/", import.meta.url).href,
+    );
   });
 
   it("parses a type note, and takes abstract only as true", () => {
@@ -1082,7 +1214,12 @@ describe("the built-in type type", () => {
       fields: { explains: one(() => type) },
     });
     expect(() =>
-      defineSchema({ name: "p", description: "d", types: { about } }),
+      defineSchema({
+        name: "p",
+        description: "d",
+        types: { about },
+        typeNotes,
+      }),
     ).not.toThrow();
   });
 
@@ -1106,7 +1243,12 @@ describe("the built-in type type", () => {
   it("is refused as the name of a type of another schema: a name has one owner", () => {
     const own = defineType({ name: "type", description: "d", fields: {} });
     expect(() =>
-      defineSchema({ name: "p", description: "d", types: { type: own } }),
+      defineSchema({
+        name: "p",
+        description: "d",
+        types: { type: own },
+        typeNotes,
+      }),
     ).toThrow(/The type type of p has the name of a type of basis/);
   });
 });

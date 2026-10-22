@@ -20,13 +20,18 @@ if [ -e node_modules/basis/node_modules/zod ]; then
 fi
 
 printf -- '---\ntype: source\ndescription: "Where each bake is written."\nrole: entry\n---\n' >notes/slate.md
+# The type note of source, in the folder its schema declares. basis's own, for the type type, is in its package.
+mkdir types
+printf -- '---\ntype: type\ndescription: "A place data lives."\n---\n' >types/source.md
 printf -- '---\ntype: source\nrole: entry\n---\n' >notes/oven.md
 
 node --input-type=module -e '
 import * as z from "zod";
+import { pathToFileURL } from "node:url";
 import { defineType, defineSchema, lintFolder } from "basis";
 const source = defineType({ name: "source", description: "A place data lives.", fields: { role: z.enum(["entry", "record"]) } });
-const schema = defineSchema({ name: "things", description: "Where data lives.", types: { source } });
+const typeNotes = pathToFileURL(process.cwd() + "/types/");
+const schema = defineSchema({ name: "things", description: "Where data lives.", types: { source }, typeNotes });
 const problems = await lintFolder(schema, "notes");
 console.log(problems);
 if (problems.length !== 1 || !problems[0].path.endsWith("oven.md")) process.exit(1);
@@ -38,7 +43,7 @@ cat >things.js <<'JS'
 import * as z from "zod";
 import { defineType, defineSchema } from "basis";
 const source = defineType({ name: "source", description: "A place data lives.", fields: { role: z.enum(["entry", "record"]) } });
-export default defineSchema({ name: "things", description: "Where data lives.", types: { source } });
+export default defineSchema({ name: "things", description: "Where data lives.", types: { source }, typeNotes: new URL("./types/", import.meta.url) });
 JS
 printf 'import things from "../things.js";\nexport default { schema: things, skip: ["README.md"] };\n' >notes/basis.config.js
 printf 'No frontmatter.\n' >notes/README.md
