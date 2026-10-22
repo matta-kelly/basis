@@ -29,4 +29,12 @@ jobs:
       - name: The tag is the version in package.json
         run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
       - run: scripts/check.sh
-      - run: npm publish
+      # A version npm has already is left as it is: a run again, or the first version, published by hand.
+      - name: Publish, if npm does not have this version
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          if npm view "@matta-kelly/basis@$version" version >/dev/null 2>&1; then
+            echo "npm has @matta-kelly/basis@$version already"
+          else
+            npm publish
+          fi
