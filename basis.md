@@ -3,20 +3,18 @@ type: moc
 description: "basis: the base package for semantic subgraphs. The meta primitives, the compiler and the lint core that every subgraph imports. Read for what basis is and what it is made of."
 status: active
 ---
-Define small pieces that build only downward, and check reality against them.
+Code defines, markdown describes, and the lint checks that they agree.
 - [[#Thesis]] why an ontology, and what a subgraph is
+- [[#Seam]] what code holds, what markdown holds, and how the two meet
 - [[#Primitives]] the meta vocabulary, and the rules for how schemas combine
 - [[#Lint]] what a linter is, and the layers of its rules
 - [[#Foundation]] the language and the libraries
 - [[#Components]] the parts of basis, in the order they depend on each other
 
-#### Desk
-- Next
-- Inbox
-
 ---
 ## Thesis
 
+- define small pieces that build only downward, and check reality against them
 - an ontology breaks a thing into a structure that makes sense. It gives two things
 	- the parts to build systems from
 	- something to check reality against: linting, evals, the definition as the source of truth (semantic IaC)
@@ -27,6 +25,20 @@ Define small pieces that build only downward, and check reality against them.
 - the same idea exists closed (Palantir Ontology and AIP). basis is the open version: small subgraphs that stack by import and are checked by lint
 - basis is PG-Schema plus schemas that import each other. Binding, connector, tool, skill and navigation are real, and belong to the packages that import basis, such as que, not to basis
 - basis imports nothing. A package that imports it says so in its own note; basis keeps no map of what is built on it
+
+## Seam
+
+Code defines, markdown describes, and the lint checks that they agree.
+
+- code: the shape of each type, as zod in `defineType`. Its properties, its links, and a one-line description
+- markdown: the nodes, one note each. A note's frontmatter is checked against its type
+- type note: the documentation of a type, as a docstring is the documentation of a function
+	- one per type, of type `type`, with the type's name as its file name
+	- its description is the type's description, and the lint checks that the two are the same
+	- its body says what the type is for, and when to use it over another. It is the template for a new node of that type
+	- not in the code yet: `it` (`scripts/types-agree.ts`) and cc (`lint.ts`) each check this. The check moves into basis
+- package: an npm package. It exports a schema and its type notes, and imports the schemas it builds on
+- the words are those of the property graph (PG-Schema): node, type, property, link, schema, interface. Content collections (Astro) use other words for the same parts: a type is a collection, a node is an entry, and a link is a `reference()`
 
 ## Primitives
 
