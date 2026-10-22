@@ -4,9 +4,13 @@ The root package for semantic subgraphs: the primitives, the compiler and the li
 
 ## Install
 
-From npm: `npm install @mku1tra/basis`, and `import { defineSchema } from "@mku1tra/basis"` in plain Node, 22.18 or later. A tag `v*` publishes that version, by `.github/workflows/publish.yml`.
+From npm: `npm install @mku1tra/basis`, and `import { defineSchema } from "@mku1tra/basis"` in plain Node, 22.18 or later.
 
 In a workspace that holds basis's repo, as lot does, a package that depends on basis links the repo, not the registry. Its export condition `@mku1tra/source` points at `src/`, so `node --conditions=@mku1tra/source` runs basis as it is, with no build. The package on npm has no `src/`: the condition is only for a workspace.
+
+## Release
+
+Set the version in `package.json`, commit, and push a tag `v<version>`. `.github/workflows/publish.yml` runs the check set and publishes to npm by trusted publishing (no token, with provenance). A version npm has is not published again. A published version cannot change: npm unpublishes only within 72 hours.
 
 ## Lint a folder
 
