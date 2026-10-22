@@ -1,13 +1,19 @@
 {
-  "name": "basis",
-  "version": "0.13.1",
-  "private": true,
+  "name": "@matta-kelly/basis",
+  "version": "0.14.0",
+  "description": "The root package for semantic subgraphs: the primitives, the compiler and the lint core that every subgraph imports.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/matta-kelly/basis.git"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.18"
   },
   "exports": {
     ".": {
+      "@matta-kelly/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
@@ -43,5 +49,8 @@
   },
   "peerDependencies": {
     "zod": "^4.6.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

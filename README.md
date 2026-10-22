@@ -4,7 +4,9 @@ The root package for semantic subgraphs: the primitives, the compiler and the li
 
 ## Install
 
-From GitHub, by tag: `npm install github:matta-kelly/basis#v0.13.1`. npm runs `prepare`, which builds `dist` from `src`, and the project imports `basis` in plain Node, 22.18 or later.
+From npm: `npm install @matta-kelly/basis`, and `import { defineSchema } from "@matta-kelly/basis"` in plain Node, 22.18 or later. A tag `v*` publishes that version, by `.github/workflows/publish.yml`.
+
+In a workspace that holds basis's repo, as lot does, a package that depends on basis links the repo, not the registry. Its export condition `@matta-kelly/source` points at `src/`, so `node --conditions=@matta-kelly/source` runs basis as it is, with no build. The package on npm has no `src/`: the condition is only for a workspace.
 
 ## Lint a folder
 

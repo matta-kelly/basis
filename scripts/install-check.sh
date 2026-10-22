@@ -13,8 +13,8 @@ npm pack --silent --pack-destination "$tmp" >/dev/null
 mkdir "$tmp/project" "$tmp/project/notes"
 cd "$tmp/project"
 echo '{ "name": "project", "private": true, "type": "module" }' >package.json
-npm install --silent --no-audit --no-fund zod@4.6.6 "$tmp"/basis-*.tgz
-if [ -e node_modules/basis/node_modules/zod ]; then
+npm install --silent --no-audit --no-fund zod@4.6.6 "$tmp"/matta-kelly-basis-*.tgz
+if [ -e node_modules/@matta-kelly/basis/node_modules/zod ]; then
   echo "basis has a zod of its own, beside the project's" >&2
   exit 1
 fi
@@ -28,7 +28,7 @@ printf -- '---\ntype: source\nrole: entry\n---\n' >notes/oven.md
 node --input-type=module -e '
 import * as z from "zod";
 import { pathToFileURL } from "node:url";
-import { defineType, defineSchema, lintFolder } from "basis";
+import { defineType, defineSchema, lintFolder } from "@matta-kelly/basis";
 const source = defineType({ name: "source", description: "A place data lives.", fields: { role: z.enum(["entry", "record"]) } });
 const typeNotes = pathToFileURL(process.cwd() + "/types/");
 const schema = defineSchema({ name: "things", description: "Where data lives.", types: { source }, typeNotes });
@@ -41,7 +41,7 @@ if (problems.length !== 1 || !problems[0].path.endsWith("oven.md")) process.exit
 # One folder has a config in JavaScript, the other in TypeScript, which Node strips outside node_modules.
 cat >things.js <<'JS'
 import * as z from "zod";
-import { defineType, defineSchema } from "basis";
+import { defineType, defineSchema } from "@matta-kelly/basis";
 const source = defineType({ name: "source", description: "A place data lives.", fields: { role: z.enum(["entry", "record"]) } });
 export default defineSchema({ name: "things", description: "Where data lives.", types: { source }, typeNotes: new URL("./types/", import.meta.url) });
 JS
@@ -49,7 +49,7 @@ printf 'import things from "../things.js";\nexport default { schema: things, ski
 printf 'No frontmatter.\n' >notes/README.md
 mkdir typed
 cp notes/slate.md typed/
-printf 'import type { Config } from "basis";\nimport things from "../things.js";\nexport default { schema: things } satisfies Config;\n' >typed/basis.config.ts
+printf 'import type { Config } from "@matta-kelly/basis";\nimport things from "../things.js";\nexport default { schema: things } satisfies Config;\n' >typed/basis.config.ts
 
 set +e
 out=$(npx --no-install basis lint notes)

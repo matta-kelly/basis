@@ -122,7 +122,7 @@ Code defines, markdown describes, and the lint checks that they agree.
 	- `z.toJSONSchema`: the schema, for other tools
 - `yaml` to read frontmatter
 - vitest for tests
-- npm workspaces, once there are several packages
+- published to npm as `@matta-kelly/basis`, by a version tag. In lot, a workspace, a package that depends on it links basis's repo, through the export condition `@matta-kelly/source`, with no build or release
 - a dev container. No npm on the host
 
 ## Components
