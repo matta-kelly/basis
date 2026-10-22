@@ -1,6 +1,7 @@
-# Publishes basis to npm, as @mku1tra/basis, when a version tag is pushed: the same check set first, then
-# `npm publish` by trusted publishing (OIDC), with no token. npm gives the package provenance from this run.
-# npmjs.com holds the other half: the package's Trusted Publisher names this repo and this file.
+# Stages basis on npm, as @mku1tra/basis, when a version tag is pushed: the same check set first, then
+# `npm stage publish` by trusted publishing (OIDC), with no token. A staged version is not public until a maintainer
+# approves it with 2FA (`npm stage approve <id>`): this run cannot put a version out alone.
+# npmjs.com holds the other half: the package's Trusted Publisher names this repo and this file, and allows staging only.
 name: publish
 
 on:
@@ -30,11 +31,11 @@ jobs:
         run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
       - run: scripts/check.sh
       # A version npm has already is left as it is: a run again, or the first version, published by hand.
-      - name: Publish, if npm does not have this version
+      - name: Stage, if npm does not have this version
         run: |
           version=$(node -p 'require("./package.json").version')
           if npm view "@mku1tra/basis@$version" version >/dev/null 2>&1; then
             echo "npm has @mku1tra/basis@$version already"
           else
-            npm publish
+            npm stage publish
           fi

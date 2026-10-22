@@ -10,7 +10,7 @@ In a workspace that holds basis's repo, as lot does, a package that depends on b
 
 ## Release
 
-Set the version in `package.json`, commit, and push a tag `v<version>`. `.github/workflows/publish.yml` runs the check set and publishes to npm by trusted publishing (no token, with provenance). A version npm has is not published again. A published version cannot change: npm unpublishes only within 72 hours.
+Set the version in `package.json`, commit, and push a tag `v<version>`. `.github/workflows/publish.yml` runs the check set and stages it on npm by trusted publishing (no token, with provenance). It goes public when a maintainer approves it with 2FA: `npm stage approve <id>`. A version npm has is not published again. A published version cannot change: npm unpublishes only within 72 hours.
 
 ## Lint a folder
 
