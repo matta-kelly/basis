@@ -17,6 +17,7 @@ import {
   manyOrNone,
   one,
   oneOrNone,
+  type,
   type Link,
   type Schema,
   type Type,
@@ -278,6 +279,37 @@ describe("a type that extends another, in a schema that imports it", () => {
     expectTypeOf(parserOf(deep, "agent"))
       .returns.toHaveProperty("level")
       .toEqualTypeOf<number>();
+  });
+
+  it("takes the built-in type, which every schema sees without an import", () => {
+    const typed = defineSchema({
+      name: "typed",
+      description: "d",
+      types: { type: extendType(type, { fields: { owner: z.string() } }) },
+    });
+    expectTypeOf(parserOf(typed, "type"))
+      .returns.toHaveProperty("abstract")
+      .toEqualTypeOf<true | undefined>();
+  });
+
+  it("is refused by the compiler for an extension of an extension of the built-in type, in a schema that does not import it", () => {
+    const owned = extendType(type, { fields: { owner: z.string() } });
+    defineSchema({ name: "owned", description: "d", types: { type: owned } });
+    void (() =>
+      defineSchema({
+        name: "p",
+        description: "d",
+        // @ts-expect-error: no schema of p's imports holds owned, which this type extends.
+        types: { type: extendType(owned, { fields: { team: z.string() } }) },
+      }));
+    void (() =>
+      defineSchema({
+        name: "p",
+        description: "d",
+        imports: [core],
+        // @ts-expect-error: as above; core holds no type.
+        types: { type: extendType(owned, { fields: { team: z.string() } }) },
+      }));
   });
 
   it("is refused by the compiler for an imported type: parse takes the schema's own types", () => {

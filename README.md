@@ -4,7 +4,7 @@ The root package for semantic subgraphs: the primitives, the compiler and the li
 
 ## Install
 
-From GitHub, by tag: `npm install github:matta-kelly/basis#v0.8.0`. npm runs `prepare`, which builds `dist` from `src`, and the project imports `basis` in plain Node, 22.18 or later.
+From GitHub, by tag: `npm install github:matta-kelly/basis#v0.10.0`. npm runs `prepare`, which builds `dist` from `src`, and the project imports `basis` in plain Node, 22.18 or later.
 
 ## Lint a folder
 

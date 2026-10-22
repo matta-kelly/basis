@@ -7,6 +7,7 @@ import * as z from "zod";
 import { company, core } from "../fixtures/layers.ts";
 import things from "../fixtures/things.ts";
 import {
+  basis,
   defineSchema,
   defineType,
   extendType,
@@ -14,6 +15,7 @@ import {
   lintFolder,
   many,
   one,
+  type,
   type Note,
 } from "./index.ts";
 
@@ -587,6 +589,62 @@ describe("the lint of a link with several targets", () => {
         message: `The key ${key} of the type capability is also the key of a.md.`,
       },
     ]);
+  });
+});
+
+describe("the lint of a type note", () => {
+  it("gives no problem for a note of the built-in type type under a schema that imports nothing", () => {
+    const typeNote = note("source.md", {
+      type: "type",
+      description: "A place data lives.",
+    });
+    expect(things.imports).toEqual([]);
+    expect(lint(things, [...right, typeNote])).toEqual([]);
+  });
+
+  it("gives a problem for a type note whose abstract is not true", () => {
+    const typeNote = note("source.md", {
+      type: "type",
+      description: "A place data lives.",
+      abstract: false,
+    });
+    expect(lint(things, [...right, typeNote])).toEqual([
+      { path: "source.md", message: expect.stringMatching(/^abstract: /) },
+    ]);
+  });
+});
+
+describe("the lint of a type note, in a schema that imports an extension of the built-in type", () => {
+  const owned = defineSchema({
+    name: "owned",
+    description: "d",
+    types: { type: extendType(type, { fields: { owner: z.string() } }) },
+  });
+  const above = defineSchema({
+    name: "above",
+    description: "d",
+    imports: [owned],
+    types: {},
+  });
+  const withBasis = defineSchema({
+    name: "with-basis",
+    description: "d",
+    imports: [above, basis],
+    types: {},
+  });
+  const typeNote = note("source.md", {
+    type: "type",
+    description: "A place data lives.",
+  });
+  const ownedNote = edit(typeNote, { ...typeNote.frontmatter, owner: "ana" });
+
+  it("parses a type note by the extension, with or without an import of basis", () => {
+    for (const schema of [above, withBasis]) {
+      expect(lint(schema, [typeNote])).toEqual([
+        { path: "source.md", message: expect.stringMatching(/^owner: /) },
+      ]);
+      expect(lint(schema, [ownedNote])).toEqual([]);
+    }
   });
 });
 

@@ -9,6 +9,7 @@ import {
 } from "../fixtures/layers.ts";
 import things, { externalObject, object, source } from "../fixtures/things.ts";
 import {
+  basis,
   defineSchema,
   defineType,
   extendType,
@@ -18,6 +19,7 @@ import {
   node,
   one,
   oneOrNone,
+  type,
   type Type,
 } from "./index.ts";
 
@@ -1045,5 +1047,66 @@ describe("an abstract type and the types that inherit it", () => {
     expect(() =>
       defineSchema({ name: "p", description: "d", types: { grain, milled } }),
     ).not.toThrow();
+  });
+});
+
+describe("the built-in type type", () => {
+  const typeNote = {
+    name: "source",
+    type: "type",
+    description: "A place data lives.",
+  };
+
+  it("is the one type of the built-in schema basis", () => {
+    expect(basis.name).toBe("basis");
+    expect(basis.imports).toEqual([]);
+    expect(basis.types).toEqual({ type });
+  });
+
+  it("parses a type note, and takes abstract only as true", () => {
+    expect(basis.parse("type", typeNote)).toEqual(typeNote);
+    expect(basis.parse("type", { ...typeNote, abstract: true })).toEqual({
+      ...typeNote,
+      abstract: true,
+    });
+    for (const abstract of [false, "true", null])
+      expect(() => basis.parse("type", { ...typeNote, abstract })).toThrow(
+        /abstract/,
+      );
+  });
+
+  it("is seen by a schema that imports nothing: a link can point at it", () => {
+    const about = defineType({
+      name: "about",
+      description: "d",
+      fields: { explains: one(() => type) },
+    });
+    expect(() =>
+      defineSchema({ name: "p", description: "d", types: { about } }),
+    ).not.toThrow();
+  });
+
+  it("refuses the name basis for a schema that is not the built-in one", () => {
+    expect(() =>
+      defineSchema({ name: "basis", description: "d", types: {} }),
+    ).toThrow(/^The schema name basis is basis's own\.$/);
+  });
+
+  it("refuses the name basis for an import that is not the built-in schema", () => {
+    expect(() =>
+      defineSchema({
+        name: "p",
+        description: "d",
+        imports: [{ ...core, name: "basis" }],
+        types: {},
+      }),
+    ).toThrow(/^The schema name basis is basis's own\.$/);
+  });
+
+  it("is refused as the name of a type of another schema: a name has one owner", () => {
+    const own = defineType({ name: "type", description: "d", fields: {} });
+    expect(() =>
+      defineSchema({ name: "p", description: "d", types: { type: own } }),
+    ).toThrow(/The type type of p has the name of a type of basis/);
   });
 });

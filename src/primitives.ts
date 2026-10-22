@@ -528,11 +528,11 @@ type TypesSeen<I extends readonly AnySchema[]> = I[number] extends infer P
     : never
   : never;
 
-/** A type that extends another must extend one its schema sees. */
+/** A type that extends another must extend one its schema sees: one of its imports', or the built-in type. */
 type ExtendsSeen<X, I extends readonly AnySchema[]> = X extends {
   extends: Type;
 }
-  ? { extends: TypesSeen<I> }
+  ? { extends: TypesSeen<I> | typeof type }
   : unknown;
 
 /** For each types object, the imports it was checked with. A spread schema is checked on its first parse. */
@@ -556,15 +556,19 @@ type Layer<P> = {
 };
 
 /**
- * The types a schema sees, each by its name, with the schema that holds it: its imports' at every depth, then its
- * own. An extension takes the name of what it extends. Throws on a cycle of imports, by schema name, on two
- * schemas of one name, and on two owners of one type name.
+ * The types a schema sees, each by its name, with the schema that holds it: the built-in schema's, its imports' at
+ * every depth, then its own. An extension takes the name of what it extends. Throws on a schema named basis that is
+ * not the built-in one, on a cycle of imports, by schema name, on two schemas of one name, and on two owners of one
+ * type name.
  */
 export function seenTypes<P extends Layer<P>>(
   schema: P,
   path: string[] = [],
-  schemas = new Map<string, { schema: P; path: string[] }>(),
-): Map<string, { type: Type; owner: P }> {
+  schemas = new Map<string, { schema: object; path: string[] }>(),
+): Map<string, { type: Type; owner: P | Schema }> {
+  // Checked first: a schema of that name would also be seen beside the built-in one, as a cycle or a second schema.
+  if (schema.name === "basis" && schema.types !== builtInTypes)
+    throw new Error("The schema name basis is basis's own.");
   const here = [...path, schema.name];
   if (path.includes(schema.name))
     throw new Error(
@@ -577,8 +581,11 @@ export function seenTypes<P extends Layer<P>>(
       `The schema ${here[0]} sees two schemas named ${schema.name}: at ${known.path.join(" > ")}, and at ${here.join(" > ")}.`,
     );
   schemas.set(schema.name, { schema, path: here });
-  const seen = new Map<string, { type: Type; owner: P }>();
-  for (const imported of schema.imports) {
+  const seen = new Map<string, { type: Type; owner: P | Schema }>();
+  // Every schema sees the built-in one, as if it imported it. The built-in schema, as it is made, sees only itself.
+  const imports =
+    schema.types === builtInTypes ? schema.imports : [basis, ...schema.imports];
+  for (const imported of imports) {
     for (const [name, at] of seenTypes(imported, here, schemas)) {
       const had = seen.get(name);
       if (!had || extendsType(at.type, had.type)) seen.set(name, at);
@@ -710,3 +717,30 @@ export function defineSchema<
     },
   };
 }
+
+/**
+ * The type of a type note: the note that explains one type, as a docstring explains a function. It is basis's own,
+ * as node is, so every schema sees it (GraphQL's built-in __Type).
+ */
+export const type = defineType({
+  name: "type",
+  description:
+    "A note that explains one type of a schema: what it is for, and when to use it over the others. Its body is the template a new note of that type starts from.",
+  fields: {
+    abstract: z
+      .literal(true)
+      .optional()
+      .describe(
+        "true when the type is abstract: no note is of it, only of the types that inherit it",
+      ),
+  },
+});
+
+const builtInTypes = { type };
+
+/** The built-in schema: the types every schema sees without an import. */
+export const basis = defineSchema({
+  name: "basis",
+  description: "The types basis gives every schema: the type of a type note.",
+  types: builtInTypes,
+});

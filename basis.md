@@ -33,7 +33,8 @@ Code defines, markdown describes, and the lint checks that they agree.
 - code: the shape of each type, as zod in `defineType`. Its properties, its links, and a one-line description
 - markdown: the nodes, one note each. A note's frontmatter is checked against its type
 - type note: the documentation of a type, as a docstring is the documentation of a function
-	- one per type, of type `type`, with the type's name as its file name
+	- one per type, of type `type`, with the type's name as its file name. `type` is built into basis, and every schema sees it without an import
+	- basis's own type note is `types/type.md`
 	- its description is the type's description, and the lint checks that the two are the same
 	- its body says what the type is for, and when to use it over another. It is the template for a new node of that type
 	- not in the code yet: `it` (`scripts/types-agree.ts`) and cc (`lint.ts`) each check this. The check moves into basis
@@ -58,6 +59,8 @@ Code defines, markdown describes, and the lint checks that they agree.
 		- data on a link itself is not supported yet
 		- whether an absent optional link is worth a warning is a lint rule, not a schema question
 	- **schema**: a named set of types, with the schemas it imports. Made with `defineSchema`
+	- **built-in type**: `type`, the type of a type note, held in the built-in schema `basis`. Every schema sees it as if it imported `basis`, as every GraphQL schema has `__Type`. Like `node`, it is basis's own word: a schema can extend it, and cannot define another type named `type`
+		- its field `abstract` is `true` when the type the note explains is abstract, and is absent otherwise
 - the world is closed and strict: every node matches a type, and nothing undeclared is allowed. So the lint is objective
 	- when the world does not hold a need, the ontology grows. The check does not loosen
 - how schemas combine
@@ -111,8 +114,8 @@ Code defines, markdown describes, and the lint checks that they agree.
 
 ## Components
 
-1. primitives: `node`, `defineType` (with `abstract` and `parents`), `extendType`, the links `one`, `oneOrNone`, `many` and `manyOrNone`, and `defineSchema`. The vocabulary as code
-	- `defineSchema` is also the compiler: a schema and its imports become one ontology. It refuses cycles, two schemas of one name and two owners of one type name
+1. primitives: `node`, `defineType` (with `abstract` and `parents`), `extendType`, the links `one`, `oneOrNone`, `many` and `manyOrNone`, `defineSchema`, and the built-in type `type` in the built-in schema `basis`. The vocabulary as code
+	- `defineSchema` is also the compiler: a schema and its imports become one ontology. It refuses cycles, two schemas of one name, a schema named `basis` that is not the built-in one, and two owners of one type name
 	- what makes basis more than a zod wrapper: where schemas become one graph
 	- prior art: NixOS module merging
 2. loader: a folder in, notes out (path, frontmatter, body). A `skip` option leaves out the paths that are not notes, such as a README or code
