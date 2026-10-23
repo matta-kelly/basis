@@ -29,6 +29,7 @@ import {
   type,
   loadFolder,
   type Loaded,
+  type Node,
   type Note,
   type Source,
 } from "./index.ts";
@@ -867,7 +868,7 @@ describe("the sources of a folder", () => {
     representedAs: ["till-item"],
   });
   const gives =
-    (...nodes: ReturnType<typeof node>[]): Source =>
+    (...nodes: Node[]): Source =>
     () => ({ nodes, problems: [], unread: [] });
 
   it("lints the nodes of each source and the folder's notes as one graph: a link can cross from one to the other", async () => {
@@ -1151,6 +1152,23 @@ describe("the sources of a folder", () => {
     expect(await lintFolder(things, root, { sources: [otherFolder] })).toEqual(
       [],
     );
+  });
+
+  it("reads a source's node as a note when it has a body, and as a node when its body is undefined", async () => {
+    const root = await folderWithSlate();
+    // An undefined body, as a source in JavaScript can give one: its type has none.
+    const item = (body: string | undefined, heldIn: string) =>
+      ({ ...tillItem, fields: { ...tillItem.fields, heldIn }, body }) as Node;
+    expect(
+      await lintFolder(things, root, {
+        sources: [gives(till, item(undefined, "till"))],
+      }),
+    ).toEqual([]);
+    expect(
+      await lintFolder(things, root, {
+        sources: [gives(till, item("A loaf at the till.\n", "[[till]]"))],
+      }),
+    ).toEqual([]);
   });
 
   it("throws, naming the source, when a source throws or gives something other than { nodes, problems, unread }", async () => {

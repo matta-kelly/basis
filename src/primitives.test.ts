@@ -23,6 +23,7 @@ import {
   type,
   type Type,
 } from "./index.ts";
+import { noteSchemaOf } from "./primitives.ts";
 
 // The frontmatter of four notes of a made-up bakery, as a note would have it, with `name` added
 // from the file name, as the loader gives it.
@@ -500,6 +501,31 @@ describe("a type", () => {
     expect(linksOf(t).map((link) => link.name)).toEqual(["to"]);
     expect(schema.parse("t", node)).toEqual({ ...node, to: "slate" });
     expect(reads).toBe(1);
+  });
+
+  it("takes, for each kind of link, as many names as a note takes wikilinks", () => {
+    const kinds = { one, oneOrNone, many, manyOrNone };
+    const values = [undefined, "slate", [], ["slate"], ["slate", "oven"]];
+    const asNote = (value: unknown): unknown =>
+      Array.isArray(value)
+        ? value.map(asNote)
+        : typeof value === "string"
+          ? `[[${value}]]`
+          : value;
+    for (const [kind, of] of Object.entries(kinds)) {
+      const t = defineType({
+        name: "t",
+        description: "d",
+        fields: { to: of(() => source) },
+      });
+      for (const value of values) {
+        const fields = { name: "n", type: "t", description: "d", to: value };
+        expect(
+          noteSchemaOf(t).safeParse({ ...fields, to: asNote(value) }).success,
+          `${kind} of ${JSON.stringify(value)}`,
+        ).toBe(t.schema.safeParse(fields).success);
+      }
+    }
   });
 
   it("is frozen", () => {

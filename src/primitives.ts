@@ -41,6 +41,9 @@ const wikilinkOf = () =>
     .regex(/^\[\[[a-z][a-z0-9-]*\]\]$/, 'Not a wikilink, "[[name]]".')
     .transform((link) => link.slice(2, -2));
 
+/** One link as a note writes it, to read one value by. Not a part of a link: each link is made of schemas of its own. */
+export const Wikilink = wikilinkOf();
+
 /**
  * A schema, the schemas and checks inside it, and their defs: found by walking each def's values, its arrays and plain
  * objects, and the schema a lazy schema returns. A method chained on a schema wraps it, or makes a clone that keeps its def

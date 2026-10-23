@@ -7,7 +7,7 @@ import { parseDocument } from "yaml";
  * schema says; that is the lint's work.
  */
 
-/** One node, as the lint takes it from a source: where it is, its name, and its fields, as read. */
+/** One node, as the lint takes it from a source: where it is, its name, its fields, as read, and a note's body. */
 export type Node = {
   /** From the folder its source reads, with `/` between parts: for a lint, the folder linted. */
   path: string;
@@ -15,6 +15,8 @@ export type Node = {
   name: string;
   /** Its fields, as read. The lint parses them by its type. */
   fields: Record<string, unknown>;
+  /** Its body, if it is a note: a note writes each link "[[name]]". */
+  body?: string;
 };
 
 /** One note: a node whose name is its file name, without `.md`, and whose fields are its frontmatter, with its body. */

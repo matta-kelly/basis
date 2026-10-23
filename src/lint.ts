@@ -26,12 +26,14 @@ import {
   keysOf,
   lineageOf,
   linksOf,
+  Name,
   ownTypesOf,
   rulesSeen,
   schemasSeen,
   seesType,
   seenTypes,
   noteSchemaOf,
+  Wikilink,
   type Graph,
   type Schema,
   type Type,
@@ -122,7 +124,7 @@ const valueAt = (fields: unknown, path: readonly PropertyKey[]): unknown =>
   );
 
 /** Whether a node is a note: it has a body. Its name is its file name, and it writes each link "[[name]]". */
-const isNote = (node: Node) => Object.hasOwn(node, "body");
+const isNote = (node: Node) => typeof node.body === "string";
 
 /** What a name's problem adds for a note: its name is its file name. A source's node has no file name. */
 const fileName = (node: Node) =>
@@ -174,15 +176,14 @@ function fieldProblems(node: Node, error: z.ZodError): Problem[] {
 }
 
 /**
- * The names a link holds, each value read by the schema of one of its names, as the node writes it (`schemaOf`). A
- * value that is not one is a field problem.
+ * The names a link holds, each value read as the node writes one name: a wikilink in a note, a name in another node.
+ * A value that is not one is a field problem.
  */
-function linkNames(field: z.core.$ZodType, value: unknown): string[] {
-  const unwrapped = field instanceof z.ZodOptional ? field.unwrap() : field;
-  const item = unwrapped instanceof z.ZodArray ? unwrapped.element : unwrapped;
+function linkNames(node: Node, value: unknown): string[] {
+  const item = isNote(node) ? Wikilink : Name;
   return (Array.isArray(value) ? value : [value]).flatMap((one) => {
-    const name = (item as z.ZodType).safeParse(one);
-    return name.success && typeof name.data === "string" ? [name.data] : [];
+    const name = item.safeParse(one);
+    return name.success ? [name.data] : [];
   });
 }
 
@@ -265,10 +266,7 @@ function nodeProblems(
 
   for (const link of linksOf(at.type)) {
     const to = link.to().map((type) => type.name);
-    for (const name of linkNames(
-      schemaOf(at.type, node).shape[link.name] as z.core.$ZodType,
-      node.fields[link.name],
-    )) {
+    for (const name of linkNames(node, node.fields[link.name])) {
       const targets = byName.get(name);
       if (!targets) {
         // A node that could not be read exists, and has that problem itself.
