@@ -1,6 +1,7 @@
 /**
  * The primitives as code: a type, a link, and a schema that holds them.
- * A node is a note: its frontmatter holds its fields, and its file name is its name.
+ * A node is one thing of a type, from a source: a note, whose frontmatter holds its fields and whose file name is its
+ * name, or a node a source gives.
  * The world is closed: a node carries the fields of its type, its properties and the links
  * that start from it, and nothing else.
  */
@@ -224,7 +225,7 @@ export function extendType<
 /** A link: the field it is, what it points at, how many, and whether a node can leave it out. */
 export type Link = {
   name: string;
-  /** A thunk, so a link can point at a type defined later. A note of any of its types is a target. */
+  /** A thunk, so a link can point at a type defined later. A node of any of its types is a target. */
   to: () => readonly Type[];
   cardinality: "one" | "many";
   optional: boolean;
@@ -363,7 +364,7 @@ function keyProblems(type: Type, fields: z.ZodRawShape): string[] {
       key.filter((field) => !Object.hasOwn(fields, field)),
       `which is not a field of ${type.name}`,
     ),
-    ...named(key.filter(absent), "which a note can leave out"),
+    ...named(key.filter(absent), "which a node can leave out"),
     ...named(
       key.filter((field) => {
         const schema = schemaOf(field);
@@ -396,7 +397,7 @@ export function lineageOf(type: Type): Set<string> {
 }
 
 /**
- * The keys a note of a type must keep unique: its own, and each one a type it inherits has, among the notes of every
+ * The keys a node of a type must keep unique: its own, and each one a type it inherits has, among the nodes of every
  * type that inherits it (PG-Schema's keys). Each key with the name of the type it holds over.
  */
 export function keysOf(type: Type): { over: string; key: readonly string[] }[] {
@@ -518,7 +519,7 @@ export interface Schema<
   rules?: readonly Rule[];
   /**
    * The node, parsed by the zod schema of its type, in the own types of the schema it is called on. Throws when the
-   * node does not fit. A note of an imported type is parsed by the schema that holds it.
+   * node does not fit. A node of an imported type is parsed by the schema that holds it.
    */
   parse<This extends Schema, N extends keyof This["types"] & string>(
     this: This,
@@ -549,7 +550,7 @@ type ExtendsSeen<X, I extends readonly AnySchema[]> = X extends {
 /** For each types object, the imports it was checked with. A spread schema is checked on its first parse. */
 const checkedWith = new WeakMap<object, WeakSet<object>>();
 
-/** A schema name is a slug. A plain Error, as for the other checks: the lint takes a ZodError as a note's problem. */
+/** A schema name is a slug. A plain Error, as for the other checks: the lint takes a ZodError as a node's problem. */
 function checkName(name: string) {
   if (!Name.safeParse(name).success)
     throw new Error(`The schema ${name} is not named by a lowercase slug.`);
@@ -751,7 +752,7 @@ function checkTypeNotes(schema: SchemaParts) {
  * of that type, of an extension of it, or of a type that inherits one of those. The type is one the schema sees.
  */
 export interface Graph {
-  /** The node of that name, when one note has it, it parsed, and it is of the type. Otherwise none. */
+  /** The node of that name, when one node has it, it parsed, and it is of the type. Otherwise none. */
   get<T extends Type>(name: string, type: T): z.output<T["schema"]> | undefined;
   /** Each node of the type, in path order. */
   all<T extends Type>(type: T): z.output<T["schema"]>[];
@@ -865,7 +866,7 @@ const typeIn = <T extends Record<string, Type>, K extends keyof T>(
 
 /**
  * One schema: its types, each under its own name, and through their fields the links between them, and the schemas
- * it imports. It checks every type it holds, however it was made, and throws before any note is read.
+ * it imports. It checks every type it holds, however it was made, and throws before any node is read.
  */
 export function defineSchema<
   const T extends Record<string, Type> & {

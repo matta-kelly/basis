@@ -27,11 +27,11 @@ const lock = async (path: string) => {
   locked.push(path);
 };
 
-// A new folder, with the notes written in the order given.
-async function folderOf(notes: [string, string | Buffer][]): Promise<string> {
+// A new folder, with the nodes written in the order given.
+async function folderOf(nodes: [string, string | Buffer][]): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "basis-loader-"));
   made.push(root);
-  for (const [path, text] of notes) {
+  for (const [path, text] of nodes) {
     await mkdir(join(root, path, ".."), { recursive: true });
     await writeFile(join(root, path), text);
   }
@@ -48,7 +48,7 @@ const aliasBomb = [
 ].join("\n");
 
 describe("a note", () => {
-  it("is read into its name, from the file name, its frontmatter and its body", () => {
+  it("is read into its name, from the file name, its frontmatter as its fields, and its body", () => {
     const text =
       '---\ntype: source\ndescription: "Where data lives."\nrole: entry\n---\nThe body.\n';
     expect(readNote("sources/slate.md", text)).toEqual({
@@ -56,7 +56,7 @@ describe("a note", () => {
       note: {
         path: "sources/slate.md",
         name: "slate",
-        frontmatter: {
+        fields: {
           type: "source",
           description: "Where data lives.",
           role: "entry",
@@ -69,7 +69,7 @@ describe("a note", () => {
   it("keeps a link as the note writes it, for the schema to parse", () => {
     const read = readNote("a.md", '---\nlivesIn: ["[[slate]]"]\n---\n');
     expect(read).toMatchObject({
-      note: { frontmatter: { livesIn: ["[[slate]]"] } },
+      note: { fields: { livesIn: ["[[slate]]"] } },
     });
   });
 
@@ -79,18 +79,18 @@ describe("a note", () => {
       note: {
         path: "a.md",
         name: "a",
-        frontmatter: { type: "x" },
+        fields: { type: "x" },
         body: "The body.\r\n",
       },
     });
   });
 
-  it("has an empty frontmatter when it has none, or an empty one", () => {
+  it("has no fields when it has no frontmatter, or an empty one", () => {
     expect(readNote("a.md", "Just text.\n")).toMatchObject({
-      note: { frontmatter: {}, body: "Just text.\n" },
+      note: { fields: {}, body: "Just text.\n" },
     });
     expect(readNote("a.md", "---\n---\nText.\n")).toMatchObject({
-      note: { frontmatter: {}, body: "Text.\n" },
+      note: { fields: {}, body: "Text.\n" },
     });
   });
 
@@ -100,7 +100,7 @@ describe("a note", () => {
       "--- \ntype: x\n---\t\n",
     ]) {
       expect(readNote("a.md", text)).toMatchObject({
-        note: { frontmatter: { type: "x" }, body: "" },
+        note: { fields: { type: "x" }, body: "" },
       });
     }
   });
@@ -127,7 +127,7 @@ describe("a folder", () => {
       ["a.md", ""],
       ["README.md", ""],
       ["code/b.md", ""],
-      ["notes/c.md", ""],
+      ["nodes/c.md", ""],
     ]);
     await symlink(join(root, "a.md"), join(root, "linked.md"));
     const skipped: string[] = [];
@@ -135,18 +135,18 @@ describe("a folder", () => {
       skipped.push(path);
       return ["README.md", "code", "linked.md"].includes(path);
     };
-    const { notes, problems, unread } = await loadFolder(root, { skip });
-    expect(notes.map((note) => note.path)).toEqual(["a.md", "notes/c.md"]);
+    const { nodes, problems, unread } = await loadFolder(root, { skip });
+    expect(nodes.map((note) => note.path)).toEqual(["a.md", "nodes/c.md"]);
     expect(problems).toEqual([]);
     expect(unread).toEqual([]);
     // A skipped folder is not opened, so skip is not asked about what is in it.
     expect(skipped).not.toContain("code/b.md");
-    expect(skipped).toContain("notes/c.md");
+    expect(skipped).toContain("nodes/c.md");
   });
 
-  it("is read into its notes and the problems of the notes it cannot read, in path order, and names those notes", async () => {
-    const { notes, problems, unread } = await loadFolder(folder);
-    expect(notes.map((note) => note.path)).toEqual([
+  it("is read into its nodes and the problems of the nodes it cannot read, in path order, and names those nodes", async () => {
+    const { nodes, problems, unread } = await loadFolder(folder);
+    expect(nodes.map((note) => note.path)).toEqual([
       "empty.md",
       "loaf.md",
       "plain.md",
@@ -157,15 +157,19 @@ describe("a folder", () => {
       "list.md",
       "unclosed.md",
     ]);
-    expect(unread).toEqual(["broken.md", "list.md", "unclosed.md"]);
+    expect(unread).toEqual([
+      { path: "broken.md", name: "broken" },
+      { path: "list.md", name: "list" },
+      { path: "unclosed.md", name: "unclosed" },
+    ]);
   });
 
-  it("gives each note its frontmatter as the file has it", async () => {
-    const { notes } = await loadFolder(folder);
-    expect(notes.find((note) => note.name === "loaf")).toEqual({
+  it("gives each note its frontmatter as its fields, as the file has it", async () => {
+    const { nodes } = await loadFolder(folder);
+    expect(nodes.find((note) => note.name === "loaf")).toEqual({
       path: "loaf.md",
       name: "loaf",
-      frontmatter: {
+      fields: {
         type: "object",
         description: "One bake of one dough. A crust.",
         key: "loaf_code",
@@ -177,7 +181,7 @@ describe("a folder", () => {
   });
 
   it("is in path order, however the disk lists it", async () => {
-    // Read in the order the disk lists, a folder's notes come before a note
+    // Read in the order the disk lists, a folder's nodes come before a note
     // named as the folder, but "a.md" sorts before "a/z.md".
     const root = await folderOf([
       ["c.md", ""],
@@ -185,8 +189,8 @@ describe("a folder", () => {
       ["a.md", ""],
       ["b.md", ""],
     ]);
-    const { notes } = await loadFolder(root);
-    expect(notes.map((note) => note.path)).toEqual([
+    const { nodes } = await loadFolder(root);
+    expect(nodes.map((note) => note.path)).toEqual([
       "a.md",
       "a/z.md",
       "b.md",
@@ -206,10 +210,13 @@ describe("a folder", () => {
     await lock(join(root, "lockeddir.md"));
     await symlink(join(root, "a.md"), join(root, "linked.md"));
     await symlink(join(root, "real"), join(root, "linkdir"));
-    const { notes, problems, unread } = await loadFolder(root);
-    expect(notes.map((note) => note.path)).toEqual(["a.md", "real/r.md"]);
-    // A symbolic link and a folder are not notes the loader could not read.
-    expect(unread).toEqual(["latin1.md", "locked.md"]);
+    const { nodes, problems, unread } = await loadFolder(root);
+    expect(nodes.map((note) => note.path)).toEqual(["a.md", "real/r.md"]);
+    // A symbolic link and a folder are not nodes the loader could not read.
+    expect(unread).toEqual([
+      { path: "latin1.md", name: "latin1" },
+      { path: "locked.md", name: "locked" },
+    ]);
     expect(problems.map((problem) => problem.path)).toEqual([
       "latin1.md",
       "linkdir",

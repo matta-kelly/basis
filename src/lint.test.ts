@@ -18,6 +18,7 @@ import { typeNotes } from "../fixtures/types.ts";
 import things from "../fixtures/things.ts";
 import {
   basis,
+  defineRule,
   defineSchema,
   defineType,
   extendType,
@@ -27,12 +28,13 @@ import {
   one,
   type,
   type Note,
+  type Source,
 } from "./index.ts";
 
-const note = (path: string, frontmatter: Record<string, unknown>): Note => ({
+const note = (path: string, fields: Record<string, unknown>): Note => ({
   path,
   name: basename(path, ".md"),
-  frontmatter,
+  fields,
   body: "",
 });
 
@@ -66,15 +68,15 @@ const withNote = (changed: Note) => [
   ...right.filter((n) => n.path !== changed.path),
   changed,
 ];
-const edit = (n: Note, frontmatter: Record<string, unknown>): Note => ({
+const edit = (n: Note, fields: Record<string, unknown>): Note => ({
   ...n,
-  frontmatter,
+  fields,
 });
 const without = (n: Note, field: string) =>
   edit(
     n,
     Object.fromEntries(
-      Object.entries(n.frontmatter).filter(([key]) => key !== field),
+      Object.entries(n.fields).filter(([key]) => key !== field),
     ),
   );
 
@@ -88,7 +90,7 @@ describe("the lint", () => {
       things,
       withNote(
         edit(without(loaf, "key"), {
-          ...without(loaf, "key").frontmatter,
+          ...without(loaf, "key").fields,
           colour: "blue",
           size: "large",
         }),
@@ -103,10 +105,7 @@ describe("the lint", () => {
 
   it("gives a problem for a note whose type the schema does not have, or is a name the object prototype has, or with no type", () => {
     expect(
-      lint(
-        things,
-        withNote(edit(slate, { ...slate.frontmatter, type: "verb" })),
-      ),
+      lint(things, withNote(edit(slate, { ...slate.fields, type: "verb" }))),
     ).toEqual([
       {
         path: "slate.md",
@@ -118,7 +117,7 @@ describe("the lint", () => {
     expect(
       lint(
         things,
-        withNote(edit(slate, { ...slate.frontmatter, type: "constructor" })),
+        withNote(edit(slate, { ...slate.fields, type: "constructor" })),
       ),
     ).toEqual([
       {
@@ -137,7 +136,7 @@ describe("the lint", () => {
       },
     ]);
     expect(
-      lint(things, withNote(edit(slate, { ...slate.frontmatter, type: null }))),
+      lint(things, withNote(edit(slate, { ...slate.fields, type: null }))),
     ).toEqual([
       {
         path: "slate.md",
@@ -147,7 +146,7 @@ describe("the lint", () => {
       },
     ]);
     expect(
-      lint(things, withNote(edit(slate, { ...slate.frontmatter, type: 5 }))),
+      lint(things, withNote(edit(slate, { ...slate.fields, type: 5 }))),
     ).toEqual([
       {
         path: "slate.md",
@@ -157,7 +156,7 @@ describe("the lint", () => {
       },
     ]);
     expect(
-      lint(things, withNote(edit(slate, { ...slate.frontmatter, type: "" }))),
+      lint(things, withNote(edit(slate, { ...slate.fields, type: "" }))),
     ).toEqual([
       {
         path: "slate.md",
@@ -169,7 +168,7 @@ describe("the lint", () => {
     const loop: unknown[] = [];
     loop.push(loop);
     expect(
-      lint(things, withNote(edit(slate, { ...slate.frontmatter, type: loop }))),
+      lint(things, withNote(edit(slate, { ...slate.fields, type: loop }))),
     ).toEqual([
       {
         path: "slate.md",
@@ -181,7 +180,7 @@ describe("the lint", () => {
     expect(
       lint(
         things,
-        withNote(edit(slate, { ...slate.frontmatter, type: ["source"] })),
+        withNote(edit(slate, { ...slate.fields, type: ["source"] })),
       ),
     ).toEqual([
       {
@@ -198,7 +197,7 @@ describe("the lint", () => {
       things,
       withNote(
         edit(without(loaf, "key"), {
-          ...without(loaf, "key").frontmatter,
+          ...without(loaf, "key").fields,
           livesIn: ["[[nowhere]]"],
         }),
       ),
@@ -216,10 +215,16 @@ describe("the lint", () => {
       heldIn: "[[till]]",
     });
     const linking = edit(loaf, {
-      ...loaf.frontmatter,
+      ...loaf.fields,
       livesIn: ["[[slate]]", "[[oven]]"],
     });
-    expect(lint(things, [...withNote(linking), oven], ["a/oven.md"])).toEqual([
+    expect(
+      lint(
+        things,
+        [...withNote(linking), oven],
+        [{ path: "a/oven.md", name: "oven" }],
+      ),
+    ).toEqual([
       {
         path: "b/oven.md",
         rule: "basis/unique-name",
@@ -238,7 +243,7 @@ describe("the lint", () => {
     expect(
       lint(
         things,
-        withNote(edit(loaf, { ...loaf.frontmatter, livesIn: ["[[nowhere]]"] })),
+        withNote(edit(loaf, { ...loaf.fields, livesIn: ["[[nowhere]]"] })),
       ),
     ).toEqual([
       {
@@ -256,7 +261,7 @@ describe("the lint", () => {
         things,
         withNote(
           edit(loaf, {
-            ...loaf.frontmatter,
+            ...loaf.fields,
             representedAs: ["[[slate]]"],
           }),
         ),
@@ -302,19 +307,14 @@ describe("the lint", () => {
       {
         path: "Bad_Name.md",
         rule: "basis/name",
-        message: expect.stringMatching(
-          /file name Bad_Name is not a lowercase slug/,
-        ),
+        message: expect.stringMatching(/name Bad_Name is not a lowercase slug/),
       },
     ]);
   });
 
   it("gives a problem for a note that writes its own name", () => {
     expect(
-      lint(
-        things,
-        withNote(edit(slate, { ...slate.frontmatter, name: "slate" })),
-      ),
+      lint(things, withNote(edit(slate, { ...slate.fields, name: "slate" }))),
     ).toEqual([
       {
         path: "slate.md",
@@ -352,9 +352,9 @@ describe("the lint of a schema that imports another", () => {
     capability: "[[ship]]",
   });
   const layered = [ana, ship, shipWorks];
-  const changed = (n: Note, frontmatter: Record<string, unknown>) => [
+  const changed = (n: Note, fields: Record<string, unknown>) => [
     ...layered.filter((m) => m.path !== n.path),
-    edit(n, { ...n.frontmatter, ...frontmatter }),
+    edit(n, { ...n.fields, ...fields }),
   ];
 
   it("gives no problems for notes of both schemas that are right", () => {
@@ -387,7 +387,7 @@ describe("the lint of a schema that imports another", () => {
     expect(
       lint(reviews, [
         ...layered,
-        edit(review, { ...review.frontmatter, of: "[[ana]]" }),
+        edit(review, { ...review.fields, of: "[[ana]]" }),
       ]),
     ).toEqual([
       {
@@ -445,7 +445,7 @@ describe("the lint of a schema that imports another", () => {
         rule: "basis/link",
         field: "/heldBy",
         message: expect.stringMatching(
-          /It points at nobody, which is not a note/,
+          /It points at nobody, which is not a node/,
         ),
       },
     ]);
@@ -662,7 +662,7 @@ describe("the lint of a link with several targets", () => {
         path: "b.md",
         rule: "basis/link",
         field: "/heldBy",
-        message: "It points at nobody, which is not a note.",
+        message: "It points at nobody, which is not a node.",
       },
     ]);
   });
@@ -756,7 +756,7 @@ describe("the lint of a type note, in a schema that imports an extension of the 
     type: "type",
     description: "A place data lives.",
   });
-  const ownedNote = edit(typeNote, { ...typeNote.frontmatter, owner: "ana" });
+  const ownedNote = edit(typeNote, { ...typeNote.fields, owner: "ana" });
 
   it("parses a type note by the extension, with or without an import of basis", () => {
     for (const schema of [above, withBasis]) {
@@ -823,6 +823,238 @@ describe("a folder", () => {
     await symlink("../a/slate.md", join(root, "b/slate.md"));
     const problems = await lintFolder(things, root);
     expect(problems.map((p) => p.path)).toEqual(["b/slate.md"]);
+  });
+});
+
+describe("the sources of a folder", () => {
+  // A folder with one note, slate, and a source of nodes in code beside it.
+  async function folderWithSlate() {
+    const root = await mkdtemp(join(tmpdir(), "basis-sources-"));
+    made.push(root);
+    await writeFile(
+      join(root, "slate.md"),
+      '---\ntype: source\ndescription: "Where recipes are written."\nrole: entry\n---\n',
+    );
+    return root;
+  }
+  const node = (
+    path: string,
+    name: string,
+    fields: Record<string, unknown>,
+  ) => ({
+    path,
+    name,
+    fields,
+  });
+  const till = node("code/till.ts", "till", {
+    type: "source",
+    description: "The shop's till.",
+    role: "projection",
+  });
+  const tillItem = node("code/till.ts", "till-item", {
+    type: "external-object",
+    description: "A loaf as the till holds it.",
+    heldIn: "[[till]]",
+  });
+  const loaf = node("code/loaf.ts", "loaf", {
+    type: "object",
+    description: "One bake of one dough.",
+    key: "loaf_code",
+    livesIn: ["[[slate]]"],
+    states: ["drafted"],
+    representedAs: ["[[till-item]]"],
+  });
+  const gives =
+    (...nodes: ReturnType<typeof node>[]): Source =>
+    () => ({ nodes, problems: [], unread: [] });
+
+  it("lints the nodes of each source and the folder's notes as one graph: a link can cross from one to the other", async () => {
+    const root = await folderWithSlate();
+    expect(
+      await lintFolder(things, root, {
+        sources: [gives(till, tillItem), async () => gives(loaf)()],
+      }),
+    ).toEqual([]);
+  });
+
+  it("checks a source's node against its type, by the path the source gives", async () => {
+    const root = await folderWithSlate();
+    const wrong = node("code/till.ts", "till", {
+      type: "source",
+      description: "The shop's till.",
+      role: "till",
+    });
+    expect(
+      await lintFolder(things, root, { sources: [gives(wrong)] }),
+    ).toMatchObject([
+      { path: "code/till.ts", rule: "basis/fields", field: "/role" },
+    ]);
+  });
+
+  it("gives a name a note and a source's node share a problem on each", async () => {
+    const root = await folderWithSlate();
+    const twin = node("code/slate.ts", "slate", {
+      type: "source",
+      description: "Another slate.",
+      role: "entry",
+    });
+    expect(
+      (await lintFolder(things, root, { sources: [gives(twin)] })).map((p) => [
+        p.path,
+        p.rule,
+      ]),
+    ).toEqual([
+      ["code/slate.ts", "basis/unique-name"],
+      ["slate.md", "basis/unique-name"],
+    ]);
+  });
+
+  it("keeps a source's problems, and a link to a thing it could not read is not a problem", async () => {
+    const root = await folderWithSlate();
+    const unreadable = {
+      path: "code/oven.ts",
+      message: "The oven cannot be read.",
+      fatal: true as const,
+    };
+    const toOven = {
+      ...loaf,
+      fields: { ...loaf.fields, livesIn: ["[[oven]]"] },
+    };
+    expect(
+      await lintFolder(things, root, {
+        sources: [
+          gives(till, tillItem, toOven),
+          () => ({
+            nodes: [],
+            problems: [unreadable],
+            unread: [{ path: "code/oven.ts", name: "oven" }],
+          }),
+        ],
+      }),
+    ).toEqual([unreadable]);
+  });
+
+  it("runs each rule on the nodes of a source", async () => {
+    const root = await folderWithSlate();
+    const noProjection = defineRule({
+      name: "no-projection",
+      description: "No source is a projection.",
+      on: things.types.source,
+      check: (source) =>
+        source.role === "projection"
+          ? [{ field: "/role", message: "A projection." }]
+          : [],
+    });
+    const checked = defineSchema({
+      name: "checked",
+      description: "The bakery, with a rule.",
+      types: {},
+      imports: [things],
+      rules: [noProjection],
+    });
+    expect(await lintFolder(checked, root, { sources: [gives(till)] })).toEqual(
+      [
+        {
+          path: "code/till.ts",
+          rule: "checked/no-projection",
+          field: "/role",
+          message: "A projection.",
+        },
+      ],
+    );
+  });
+
+  it("names a node of a source by its name, not by a file name, when its name is wrong", async () => {
+    const root = await folderWithSlate();
+    const named = node("code/till.ts", "Till", {
+      ...till.fields,
+      name: "till",
+    });
+    expect(
+      (await lintFolder(things, root, { sources: [gives(named)] })).map(
+        (p) => p.message,
+      ),
+    ).toEqual([
+      "Its name is not one of its fields. Remove it.",
+      "The name Till is not a lowercase slug.",
+    ]);
+  });
+
+  it("throws, naming the source, for a node of type type: a type note is a note, in the folder of its schema", async () => {
+    const root = await folderWithSlate();
+    const typeNode = node("code/source.ts", "source", {
+      type: "type",
+      description: "A place data lives.",
+    });
+    await expect(
+      lintFolder(things, root, { sources: [gives(typeNode)] }),
+    ).rejects.toThrow(
+      "The source number 1 gave source, of type type: a type note is a note, in the folder its schema declares.",
+    );
+  });
+
+  it("throws, naming the source, for a path that is not from the folder linted, or is a note's path", async () => {
+    const root = await folderWithSlate();
+    for (const path of [
+      "/etc/till.ts",
+      "../till.ts",
+      "code/./till.ts",
+      "code\\till.ts",
+      "",
+    ])
+      await expect(
+        lintFolder(things, root, { sources: [gives({ ...till, path })] }),
+      ).rejects.toThrow(/^The source number 1 gave something other than/);
+    await expect(
+      lintFolder(things, root, {
+        sources: [gives({ ...till, path: "slate.md" })],
+      }),
+    ).rejects.toThrow(
+      "The source number 1 gave the path slate.md, which is the path of a note of the folder.",
+    );
+    await expect(
+      lintFolder(things, root, {
+        sources: [
+          () => ({
+            nodes: [],
+            problems: [],
+            unread: [{ path: "slate.md", name: "slate" }],
+          }),
+        ],
+      }),
+    ).rejects.toThrow(/gave the path slate.md/);
+  });
+
+  it("throws, naming the source, for a problem that is not fatal: a check of what a source read is a rule", async () => {
+    const root = await folderWithSlate();
+    for (const problem of [
+      { path: "code/x.ts", rule: "basis/link", message: "fake", fatal: true },
+      { path: "code/y.ts", message: "neither" },
+    ])
+      await expect(
+        lintFolder(things, root, {
+          sources: [
+            () => ({ nodes: [], problems: [problem], unread: [] }) as never,
+          ],
+        }),
+      ).rejects.toThrow(/^The source number 1 gave something other than/);
+  });
+
+  it("throws, naming the source, when a source throws or gives something other than { nodes, problems, unread }", async () => {
+    const root = await folderWithSlate();
+    function plugins(): never {
+      throw new Error("no plugins here");
+    }
+    await expect(
+      lintFolder(things, root, { sources: [plugins] }),
+    ).rejects.toThrow("The source plugins threw: no plugins here");
+    await expect(
+      lintFolder(things, root, {
+        sources: [gives(till), () => ({ nodes: [till] }) as never],
+      }),
+    ).rejects.toThrow(
+      /^The source number 2 gave something other than \{ nodes, problems, unread \}/,
+    );
   });
 });
 
@@ -1129,7 +1361,7 @@ describe("the lint of abstract types", () => {
         rule: "basis/type",
         field: "/type",
         message:
-          "The type grain is abstract: a note is of a type that inherits it.",
+          "The type grain is abstract: a node is of a type that inherits it.",
       },
     ]);
   });
@@ -1140,7 +1372,7 @@ describe("the lint of abstract types", () => {
       description: "d",
       holds: ["[[rye]]"],
     });
-    const wrong = edit(top, { ...top.frontmatter, holds: ["[[other]]"] });
+    const wrong = edit(top, { ...top.fields, holds: ["[[other]]"] });
     expect(lint(bakery, [rye, spelt, other, wrong])).toEqual([
       {
         path: "top.md",
@@ -1152,7 +1384,7 @@ describe("the lint of abstract types", () => {
   });
 
   it("holds a key of an abstract type over the notes of every type that inherits it", () => {
-    const sameMill = edit(spelt, { ...spelt.frontmatter, mill: "north" });
+    const sameMill = edit(spelt, { ...spelt.fields, mill: "north" });
     expect(lint(bakery, [rye, sameMill, top])).toEqual([
       {
         path: "rye.md",

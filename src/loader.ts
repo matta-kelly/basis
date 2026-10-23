@@ -3,24 +3,37 @@ import { basename, join } from "node:path";
 import { parseDocument } from "yaml";
 
 /**
- * The loader: notes in, as text, and each one out as data. It reads, and judges nothing a
+ * The loader: basis's own source. Notes in, as text, and each one out as a node. It reads, and judges nothing a
  * schema says; that is the lint's work.
  */
 
-/** One note: where it is, its name, and what it says. */
-export type Note = {
-  /** From the folder read, with `/` between parts. */
+/** One node, as the lint takes it from a source: where it is, its name, and its fields, as read. */
+export type Node = {
+  /** From the folder its source reads, with `/` between parts: for a lint, the folder linted. */
   path: string;
-  /** The file name, without `.md`. A node's name. */
+  /** Its identity: no two nodes share one. */
   name: string;
-  frontmatter: Record<string, unknown>;
-  body: string;
+  /** Its fields, as read. The lint parses them by its type. */
+  fields: Record<string, unknown>;
+};
+
+/** One note: a node whose name is its file name, without `.md`, and whose fields are its frontmatter, with its body. */
+export type Note = Node & { body: string };
+
+/**
+ * What a source gives: the nodes it read, in path order, a problem for each thing it could not read, and each thing
+ * it found and could not read, by its path and name. A link to one of those is not a problem: it has its own.
+ */
+export type Loaded<N extends Node = Node> = {
+  nodes: readonly N[];
+  problems: readonly Problem[];
+  unread: readonly { path: string; name: string }[];
 };
 
 /**
  * What is wrong, and where: a SARIF result's parts (ruleId, a location, message), as ESLint's LintMessage. `rule` is
- * the id of the rule that found it. `field` is the field of the note, as a JSON Pointer ("/states/0"). A path that
- * cannot be read as a note is `fatal`, of no rule, as ESLint's fatal message.
+ * the id of the rule that found it. `field` is the field of the node, as a JSON Pointer ("/states/0"). A path that
+ * cannot be read as a node is `fatal`, of no rule, as ESLint's fatal message.
  */
 export type Problem = {
   path: string;
@@ -53,7 +66,7 @@ export function readNote(path: string, file: string): Read {
   if (!block) {
     if (openingLine.test(text))
       return problem("The frontmatter has no closing line of ---.");
-    return { ok: true, note: { path, name, frontmatter: {}, body: text } };
+    return { ok: true, note: { path, name, fields: {}, body: text } };
   }
   const yaml = parseDocument(block[1] ?? "");
   const error = yaml.errors[0];
@@ -70,7 +83,12 @@ export function readNote(path: string, file: string): Read {
     return problem("The frontmatter is not a set of fields.");
   return {
     ok: true,
-    note: { path, name, frontmatter, body: text.slice(block[0].length) },
+    note: {
+      path,
+      name,
+      fields: frontmatter,
+      body: text.slice(block[0].length),
+    },
   };
 }
 
@@ -125,25 +143,25 @@ async function notePaths(
   return { paths, skipped };
 }
 
-/** Orders notes and problems by path. The loader and the lint use it, so their orders agree. */
-export const comparePaths = (a: string, b: string) =>
-  a < b ? -1 : Number(a > b);
+/** Orders nodes and problems by path. The loader and the lint use it, so their orders agree. */
 export const byPath = (a: { path: string }, b: { path: string }) =>
-  comparePaths(a.path, b.path);
+  a.path < b.path ? -1 : Number(a.path > b.path);
 
 // Fails on bytes that are not UTF-8, where a plain read would change them with no word.
 const utf8 = new TextDecoder("utf-8", { fatal: true });
 
-/** Every note in a folder and the folders in it, in path order, a problem for each note that cannot be read, and the paths of the notes found and not read. The files are read one at a time. */
+/** Every note in a folder and the folders in it, in path order, a problem for each note that cannot be read, and the notes found and not read. The files are read one at a time. */
 export async function loadFolder(
   folder: string,
   { skip }: FolderOptions = {},
-): Promise<{ notes: Note[]; problems: Problem[]; unread: string[] }> {
+): Promise<Loaded<Note>> {
   const { paths, skipped } = await notePaths(folder, skip);
-  const notes: Note[] = [];
+  const nodes: Note[] = [];
   const problems = [...skipped];
   // The notes found and not read: the files, not a link or a folder.
-  const unread: string[] = [];
+  const unread: { path: string; name: string }[] = [];
+  const notRead = (path: string) =>
+    unread.push({ path, name: basename(path, ".md") });
   for (const path of paths) {
     let text: string;
     try {
@@ -154,19 +172,19 @@ export async function loadFolder(
         message: `The file cannot be read: ${String(error)}`,
         fatal: true,
       });
-      unread.push(path);
+      notRead(path);
       continue;
     }
     const read = readNote(path, text);
-    if (read.ok) notes.push(read.note);
+    if (read.ok) nodes.push(read.note);
     else {
       problems.push(read.problem);
-      unread.push(path);
+      notRead(path);
     }
   }
   return {
-    notes: notes.sort(byPath),
+    nodes: nodes.sort(byPath),
     problems: problems.sort(byPath),
-    unread: unread.sort(comparePaths),
+    unread: unread.sort(byPath),
   };
 }

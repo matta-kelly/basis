@@ -581,7 +581,7 @@ describe("a type with a key", () => {
       z.string().exactOptional(),
     ])
       expect(() => withType(keyed(["near"], { near: field }))).toThrow(
-        /key of t names near, which a note can leave out/,
+        /key of t names near, which a node can leave out/,
       );
     expect(() =>
       withType(keyed(["near"], { near: z.string().default("here") })),

@@ -27,9 +27,18 @@ export {
   loadFolder,
   readNote,
   type FolderOptions,
+  type Loaded,
+  type Node,
   type Note,
   type Problem,
   type Read,
 } from "./loader.ts";
-export { coreRules, lint, lintFolder, pointer } from "./lint.ts";
+export {
+  coreRules,
+  lint,
+  lintFolder,
+  pointer,
+  type LintOptions,
+  type Source,
+} from "./lint.ts";
 export { configNames, run, type Config, type Out } from "./cli.ts";

@@ -14,7 +14,7 @@ Set the version in `package.json`, commit, and push a tag `v<version>`. `.github
 
 ## Lint a folder
 
-`basis lint [folder]` checks the notes of a folder against the schema of its config, `basis.config.ts` (or `.js`) at its root, which exports `{ schema, skip }` by default. It also checks the type notes of each schema it sees, in the folder each schema declares with `typeNotes`. It runs the rules each schema it sees holds, made with `defineRule`. It gives a line for each problem, `path field: message (rule)`, by its path from where it runs, and exits 0 when every note fits, 1 when one does not, and 2 when it cannot check.
+`basis lint [folder]` checks the notes of a folder against the schema of its config, `basis.config.ts` (or `.js`) at its root, which exports `{ schema, skip, sources }` by default. Each source is a function that gives more nodes, such as a package's reader of its things in code, and they are linted with the notes as one graph. It also checks the type notes of each schema it sees, in the folder each schema declares with `typeNotes`. It runs the rules each schema it sees holds, made with `defineRule`. It gives a line for each problem, `path: field: message (rule)`, by its path from where it runs, and exits 0 when every node fits, 1 when one does not, and 2 when it cannot check.
 
 ## Check
 

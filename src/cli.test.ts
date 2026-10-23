@@ -111,7 +111,7 @@ describe("basis lint", () => {
     const { code, log } = await cli(["lint"], root);
     expect(code).toBe(1);
     expect(log).toEqual([
-      "codebook.md: /type: The note has no type. (basis/type)",
+      "codebook.md: /type: The node has no type. (basis/type)",
     ]);
   });
 
@@ -122,6 +122,23 @@ describe("basis lint", () => {
       "code/notes.md": "No frontmatter.\n",
     });
     expect((await cli(["lint"], root)).code).toBe(0);
+  });
+
+  it("lints the nodes of each source its config names, with the folder's notes", async () => {
+    // A node of code that links to the note slate, and one that does not fit its type.
+    const sources = `[() => ({ nodes: [{ path: "code/loaf.ts", name: "loaf", fields: { type: "object", description: "A bake.", key: "k", states: ["drafted"], livesIn: ["[[slate]]"] } }, { path: "code/oven.ts", name: "oven", fields: { type: "source" } }], problems: [], unread: [] })]`;
+    const root = await folderOf({
+      "basis.config.ts": `import things from ${JSON.stringify(things)};\nexport default { schema: things, sources: ${sources} };\n`,
+      "slate.md": slate,
+    });
+    expect(await cli(["lint"], root)).toEqual({
+      code: 1,
+      log: [
+        "code/oven.ts: /description: Missing: its type needs a string here. (basis/fields)",
+        'code/oven.ts: /role: Missing: its type needs one of "entry", "record", "projection" here. (basis/fields)',
+      ],
+      error: [],
+    });
   });
 
   it("reads basis.config.js when there is no basis.config.ts", async () => {
@@ -148,6 +165,7 @@ describe("basis lint", () => {
       "export default 1;\n",
       "export default { schema: {} };\n",
       `${config('"code"')}`,
+      `import things from ${JSON.stringify(things)};\nexport default { schema: things, sources: ["code"] };\n`,
     ]) {
       const root = await folderOf({ "basis.config.ts": text });
       const { code, error } = await cli(["lint"], root);

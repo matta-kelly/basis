@@ -1,5 +1,5 @@
 /**
- * The command line: `basis lint [folder]` checks the notes of a folder against the schema its config names, and
+ * The command line: `basis lint [folder]` checks the notes of a folder, and the nodes of each source its config names, against the schema it names, and
  * gives a line for each problem, by its path from the folder it runs in. The config is `basis.config.ts`, or `basis.config.js`, at the root of the folder.
  * A person, a hook and a pipeline run the same command, so a folder is checked the same way in each.
  */
@@ -7,10 +7,10 @@
 import { existsSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { lintFolder } from "./lint.ts";
+import { lintFolder, type Source } from "./lint.ts";
 import type { AnySchema } from "./primitives.ts";
 
-/** What the config of a folder exports by default: the schema its notes are checked against, and what is not a note. */
+/** What the config of a folder exports by default: the schema its nodes are checked against, what is not a note, and where more nodes come from. */
 export type Config = {
   schema: AnySchema;
   /**
@@ -18,6 +18,8 @@ export type Config = {
    * Or a function, as `lintFolder` takes it.
    */
   skip?: readonly string[] | ((path: string) => boolean);
+  /** The sources of nodes beside the folder's notes, as `lintFolder` takes them. */
+  sources?: readonly Source[];
 };
 
 /** The names a config can have, in the order they are looked for. */
@@ -49,8 +51,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 /** What is wrong with a config, if anything. The schema itself is checked by the lint, as every schema is. */
 function configProblem(config: unknown): string | undefined {
   if (!isRecord(config))
-    return "its default export is not a config: export default { schema, skip }.";
-  const { schema, skip } = config;
+    return "its default export is not a config: export default { schema, skip, sources }.";
+  const { schema, skip, sources } = config;
   if (
     !isRecord(schema) ||
     typeof schema.name !== "string" ||
@@ -62,6 +64,14 @@ function configProblem(config: unknown): string | undefined {
     Array.isArray(skip) && skip.every((path) => typeof path === "string");
   if (skip !== undefined && typeof skip !== "function" && !isPaths)
     return "its skip is not a list of paths or a function.";
+  if (
+    sources !== undefined &&
+    !(
+      Array.isArray(sources) &&
+      sources.every((source) => typeof source === "function")
+    )
+  )
+    return "its sources are not a list of functions.";
   return undefined;
 }
 
@@ -92,7 +102,7 @@ async function configOf(
 }
 
 /**
- * The command, on its arguments, from a folder. Gives the exit code: 0 when the notes have no problem, 1 when they
+ * The command, on its arguments, from a folder. Gives the exit code: 0 when the nodes have no problem, 1 when they
  * have one, and 2 when the command cannot check them (a wrong command, no config, a schema that does not hold).
  */
 export async function run(
@@ -116,13 +126,13 @@ export async function run(
     return 2;
   }
   const skip = skipOf(read.config.skip);
+  const { sources } = read.config;
   let problems;
   try {
-    problems = await lintFolder(
-      read.config.schema,
-      folder,
-      skip ? { skip } : {},
-    );
+    problems = await lintFolder(read.config.schema, folder, {
+      ...(skip && { skip }),
+      ...(sources && { sources }),
+    });
   } catch (error) {
     out.error(`${folder} cannot be checked: ${String(error)}`);
     return 2;

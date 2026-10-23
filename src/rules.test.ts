@@ -18,10 +18,10 @@ import {
   type Type,
 } from "./index.ts";
 
-const note = (path: string, frontmatter: Record<string, unknown>): Note => ({
+const note = (path: string, fields: Record<string, unknown>): Note => ({
   path,
   name: basename(path, ".md"),
-  frontmatter,
+  fields,
   body: "",
 });
 
@@ -178,7 +178,7 @@ describe("a schema with rules", () => {
       rules: [inRecord],
     });
     const lost = note("loaf.md", {
-      ...loaf.frontmatter,
+      ...loaf.fields,
       livesIn: ["[[till]]"],
     });
     expect(lint(again, [till, lost]).map((p) => p.rule)).toEqual([
@@ -206,7 +206,7 @@ describe("a schema with rules", () => {
       imports: [left, right],
       types: {},
     });
-    const lost = { ...loaf.frontmatter, livesIn: ["[[till]]"] };
+    const lost = { ...loaf.fields, livesIn: ["[[till]]"] };
     expect(lint(both, [till, note("loaf.md", lost)])).toEqual([
       {
         path: "loaf.md",
@@ -280,7 +280,7 @@ describe("the lint of rules", () => {
 
   it("gives each report of a rule as a problem of its note, with the rule's id <schema>/<rule>", () => {
     const wrong = note("loaf.md", {
-      ...loaf.frontmatter,
+      ...loaf.fields,
       livesIn: ["[[till]]"],
       derived: ["burnt", "stale"],
     });
@@ -314,7 +314,7 @@ describe("the lint of rules", () => {
       types: {},
     });
     const lost = note("loaf.md", {
-      ...loaf.frontmatter,
+      ...loaf.fields,
       livesIn: ["[[till]]"],
     });
     expect(lint(top, [till, lost])).toMatchObject([
@@ -324,7 +324,7 @@ describe("the lint of rules", () => {
 
   it("does not run on a note that does not parse: the note has its own problems", () => {
     const broken = note("loaf.md", {
-      ...loaf.frontmatter,
+      ...loaf.fields,
       livesIn: ["[[till]]"],
       states: [],
     });
@@ -477,7 +477,7 @@ describe("the lint of rules", () => {
       },
     });
     const lost = note("loaf.md", {
-      ...loaf.frontmatter,
+      ...loaf.fields,
       livesIn: ["[[till]]"],
       colour: "brown",
     });
@@ -553,15 +553,15 @@ describe("the lint of rules", () => {
     expect(
       lint(top, [
         ledger,
-        note("brown.md", { ...loaf.frontmatter, key: "b", colour: "brown" }),
-        note("roll.md", { ...loaf.frontmatter, type: "bun", key: "r" }),
+        note("brown.md", { ...loaf.fields, key: "b", colour: "brown" }),
+        note("roll.md", { ...loaf.fields, type: "bun", key: "r" }),
       ]),
     ).toEqual([
       { path: "brown.md", rule: "ext/coloured", message: "It is brown." },
     ]);
   });
 
-  it("leaves the caller's frontmatter as it was, with rules and without", () => {
+  it("leaves the caller's fields as they were, with rules and without", () => {
     const extra = { a: [1] };
     const holder = defineType({
       name: "holder",

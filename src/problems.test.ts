@@ -28,10 +28,10 @@ import {
   type Problem,
 } from "./index.ts";
 
-const note = (path: string, frontmatter: Record<string, unknown>): Note => ({
+const note = (path: string, fields: Record<string, unknown>): Note => ({
   path,
   name: path.replace(/^.*\//, "").replace(/\.md$/, ""),
-  frontmatter,
+  fields,
   body: "",
 });
 
@@ -204,7 +204,7 @@ describe("a problem", () => {
         path: "lost.md",
         rule: "basis/link",
         field: "/livesIn",
-        message: "It points at nowhere, which is not a note.",
+        message: "It points at nowhere, which is not a node.",
       },
       {
         path: "lost.md",
@@ -219,7 +219,7 @@ describe("a problem", () => {
         rule: "basis/name",
         field: "/name",
         message:
-          "A note does not write its name: its name is its file name. Remove it.",
+          "Its name is not one of its fields. A note's name is its file name. Remove it.",
       },
     ]);
     expect(at("untyped.md")).toEqual([
@@ -227,7 +227,7 @@ describe("a problem", () => {
         path: "untyped.md",
         rule: "basis/type",
         field: "/type",
-        message: "The note has no type.",
+        message: "The node has no type.",
       },
     ]);
   });
@@ -239,7 +239,8 @@ describe("a problem", () => {
       {
         path: "Loaf.md",
         rule: "basis/name",
-        message: "The file name Loaf is not a lowercase slug.",
+        message:
+          "The name Loaf is not a lowercase slug. A note's name is its file name.",
       },
     ]);
     expect(at("a/twin.md")).toEqual([
@@ -434,7 +435,7 @@ describe("a rule's report", () => {
     for (const field of ["/colour", "states", "/name"])
       expect(fails(() => [{ field, message: "m" }])).toThrow(
         new Error(
-          `The rule faulty/report gave the field ${field} for loaf.md, which is not a JSON Pointer to a field its type object gives a note.`,
+          `The rule faulty/report gave the field ${field} for loaf.md, which is not a JSON Pointer to a field its type object gives a node.`,
         ),
       );
     expect(fails(() => ["Wrong."])).toThrow(
