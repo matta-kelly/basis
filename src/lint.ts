@@ -666,10 +666,14 @@ async function typeNotesOf(
 
 /**
  * A source of nodes beside the notes of a folder: a function that gives what it read, as the loader gives a folder.
- * Each path is from the folder linted, and a link is the name of the node it points at. The package that knows a
- * thing's shape writes its source: basis reads no code.
+ * It gives nodes, not notes: every note is the loader's, read from the folder that holds it. Each path is from the folder
+ * linted, and a link is the name of the node it points at. The package that knows a thing's shape writes its source:
+ * basis reads no code.
  */
-export type Source = () => Loaded | Promise<Loaded>;
+export type Source = () => Loaded<SourceNode> | Promise<Loaded<SourceNode>>;
+
+/** A node a source gives: never a body, as a note has. */
+type SourceNode = Omit<Node, "body"> & { body?: never };
 
 /** What a folder's lint takes beside the folder: the paths that are not notes, and the sources of more nodes. */
 export type LintOptions = FolderOptions & { sources?: readonly Source[] };
@@ -696,8 +700,6 @@ const LoadedShape = z.strictObject({
       path: relativePath,
       name: z.string(),
       fields: z.record(z.string(), z.unknown()),
-      // A note, such as one of another folder: its links are wikilinks.
-      body: z.string().optional(),
     }),
   ),
   problems: z.array(

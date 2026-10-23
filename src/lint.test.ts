@@ -27,8 +27,6 @@ import {
   many,
   one,
   type,
-  loadFolder,
-  type Loaded,
   type Node,
   type Note,
   type Source,
@@ -868,7 +866,7 @@ describe("the sources of a folder", () => {
     representedAs: ["till-item"],
   });
   const gives =
-    (...nodes: Node[]): Source =>
+    (...nodes: Omit<Node, "body">[]): Source =>
     () => ({ nodes, problems: [], unread: [] });
 
   it("lints the nodes of each source and the folder's notes as one graph: a link can cross from one to the other", async () => {
@@ -1130,45 +1128,38 @@ describe("the sources of a folder", () => {
     ).toEqual(["code/low.ts", "top.md"]);
   });
 
-  it("takes the notes of another folder from a source, and reads their links as a note writes them", async () => {
-    const root = await folderWithSlate();
-    const other = await mkdtemp(join(tmpdir(), "basis-other-"));
-    made.push(other);
-    await writeFile(
-      join(other, "till.md"),
-      '---\ntype: source\ndescription: "The till."\nrole: projection\n---\n',
-    );
-    await writeFile(
-      join(other, "till-item.md"),
-      '---\ntype: external-object\ndescription: "A loaf at the till."\nheldIn: "[[till]]"\n---\n',
-    );
-    async function otherFolder(): Promise<Loaded> {
-      const read = await loadFolder(other);
-      return {
-        ...read,
-        nodes: read.nodes.map((n) => ({ ...n, path: `other/${n.path}` })),
-      };
-    }
-    expect(await lintFolder(things, root, { sources: [otherFolder] })).toEqual(
-      [],
-    );
+  it("reads a node as a note only when its body is a string", () => {
+    // An undefined body, as JavaScript can give one: its type has none.
+    const item = { ...tillItem, body: undefined } as unknown as Node;
+    expect(lint(things, [till, item])).toEqual([]);
+    expect(
+      lint(things, [till, { ...tillItem, body: "" }]).map((p) => p.message),
+    ).toEqual(['Not a wikilink, "[[name]]".']);
   });
 
-  it("reads a source's node as a note when it has a body, and as a node when its body is undefined", async () => {
+  it("throws, naming the source, for a node with a body: a note is the loader's, from the folder that holds it", async () => {
     const root = await folderWithSlate();
-    // An undefined body, as a source in JavaScript can give one: its type has none.
-    const item = (body: string | undefined, heldIn: string) =>
-      ({ ...tillItem, fields: { ...tillItem.fields, heldIn }, body }) as Node;
-    expect(
-      await lintFolder(things, root, {
-        sources: [gives(till, item(undefined, "till"))],
-      }),
-    ).toEqual([]);
-    expect(
-      await lintFolder(things, root, {
-        sources: [gives(till, item("A loaf at the till.\n", "[[till]]"))],
-      }),
-    ).toEqual([]);
+    const typed: Source = () => ({
+      // @ts-expect-error A source's node has no body.
+      nodes: [{ ...till, body: "" }],
+      problems: [],
+      unread: [],
+    });
+    // As JavaScript can give them: a body, or a body that is undefined.
+    const untyped = [undefined, "A loaf at the till.\n"].map(
+      (body) =>
+        (() => ({
+          nodes: [{ ...till, body }],
+          problems: [],
+          unread: [],
+        })) as unknown as Source,
+    );
+    for (const source of [typed, ...untyped])
+      await expect(
+        lintFolder(things, root, { sources: [source] }),
+      ).rejects.toThrow(
+        /^The source (typed|number 1) gave something other than [\s\S]*"body"/,
+      );
   });
 
   it("throws, naming the source, when a source throws or gives something other than { nodes, problems, unread }", async () => {

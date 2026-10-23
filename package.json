@@ -1,6 +1,6 @@
 {
   "name": "@mku1tra/basis",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "The root package for semantic subgraphs: the primitives, the compiler and the lint core that every subgraph imports.",
   "license": "MIT",
   "repository": {
