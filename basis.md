@@ -37,7 +37,7 @@ Code defines, markdown describes, and the lint checks that they agree.
 	- a thing that lives in code, such as a plugin, has its node there. A note about it links to it and explains it, and does not repeat a fact of the code
 - one fact, one place: in code when the thing is in code, in the frontmatter when the thing is only a note. A copy that is kept on purpose, such as a type note's description, is checked to be the same
 - source: where nodes come from. The notes of a folder are basis's own source. A config can name more, each a function that gives nodes, such as a package's reader of its things in code. basis reads no code itself: the package that knows a thing's shape reads it
-	- a source gives `{ nodes, problems, unread }`, as the loader gives a folder. Each path is from the folder linted, and is not a note's path. A link is written as a note writes it, `[[name]]`. Its problems are only what it cannot read (`fatal`): a check of what it read is a rule
+	- a source gives `{ nodes, problems, unread }`, as the loader gives a folder. A node with a `body` is a note, such as one of another folder, and writes its links as a note does. Each path is from the folder linted, and is not a note's path. A link is the name of the node it points at. Its problems are only what it cannot read (`fatal`): a check of what it read is a rule
 	- it gives no node of type `type`: a type note is a note, in the folder its schema declares
 	- a source that throws, or gives another shape, is at fault, not a node: the lint throws, naming it
 - one graph, one linter: every node, from every source, goes into one graph, and is checked against its type, each link against the type it points at, and the rules of each schema. A node is of a type the schema sees, whatever its source: the world stays closed
@@ -63,8 +63,10 @@ Code defines, markdown describes, and the lint checks that they agree.
 		- **extension**: the same type, under its name, with more fields, in a schema that imports it (GraphQL's `extend type`). Made with `extendType`. It cannot change the fields it extends
 	- **property**: a named field of a type, with a zod schema
 	- **constraint**: a rule on a field, such as required, a minimum or a pattern. It is the field's zod schema, not a primitive of its own. A check over several fields, or several nodes, is a rule
-	- **link**: a field of the type it starts from, whose schema records the type it points at. Written in a note as `[[name]]`
-		- one, oneOrNone, many (one or more), or manyOrNone (none, or an empty list). The lint checks each one points at a note of one of its types, or of a type that inherits one
+	- **link**: a field of the type it starts from, whose schema records the type it points at. Its value is the name of the node it points at, as PG-Schema's edge ends at a node's identity
+		- a note writes it `"[[name]]"`, quoted, as an Obsidian property writes a link. That is the syntax of markdown, not the value: the lint reads a note's links as wikilinks, by its type, and a link a note writes without `[[ ]]` is a problem. Another source gives the name
+		- `Schema.parse` takes the values of the graph: a link is a name
+		- one, oneOrNone, many (one or more), or manyOrNone (none, or an empty list). The lint checks each one points at a node of one of its types, or of a type that inherits one
 		- data on a link itself is not supported yet
 		- whether an absent optional link is worth a warning is a lint rule, not a schema question
 	- **schema**: a named set of types, with the schemas it imports. Made with `defineSchema`

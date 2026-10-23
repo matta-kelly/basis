@@ -31,11 +31,11 @@ const loaf = {
   type: "object",
   description: "One bake of one dough. A crust.",
   key: "loaf_code",
-  livesIn: ["[[slate]]", "[[daybook]]"],
+  livesIn: ["slate", "daybook"],
   schema: "packages/daybook/schema.ts#Loaf",
   states: ["drafted", "complete", "synced", "stale"],
   derived: ["synced", "stale"],
-  representedAs: ["[[till-item]]"],
+  representedAs: ["till-item"],
 };
 const slate = {
   name: "slate",
@@ -49,7 +49,7 @@ const tillItem = {
   type: "external-object",
   description:
     "A loaf as the till holds it: a line of the menu its recipe picks.",
-  heldIn: "[[till]]",
+  heldIn: "till",
   schema: "packages/till/schema.ts#TillItem",
 };
 
@@ -121,11 +121,11 @@ describe("a node", () => {
     });
     const node = { name: "n", type: "near", description: "d" };
     expect(schema.parse("near", node)).toEqual(node);
-    expect(schema.parse("near", { ...node, to: "[[slate]]" })).toEqual({
+    expect(schema.parse("near", { ...node, to: "slate" })).toEqual({
       ...node,
       to: "slate",
     });
-    for (const to of [null, [], ["[[slate]]"], "slate"])
+    for (const to of [null, [], ["slate"], "[[slate]]"])
       expect(() => schema.parse("near", { ...node, to })).toThrow(/to/);
   });
 
@@ -154,7 +154,7 @@ describe("a node", () => {
     expect(() =>
       things.parse("external-object", {
         ...tillItem,
-        heldIn: ["[[till]]"],
+        heldIn: ["till"],
       }),
     ).toThrow(/heldIn/);
   });
@@ -165,18 +165,19 @@ describe("a node", () => {
     );
   });
 
-  it("is refused with a link that is not a wikilink", () => {
+  it("is refused with a link that is not a name: a wikilink is how a note writes it, not its value", () => {
     expect(() =>
-      things.parse("object", { ...loaf, livesIn: ["slate"] }),
+      things.parse("object", { ...loaf, livesIn: ["[[slate]]"] }),
     ).toThrow(/livesIn/);
-    expect(() =>
-      things.parse("external-object", { ...tillItem, heldIn: "till" }),
-    ).toThrow(/heldIn/);
+    for (const heldIn of ["[[till]]", "Till"])
+      expect(() =>
+        things.parse("external-object", { ...tillItem, heldIn }),
+      ).toThrow(/heldIn/);
   });
 
   it("is refused with a link that starts from another type", () => {
     expect(() =>
-      things.parse("source", { ...slate, livesIn: ["[[till]]"] }),
+      things.parse("source", { ...slate, livesIn: ["till"] }),
     ).toThrow(/livesIn/);
   });
 
@@ -462,7 +463,7 @@ describe("a schema", () => {
 });
 
 describe("a type", () => {
-  const node = { name: "n", type: "t", description: "d", to: "[[slate]]" };
+  const node = { name: "n", type: "t", description: "d", to: "slate" };
 
   it("keeps its fields as they were when it was made, though the caller's fields object changes", () => {
     const fields: Record<string, z.ZodType> = { to: one(() => source) };
@@ -745,7 +746,7 @@ describe("a schema that imports another", () => {
     description: "Ship an order.",
     title: "Ship",
   };
-  const shipHere = { ...ship, stage: "live", heldBy: "[[ana]]" };
+  const shipHere = { ...ship, stage: "live", heldBy: "ana" };
   // A schema made by code without types: the compiler would refuse it.
   const untyped = (schema: unknown) =>
     defineSchema(schema as Parameters<typeof defineSchema>[0]);

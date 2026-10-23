@@ -10,10 +10,12 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as z from "zod";
 
+// A name's schema, new each time: each link is made of schemas of its own.
+const nameOf = () =>
+  z.string().regex(/^[a-z][a-z0-9-]*$/, "Not a lowercase slug.");
+
 /** A node is named by a short slug, so one node can point at another by name. */
-export const Name = z
-  .string()
-  .regex(/^[a-z][a-z0-9-]*$/, "Not a lowercase slug.");
+export const Name = nameOf();
 
 /**
  * What every node has, as PG-Schema has it: its identity, its label and a property. The name is its identity, from its
@@ -32,17 +34,16 @@ const isNodeField = (field: string) => Object.hasOwn(nodeShape, field);
 const isPrototypeName = (field: string) =>
   Object.hasOwn(Object.prototype, field);
 
-/** A pointer to another node, as a note writes it: "[[name]]". Parsed to the name. */
+/** A link as a note writes it: "[[name]]". Parsed to the name, the link's value in the graph. */
 const wikilinkOf = () =>
   z
     .string()
     .regex(/^\[\[[a-z][a-z0-9-]*\]\]$/, 'Not a wikilink, "[[name]]".')
     .transform((link) => link.slice(2, -2));
-export const wikilink = wikilinkOf();
 
 /**
- * A schema, the schemas inside it, and their defs: found by walking each def's values, its arrays and plain objects,
- * and the schema a lazy schema returns. A method chained on a schema wraps it, or makes a clone that keeps its def
+ * A schema, the schemas and checks inside it, and their defs: found by walking each def's values, its arrays and plain
+ * objects, and the schema a lazy schema returns. A method chained on a schema wraps it, or makes a clone that keeps its def
  * or the schemas inside it.
  */
 function partsOf(schema: z.ZodType): object[] {
@@ -54,6 +55,10 @@ function partsOf(schema: z.ZodType): object[] {
       found.add(value);
       walk(value._zod.def, inLazy);
       if (value instanceof z.ZodLazy && !inLazy) walk(value.unwrap(), true);
+    } else if (value instanceof z.core.$ZodCheck) {
+      // A check, such as a name's pattern: a method chained on a schema keeps its checks in the clone it makes.
+      found.add(value);
+      walk(value._zod.def, inLazy);
     } else if (
       Array.isArray(value) ||
       [Object.prototype, null].includes(Object.getPrototypeOf(value))
@@ -249,17 +254,27 @@ function link<S extends z.ZodType>(
   return schema;
 }
 
-/** A link to one node. */
+/** The schema of a link of a kind, on a schema of one name: the name in the graph, or the wikilink of a note. */
+const linkSchema = (
+  { cardinality, optional }: Pick<Link, "cardinality" | "optional">,
+  nameSchema: () => z.ZodType,
+) => {
+  const one = cardinality === "one" ? nameSchema() : z.array(nameSchema());
+  const some = !optional && one instanceof z.ZodArray ? one.min(1) : one;
+  return optional ? some.optional() : some;
+};
+
+/** A link to one node: its value is the node's name. */
 export const one = (to: Targets) =>
-  link(wikilinkOf(), { to, cardinality: "one", optional: false });
+  link(nameOf(), { to, cardinality: "one", optional: false });
 
 /** A link to one node or none: the key holds a name, or is absent. */
 export const oneOrNone = (to: Targets) =>
-  link(wikilinkOf().optional(), { to, cardinality: "one", optional: true });
+  link(nameOf().optional(), { to, cardinality: "one", optional: true });
 
 /** A link to one or more nodes. */
 export const many = (to: Targets) =>
-  link(z.array(wikilinkOf()).min(1), {
+  link(z.array(nameOf()).min(1), {
     to,
     cardinality: "many",
     optional: false,
@@ -267,11 +282,31 @@ export const many = (to: Targets) =>
 
 /** A link to any number of nodes: an absent key and an empty list both mean none. */
 export const manyOrNone = (to: Targets) =>
-  link(z.array(wikilinkOf()).optional(), {
+  link(z.array(nameOf()).optional(), {
     to,
     cardinality: "many",
     optional: true,
   });
+
+/** For each type, its schema as a note writes it. */
+const noteSchemas = new WeakMap<Type, z.ZodObject>();
+
+/**
+ * A type's schema as a note writes it: each link a wikilink, "[[name]]", parsed to the name. The same type, in the
+ * syntax of markdown: a note's link that is not a wikilink is wrong, as a note writes it.
+ */
+export function noteSchemaOf(type: Type): z.ZodObject {
+  let schema = noteSchemas.get(type);
+  if (!schema) {
+    schema = type.schema.extend(
+      Object.fromEntries(
+        linksOf(type).map((l) => [l.name, linkSchema(l, wikilinkOf)]),
+      ),
+    );
+    noteSchemas.set(type, schema);
+  }
+  return schema;
+}
 
 /** The links that start from a type: each of its fields made by one, oneOrNone, many or manyOrNone. */
 export const linksOf = (type: Type): Link[] =>
@@ -308,10 +343,7 @@ function overriddenBy(type: Type, extended: Type): string[] {
     .map(([field]) => field);
 }
 
-/**
- * Whether a field gives one string, number or boolean, read from its schema. A transform's output cannot be read,
- * so a one link is the only transform taken: it gives the name it points at.
- */
+/** Whether a field gives one string, number or boolean, read from its schema. A one link gives the name it points at. */
 function givesScalar(field: z.core.$ZodType): boolean {
   const link = links.get(field);
   if (link) return link.cardinality === "one" && !link.optional;
@@ -519,7 +551,8 @@ export interface Schema<
   rules?: readonly Rule[];
   /**
    * The node, parsed by the zod schema of its type, in the own types of the schema it is called on. Throws when the
-   * node does not fit. A node of an imported type is parsed by the schema that holds it.
+   * node does not fit. A node of an imported type is parsed by the schema that holds it. It takes the values of the
+   * graph: a link is the name it points at, not a note's `[[name]]`.
    */
   parse<This extends Schema, N extends keyof This["types"] & string>(
     this: This,

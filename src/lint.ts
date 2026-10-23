@@ -31,7 +31,7 @@ import {
   schemasSeen,
   seesType,
   seenTypes,
-  wikilink,
+  noteSchemaOf,
   type Graph,
   type Schema,
   type Type,
@@ -121,9 +121,16 @@ const valueAt = (fields: unknown, path: readonly PropertyKey[]): unknown =>
     fields,
   );
 
+/** Whether a node is a note: it has a body. Its name is its file name, and it writes each link "[[name]]". */
+const isNote = (node: Node) => Object.hasOwn(node, "body");
+
 /** What a name's problem adds for a note: its name is its file name. A source's node has no file name. */
 const fileName = (node: Node) =>
-  Object.hasOwn(node, "body") ? " A note's name is its file name." : "";
+  isNote(node) ? " A note's name is its file name." : "";
+
+/** A type's schema as the node writes it: a note's links are wikilinks, and another node's are names. */
+const schemaOf = (type: Type, node: Node) =>
+  isNote(node) ? noteSchemaOf(type) : type.schema;
 
 /** A parse's issues as problems, one for each field. A bad name is a problem of the name, not of a field. */
 function fieldProblems(node: Node, error: z.ZodError): Problem[] {
@@ -166,12 +173,18 @@ function fieldProblems(node: Node, error: z.ZodError): Problem[] {
   });
 }
 
-/** The names a link holds, as the node gives it: each value that is a wikilink. A value that is not is a field problem. */
-const linkNames = (value: unknown): string[] =>
-  (Array.isArray(value) ? value : [value]).flatMap((item) => {
-    const name = wikilink.safeParse(item);
-    return name.success ? [name.data] : [];
+/**
+ * The names a link holds, each value read by the schema of one of its names, as the node writes it (`schemaOf`). A
+ * value that is not one is a field problem.
+ */
+function linkNames(field: z.core.$ZodType, value: unknown): string[] {
+  const unwrapped = field instanceof z.ZodOptional ? field.unwrap() : field;
+  const item = unwrapped instanceof z.ZodArray ? unwrapped.element : unwrapped;
+  return (Array.isArray(value) ? value : [value]).flatMap((one) => {
+    const name = (item as z.ZodType).safeParse(one);
+    return name.success && typeof name.data === "string" ? [name.data] : [];
   });
+}
 
 /** The types a schema sees, its own and its imports', with the schema that holds each. */
 type Seen = Map<string, { type: Type; owner: Schema }>;
@@ -238,8 +251,11 @@ function nodeProblems(
     ];
 
   try {
-    // By the schema that holds the type: a node of an imported type is that schema's.
-    const value = at.owner.parse(type, { ...node.fields, name: node.name });
+    // By the type the schema sees, as a note or another node writes it: a node of an imported type is of that type.
+    const value = schemaOf(at.type, node).parse({
+      ...node.fields,
+      name: node.name,
+    });
     // A copy: the caller's fields stay as they were, and stay theirs.
     parsed?.set(node, deepFreeze(structuredClone(value)));
   } catch (error) {
@@ -249,7 +265,10 @@ function nodeProblems(
 
   for (const link of linksOf(at.type)) {
     const to = link.to().map((type) => type.name);
-    for (const name of linkNames(node.fields[link.name])) {
+    for (const name of linkNames(
+      schemaOf(at.type, node).shape[link.name] as z.core.$ZodType,
+      node.fields[link.name],
+    )) {
       const targets = byName.get(name);
       if (!targets) {
         // A node that could not be read exists, and has that problem itself.
@@ -303,7 +322,7 @@ function keyProblems(seen: Seen, nodes: readonly Node[]): Problem[] {
   for (const node of nodes) {
     const type = nodeType(seen, node)?.type;
     if (!type) continue;
-    const shape = type.schema.shape;
+    const shape = schemaOf(type, node).shape;
     for (const { over, key } of keysOf(type)) {
       const parsed = z
         .object(Object.fromEntries(key.map((field) => [field, shape[field]])))
@@ -649,8 +668,8 @@ async function typeNotesOf(
 
 /**
  * A source of nodes beside the notes of a folder: a function that gives what it read, as the loader gives a folder.
- * Each path is from the folder linted, and a link is written as a note writes it, `[[name]]`. The package that knows
- * a thing's shape writes its source: basis reads no code.
+ * Each path is from the folder linted, and a link is the name of the node it points at. The package that knows a
+ * thing's shape writes its source: basis reads no code.
  */
 export type Source = () => Loaded | Promise<Loaded>;
 
@@ -675,10 +694,12 @@ const relativePath = z
  */
 const LoadedShape = z.strictObject({
   nodes: z.array(
-    z.object({
+    z.strictObject({
       path: relativePath,
       name: z.string(),
       fields: z.record(z.string(), z.unknown()),
+      // A note, such as one of another folder: its links are wikilinks.
+      body: z.string().optional(),
     }),
   ),
   problems: z.array(

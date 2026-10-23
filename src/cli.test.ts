@@ -126,7 +126,7 @@ describe("basis lint", () => {
 
   it("lints the nodes of each source its config names, with the folder's notes", async () => {
     // A node of code that links to the note slate, and one that does not fit its type.
-    const sources = `[() => ({ nodes: [{ path: "code/loaf.ts", name: "loaf", fields: { type: "object", description: "A bake.", key: "k", states: ["drafted"], livesIn: ["[[slate]]"] } }, { path: "code/oven.ts", name: "oven", fields: { type: "source" } }], problems: [], unread: [] })]`;
+    const sources = `[() => ({ nodes: [{ path: "code/loaf.ts", name: "loaf", fields: { type: "object", description: "A bake.", key: "k", states: ["drafted"], livesIn: ["slate"] } }, { path: "code/oven.ts", name: "oven", fields: { type: "source" } }], problems: [], unread: [] })]`;
     const root = await folderOf({
       "basis.config.ts": `import things from ${JSON.stringify(things)};\nexport default { schema: things, sources: ${sources} };\n`,
       "slate.md": slate,

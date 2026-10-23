@@ -27,6 +27,8 @@ import {
   many,
   one,
   type,
+  loadFolder,
+  type Loaded,
   type Note,
   type Source,
 } from "./index.ts";
@@ -854,15 +856,15 @@ describe("the sources of a folder", () => {
   const tillItem = node("code/till.ts", "till-item", {
     type: "external-object",
     description: "A loaf as the till holds it.",
-    heldIn: "[[till]]",
+    heldIn: "till",
   });
   const loaf = node("code/loaf.ts", "loaf", {
     type: "object",
     description: "One bake of one dough.",
     key: "loaf_code",
-    livesIn: ["[[slate]]"],
+    livesIn: ["slate"],
     states: ["drafted"],
-    representedAs: ["[[till-item]]"],
+    representedAs: ["till-item"],
   });
   const gives =
     (...nodes: ReturnType<typeof node>[]): Source =>
@@ -918,7 +920,7 @@ describe("the sources of a folder", () => {
     };
     const toOven = {
       ...loaf,
-      fields: { ...loaf.fields, livesIn: ["[[oven]]"] },
+      fields: { ...loaf.fields, livesIn: ["oven"] },
     };
     expect(
       await lintFolder(things, root, {
@@ -1038,6 +1040,117 @@ describe("the sources of a folder", () => {
           ],
         }),
       ).rejects.toThrow(/^The source number 1 gave something other than/);
+  });
+
+  it("reads a link as a name: a note writes it [[name]], and another node gives the name", async () => {
+    const root = await folderWithSlate();
+    // The note links to a node of code, and the node of code to the note.
+    await writeFile(
+      join(root, "till-item.md"),
+      '---\ntype: external-object\ndescription: "A loaf as the till holds it."\nheldIn: "[[till]]"\n---\n',
+    );
+    const toNote = node("code/loaf.ts", "loaf", {
+      ...loaf.fields,
+      livesIn: ["slate"],
+    });
+    expect(
+      await lintFolder(things, root, { sources: [gives(till, toNote)] }),
+    ).toEqual([]);
+  });
+
+  it("gives a problem for a link written as the other form: a note's without [[ ]], a node of code's with them", async () => {
+    const root = await folderWithSlate();
+    await writeFile(
+      join(root, "till-item.md"),
+      '---\ntype: external-object\ndescription: "A loaf as the till holds it."\nheldIn: till\n---\n',
+    );
+    const bracketed = node("code/loaf.ts", "loaf", {
+      ...loaf.fields,
+      livesIn: ["[[slate]]"],
+      representedAs: [],
+    });
+    expect(
+      await lintFolder(things, root, { sources: [gives(till, bracketed)] }),
+    ).toEqual([
+      {
+        path: "code/loaf.ts",
+        rule: "basis/fields",
+        field: "/livesIn/0",
+        message: "Not a lowercase slug.",
+      },
+      {
+        path: "till-item.md",
+        rule: "basis/fields",
+        field: "/heldIn",
+        message: 'Not a wikilink, "[[name]]".',
+      },
+    ]);
+  });
+
+  it("gives a rule and a key the name a link points at, from a note and from another node alike", async () => {
+    const root = await folderWithSlate();
+    const shelf = defineType({
+      name: "shelf",
+      description: "Where a loaf is kept, one shelf to a source.",
+      fields: { of: one(() => things.types.source) },
+      key: ["of"],
+    });
+    const seen: unknown[] = [];
+    const reads = defineRule({
+      name: "reads",
+      description: "Keeps what it reads.",
+      on: shelf,
+      check: (node) => {
+        seen.push(node.of);
+        return [];
+      },
+    });
+    const kept = defineSchema({
+      name: "kept",
+      description: "Shelves.",
+      types: { shelf },
+      imports: [things],
+      typeNotes: new URL("../fixtures/types/kept/", import.meta.url),
+      rules: [reads],
+    });
+    await writeFile(
+      join(root, "top.md"),
+      '---\ntype: shelf\ndescription: "The top shelf."\nof: "[[slate]]"\n---\n',
+    );
+    const low = node("code/low.ts", "low", {
+      type: "shelf",
+      description: "The low shelf.",
+      of: "slate",
+    });
+    const problems = await lintFolder(kept, root, { sources: [gives(low)] });
+    expect(seen).toEqual(["slate", "slate"]);
+    expect(
+      problems.filter((p) => p.rule === "basis/key").map((p) => p.path),
+    ).toEqual(["code/low.ts", "top.md"]);
+  });
+
+  it("takes the notes of another folder from a source, and reads their links as a note writes them", async () => {
+    const root = await folderWithSlate();
+    const other = await mkdtemp(join(tmpdir(), "basis-other-"));
+    made.push(other);
+    await writeFile(
+      join(other, "till.md"),
+      '---\ntype: source\ndescription: "The till."\nrole: projection\n---\n',
+    );
+    await writeFile(
+      join(other, "till-item.md"),
+      '---\ntype: external-object\ndescription: "A loaf at the till."\nheldIn: "[[till]]"\n---\n',
+    );
+    async function otherFolder(): Promise<Loaded> {
+      const read = await loadFolder(other);
+      return {
+        ...read,
+        nodes: read.nodes.map((n) => ({ ...n, path: `other/${n.path}` })),
+      };
+    }
+    expect(await lintFolder(things, root, { sources: [otherFolder] })).toEqual(
+      [],
+    );
   });
 
   it("throws, naming the source, when a source throws or gives something other than { nodes, problems, unread }", async () => {
