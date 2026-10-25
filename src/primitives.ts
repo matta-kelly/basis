@@ -89,19 +89,6 @@ export type Type = {
   key?: readonly string[];
 };
 
-/**
- * The parent of every type: what every node has. It is abstract, so no node is of node alone. It is the root of the
- * graph of types, not a type of a schema, and a link cannot point at it.
- */
-export const node = Object.freeze({
-  name: "node",
-  description: "What every node has: its name, its type and its description.",
-  abstract: true,
-  parents: Object.freeze([]),
-  schema: z.strictObject(nodeShape),
-  key: Object.freeze([]),
-} as const);
-
 /** One type made from a union of them: the fields every parent gives, as one shape. */
 type Intersection<U> = (U extends unknown ? (u: U) => void : never) extends (
   i: infer I,
@@ -419,9 +406,10 @@ function keyProblems(type: Type, fields: z.ZodRawShape): string[] {
   return problems;
 }
 
-/** The type itself, and each type it inherits, at every depth: the names a link to any of them accepts. */
+/** The type itself, and each type it inherits, at every depth, node too: the names a link to any of them accepts. */
 export function lineageOf(type: Type): Set<string> {
-  const names = new Set<string>();
+  // Every type inherits node, unlisted.
+  const names = new Set<string>([node.name]);
   const walk = (at: Type) => {
     if (names.has(at.name)) return;
     names.add(at.name);
@@ -458,6 +446,10 @@ function parentProblems(type: Type): string[] {
     return [
       `The type ${type.name} inherits ${notMade.map((p) => String(p?.name)).join(", ")}, which defineType did not make.`,
     ];
+  if (parents.includes(node))
+    return [
+      `The type ${type.name} lists node as a parent: every type inherits node, unlisted.`,
+    ];
   const problems: string[] = [];
   const from = new Map<string, { schema: unknown; parent: string }>();
   for (const parent of parents)
@@ -489,7 +481,11 @@ function typeProblems(type: Type): string[] {
     ? []
     : [`The type ${type.name} is not named by a lowercase slug.`];
   const fields = fieldsOf(type);
-  const taken = type.extends ? [] : redefinedNode(type);
+  const taken = type.extends || type === node ? [] : redefinedNode(type);
+  if (type.extends === node)
+    problems.push(
+      `The type ${type.name} extends node, which every type inherits: a field every node has is basis's own.`,
+    );
   const overridden = type.extends ? overriddenBy(type, type.extends) : [];
   if (overridden.length > 0)
     problems.push(
@@ -576,7 +572,7 @@ type TypesSeen<I extends readonly AnySchema[]> = I[number] extends infer P
     : never
   : never;
 
-/** A type that extends another must extend one its schema sees: one of its imports', or the built-in type. */
+/** A type that extends another must extend one its schema sees: one of its imports', or a built-in type. */
 type ExtendsSeen<X, I extends readonly AnySchema[]> = X extends {
   extends: Type;
 }
@@ -842,9 +838,10 @@ export function defineRule<const T extends Type>(rule: {
 /**
  * Whether a node of one type is a node of another: the same type, an extension of it, or a type that inherits one of
  * those. By the types themselves, not their names: a type that inherits a type an extension extends does not have the
- * extension's fields.
+ * extension's fields. Every type is of node, which every type inherits, unlisted.
  */
 export const isOfType = (type: Type, of: Type): boolean =>
+  of === node ||
   type === of ||
   extendsType(type, of) ||
   (type.parents ?? []).some((parent) => isOfType(parent, of));
@@ -945,6 +942,22 @@ export function defineSchema<
 }
 
 /**
+ * The parent of every type: what every node has. It is abstract, so no node is of node alone. Every type inherits it,
+ * unlisted, so a link to it takes a node of any type, as GraphQL's Node interface does. It is basis's own, so every
+ * schema sees it.
+ */
+export const node = Object.freeze({
+  name: "node",
+  description: "What every node has: its name, its type and its description.",
+  abstract: true,
+  parents: Object.freeze([]),
+  // Any type's name, not its own: a node of node is of a type that inherits it.
+  schema: z.strictObject(nodeShape),
+  key: Object.freeze([]),
+} as const);
+madeTypes.add(node);
+
+/**
  * The type of a type note: the note that explains one type, as a docstring explains a function. It is basis's own,
  * as node is, so every schema sees it (GraphQL's built-in __Type).
  */
@@ -962,12 +975,13 @@ export const type = defineType({
   },
 });
 
-const builtInTypes = { type };
+const builtInTypes = { node, type };
 
 /** The built-in schema: the types every schema sees without an import. */
 export const basis = defineSchema({
   name: "basis",
-  description: "The types basis gives every schema: the type of a type note.",
+  description:
+    "The types basis gives every schema: node, the parent of every type, and type, the type of a type note.",
   types: builtInTypes,
   typeNotes: new URL("../types/", import.meta.url),
 });

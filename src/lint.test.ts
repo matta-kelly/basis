@@ -25,6 +25,7 @@ import {
   lint,
   lintFolder,
   many,
+  node,
   one,
   type,
   type Node,
@@ -705,6 +706,70 @@ describe("the lint of a link with several targets", () => {
         message: `The key ${key} of the type capability is also the key of a.md.`,
       },
     ]);
+  });
+});
+
+describe("the lint of a link to node", () => {
+  // Like a work item, that can belong to a note of any type.
+  const plain = <const N extends string>(name: N) =>
+    defineType({ name, description: "d", fields: {} });
+  const app = plain("app");
+  const doc = plain("doc");
+  const task = defineType({
+    name: "task",
+    description: "d",
+    fields: { belongsTo: one(() => node) },
+  });
+  const seen: string[] = [];
+  const named = defineRule({
+    name: "named",
+    description: "Keeps the name of each node it runs on.",
+    on: node,
+    check: (each) => {
+      // Of its own type: a node of node is of any type.
+      seen.push(each.type === "app" ? `${each.name} app` : each.name);
+      return [];
+    },
+  });
+  const schema = defineSchema({
+    name: "p",
+    description: "d",
+    types: { app, doc, task },
+    typeNotes,
+    rules: [named],
+  });
+  const notes = [
+    note("landl.md", { type: "app", description: "d" }),
+    note("guide.md", { type: "doc", description: "d" }),
+  ];
+  const taskNote = (path: string, belongsTo: string) =>
+    note(path, {
+      type: "task",
+      description: "d",
+      belongsTo: `[[${belongsTo}]]`,
+    });
+
+  it("gives no problem for a link to a note of any type, and runs a rule on node on every node", () => {
+    seen.length = 0;
+    expect(
+      lint(schema, [
+        ...notes,
+        taskNote("a.md", "landl"),
+        taskNote("b.md", "guide"),
+        taskNote("c.md", "a"),
+      ]),
+    ).toEqual([]);
+    expect(seen.sort()).toEqual(["a", "b", "c", "guide", "landl app"]);
+  });
+
+  it("gives a problem for a name that is no node, and for a note of type node", () => {
+    expect(
+      lint(schema, [
+        ...notes,
+        taskNote("a.md", "nobody"),
+        note("bare.md", { type: "node", description: "d" }),
+      ]).map(({ path, rule }) => `${path} ${rule}`),
+    ).toEqual(["a.md basis/link", "bare.md basis/type"]);
   });
 });
 

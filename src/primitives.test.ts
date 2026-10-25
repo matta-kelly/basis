@@ -1210,10 +1210,48 @@ describe("the built-in type type", () => {
     description: "A place data lives.",
   };
 
-  it("is the one type of the built-in schema basis", () => {
+  it("has node beside it, which no type lists as a parent and no schema extends", () => {
+    const listed = defineType({
+      name: "listed",
+      description: "d",
+      parents: [node],
+      fields: {},
+    });
+    expect(() =>
+      defineSchema({
+        name: "p",
+        description: "d",
+        types: { listed },
+        typeNotes,
+      }),
+    ).toThrow(
+      "The type listed lists node as a parent: every type inherits node, unlisted.",
+    );
+    // As JavaScript can make it: the compiler refuses an extension of node.
+    const extended = extendType(
+      node as never,
+      {
+        fields: { owner: z.string() },
+      } as never,
+    );
+    expect(() =>
+      defineSchema({
+        name: "p",
+        description: "d",
+        types: { node: extended } as never,
+        typeNotes,
+      }),
+    ).toThrow(/The type node extends node, which every type inherits/);
+    expect(
+      node.schema.safeParse({ name: "a", type: "app", description: "d" })
+        .success,
+    ).toBe(true);
+  });
+
+  it("is a type of the built-in schema basis, with node", () => {
     expect(basis.name).toBe("basis");
     expect(basis.imports).toEqual([]);
-    expect(basis.types).toEqual({ type });
+    expect(basis.types).toEqual({ node, type });
   });
 
   it("declares basis's types folder as the folder of its type notes", () => {

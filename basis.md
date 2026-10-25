@@ -55,7 +55,7 @@ Code defines, markdown describes, and the lint checks that they agree.
 - the vocabulary: what a subgraph is made of. Each one is in `src/primitives.ts`, and this section says what it means
 	- **node**: one actual thing, from a source: a note, whose frontmatter holds its fields, or a node a source gives
 		- every node has what PG-Schema gives every node: an identity, its `name`, which no two nodes share (a note's is its file name); a label, its `type`, the name of its type; and a property, its `description`
-		- in code these are the fields of `node`, the abstract parent of every type
+		- in code these are the fields of `node`, the abstract parent of every type, which every type inherits unlisted
 	- **type**: a kind of node, with its fields beside those every node has. Made with `defineType`
 		- **key**: fields of a type that, together, no two of its nodes share (PG-Schema's key). A type has none unless it says
 		- **parents**: the types it inherits (PG-Schema's `&`). Their fields, links and keys are its own, and a key of a parent holds over the nodes of every type that inherits it. A field two parents give differently, or one it gives again, is refused: extend, never override
@@ -67,11 +67,13 @@ Code defines, markdown describes, and the lint checks that they agree.
 		- a note writes it `"[[name]]"`, quoted, as an Obsidian property writes a link. That is the syntax of markdown, not the value: the lint reads a note's links as wikilinks, by its type, and a link a note writes without `[[ ]]` is a problem. Another source gives the name
 		- `Schema.parse` takes the values of the graph: a link is a name
 		- one, oneOrNone, many (one or more), or manyOrNone (none, or an empty list). The lint checks each one points at a node of one of its types, or of a type that inherits one
+		- a link to `node` takes a node of any type: for a link that can point at any note. A list of types is for a link whose targets mean something
 		- data on a link itself is not supported yet
 		- whether an absent optional link is worth a warning is a lint rule, not a schema question
 	- **schema**: a named set of types, with the schemas it imports. Made with `defineSchema`
-	- **built-in type**: `type`, the type of a type note, held in the built-in schema `basis`. Every schema sees it as if it imported `basis`, as every GraphQL schema has `__Type`. Like `node`, it is basis's own word: a schema can extend it, and cannot define another type named `type`
-		- its field `abstract` is `true` when the type the note explains is abstract, and is absent otherwise
+	- **built-in types**: `node` and `type`, held in the built-in schema `basis`. Every schema sees them as if it imported `basis`, as every GraphQL schema has `__Type`. They are basis's own words: no schema can define another type of their names
+		- `node`: the abstract parent of every type, as GraphQL's `Node` interface. A link to it, or a rule on it, takes every node. No type lists it as a parent, and no schema extends it
+		- `type`: the type of a type note. A schema can extend it. Its field `abstract` is `true` when the type the note explains is abstract, and is absent otherwise
 	- **rule**: a check a schema brings, beside basis's own. Made with `defineRule`, held by a schema (`defineSchema({ rules })`), and seen by every schema that imports it, as a type is. Its name is unique in its schema, and its id is `<schema>/<name>`, as ESLint's `plugin/rule`: two schemas can each have a rule of one name
 		- it runs on a type (`on`): each node of that type, or of a type that inherits it, that parsed. A rule on an extension does not run on a type that inherits the type extended: that type does not have the extension's fields
 		- it gets the node, parsed by its type, and the graph: each node that parsed, its own too, by name (`get`) and by type (`all`), of a type the schema sees. It gives back what is wrong: a list of `{ field?, message }`, where `field` is a JSON Pointer into a field of its node's type, other than `name`
@@ -136,7 +138,7 @@ Code defines, markdown describes, and the lint checks that they agree.
 
 ## Components
 
-1. primitives: `node`, `defineType` (with `abstract` and `parents`), `extendType`, the links `one`, `oneOrNone`, `many` and `manyOrNone`, `defineRule`, `defineSchema`, and the built-in type `type` in the built-in schema `basis`. The vocabulary as code
+1. primitives: `defineType` (with `abstract` and `parents`), `extendType`, the links `one`, `oneOrNone`, `many` and `manyOrNone`, `defineRule`, `defineSchema`, and the built-in types `node` and `type` in the built-in schema `basis`. The vocabulary as code
 	- `defineSchema` is also the compiler: a schema and its imports become one ontology. It refuses cycles, two schemas of one name, a schema named `basis` that is not the built-in one, two owners of one type name, a schema that holds a type of its own and declares no folder of type notes (`typeNotes`), two schemas it sees that declare one folder, a rule on a type it does not see, and two owners of one rule name
 	- what makes basis more than a zod wrapper: where schemas become one graph
 	- prior art: NixOS module merging
