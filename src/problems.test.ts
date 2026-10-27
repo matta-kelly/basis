@@ -63,6 +63,12 @@ const grain = defineType({
   abstract: true,
   fields: {},
 });
+const woven = defineType({
+  name: "woven",
+  description: "d",
+  described: true,
+  fields: {},
+});
 const inRecord = defineRule({
   name: "in-record",
   description: "An object lives in at least one source of record.",
@@ -76,7 +82,7 @@ const shop = defineSchema({
   name: "shop",
   description: "things, with a keyed type, an abstract type and a rule.",
   imports: [things],
-  types: { stamp, grain },
+  types: { stamp, grain, woven },
   typeNotes: new URL("../fixtures/types/shop/", import.meta.url),
   rules: [inRecord],
 });
@@ -100,6 +106,12 @@ const notes = [
   note("two.md", { type: "stamp", description: "d", code: "x" }),
   note("slashed.md", { ...loaf, key: "j", "a/b~c": 1 }),
   note("bare.md", { type: "source", role: "record" }),
+  note("cloth.md", { type: "woven", description: "d" }),
+  note("about.md", {
+    type: "description",
+    description: "d",
+    describes: "[[ledger]]",
+  }),
 ];
 
 /** A folder with a symbolic link, a file that cannot be read, and a folder that cannot be read. */
@@ -381,6 +393,8 @@ describe("basis's rules", () => {
       "basis/type-note-agrees",
       "basis/type-note-type",
       "basis/type-note-folder",
+      "basis/described",
+      "basis/describes",
     ]);
     for (const rule of coreRules) expect(rule.description).not.toBe("");
     expect(Object.isFrozen(coreRules)).toBe(true);

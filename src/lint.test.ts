@@ -1590,3 +1590,203 @@ describe("the lint of abstract types", () => {
     ]);
   });
 });
+
+describe("the lint of a described type", () => {
+  const capability = defineType({
+    name: "capability",
+    description: "A thing the code can do.",
+    described: true,
+    fields: {},
+  });
+  const tool = defineType({
+    name: "tool",
+    description: "A capability an agent calls.",
+    parents: [capability],
+    fields: {},
+  });
+  const plain = defineType({
+    name: "plain",
+    description: "A thing no note describes.",
+    fields: {},
+  });
+  const fabric = defineSchema({
+    name: "fabric",
+    description: "d",
+    types: { capability, tool, plain },
+    typeNotes,
+  });
+  const findFabric: Node = {
+    path: "code/fabric.ts",
+    name: "find-fabric",
+    fields: { type: "capability", description: "Finds fabric." },
+  };
+  const about = (path: string, describes: string) =>
+    note(path, {
+      type: "description",
+      description: "How it is used.",
+      describes: `[[${describes}]]`,
+    });
+  const noDescription = {
+    path: "code/fabric.ts",
+    rule: "basis/described",
+    message:
+      'No note of type description describes it: make one, with describes: "[[find-fabric]]".',
+  };
+
+  // A folder with the type notes of fabric, the type notes it is given, and the notes it is given.
+  async function folderOf(
+    typeNotes: Record<string, string>,
+    notes: Record<string, string> = {},
+  ) {
+    const root = await mkdtemp(join(tmpdir(), "basis-described-"));
+    made.push(root);
+    await mkdir(join(root, "types"));
+    const files = {
+      "types/capability.md":
+        '---\ntype: type\ndescription: "A thing the code can do."\ndescribed: true\n---\n',
+      "types/tool.md":
+        '---\ntype: type\ndescription: "A capability an agent calls."\ndescribed: true\n---\n',
+      "types/plain.md":
+        '---\ntype: type\ndescription: "A thing no note describes."\n---\n',
+      ...typeNotes,
+      ...notes,
+    };
+    for (const [path, text] of Object.entries(files))
+      await writeFile(join(root, path), text);
+    const schema = defineSchema({
+      ...fabric,
+      typeNotes: pathToFileURL(join(root, "types/")),
+    });
+    return { root, schema };
+  }
+  const gives =
+    (...nodes: Omit<Node, "body">[]): Source =>
+    () => ({ nodes, problems: [], unread: [] });
+  const aboutFile =
+    '---\ntype: description\ndescription: "How it is used."\ndescribes: "[[find-fabric]]"\n---\n';
+
+  it("gives a problem for a node of a described type that no note of type description describes", async () => {
+    expect(lint(fabric, [findFabric])).toEqual([noDescription]);
+    const { root, schema } = await folderOf({});
+    expect(
+      await lintFolder(schema, root, { sources: [gives(findFabric)] }),
+    ).toEqual([noDescription]);
+  });
+
+  it("gives no problem for a node of a described type that one note of type description describes, in a schema that imports nothing", async () => {
+    expect(fabric.imports).toEqual([]);
+    expect(
+      lint(fabric, [findFabric, about("find-fabric-note.md", "find-fabric")]),
+    ).toEqual([]);
+    const { root, schema } = await folderOf(
+      {},
+      { "find-fabric-note.md": aboutFile },
+    );
+    expect(
+      await lintFolder(schema, root, { sources: [gives(findFabric)] }),
+    ).toEqual([]);
+  });
+
+  it("gives each of two notes that describe one node a problem of its key", () => {
+    expect(
+      lint(fabric, [
+        findFabric,
+        about("a.md", "find-fabric"),
+        about("b.md", "find-fabric"),
+      ]),
+    ).toEqual([
+      {
+        path: "a.md",
+        rule: "basis/key",
+        field: "/describes",
+        message:
+          'The key describes "find-fabric" of the type description is also the key of b.md.',
+      },
+      {
+        path: "b.md",
+        rule: "basis/key",
+        field: "/describes",
+        message:
+          'The key describes "find-fabric" of the type description is also the key of a.md.',
+      },
+    ]);
+  });
+
+  it("gives a problem for a note of a described type, or of a type that inherits one: its node comes from a source", () => {
+    const asNote = note("find-fabric.md", {
+      type: "tool",
+      description: "Finds fabric.",
+    });
+    expect(
+      lint(fabric, [asNote, about("find-fabric-note.md", "find-fabric")]),
+    ).toEqual([
+      {
+        path: "find-fabric.md",
+        rule: "basis/described",
+        field: "/type",
+        message:
+          "A note of the type tool, which is described: a node of it comes from a source, and a note of type description describes it.",
+      },
+    ]);
+  });
+
+  it("gives a problem for a note of type description that describes a node of a type that is not described", () => {
+    const thing: Node = {
+      path: "code/fabric.ts",
+      name: "thing",
+      fields: { type: "plain", description: "A thing." },
+    };
+    expect(lint(fabric, [thing, about("thing-note.md", "thing")])).toEqual([
+      {
+        path: "thing-note.md",
+        rule: "basis/describes",
+        field: "/describes",
+        message:
+          "It describes thing, a plain, which is not described: a note of type description describes a node of a described type.",
+      },
+    ]);
+  });
+
+  it("gives a problem for a type note whose described is not its type's: a type that inherits a described type is described", async () => {
+    const { root, schema } = await folderOf({
+      "types/tool.md":
+        '---\ntype: type\ndescription: "A capability an agent calls."\n---\n',
+      "types/plain.md":
+        '---\ntype: type\ndescription: "A thing no note describes."\ndescribed: true\n---\n',
+    });
+    expect(await lintFolder(schema, root)).toEqual([
+      {
+        path: "types/plain.md",
+        rule: "basis/type-note-agrees",
+        field: "/described",
+        message:
+          "True, and the type plain of fabric is not described: remove it.",
+      },
+      {
+        path: "types/tool.md",
+        rule: "basis/type-note-agrees",
+        field: "/described",
+        message:
+          "Missing: the type tool of fabric is described, so add described: true.",
+      },
+    ]);
+  });
+
+  it("throws, naming the source, for a node of type description: a description is a note, in the folder linted", async () => {
+    const { root, schema } = await folderOf({});
+    const aboutNode = {
+      path: "code/about.ts",
+      name: "about",
+      fields: {
+        type: "description",
+        description: "How it is used.",
+        describes: "find-fabric",
+      },
+    };
+    await expect(
+      lintFolder(schema, root, { sources: [gives(findFabric, aboutNode)] }),
+    ).rejects.toThrow(
+      "The source number 1 gave about, of type description: a description is a note, in the folder linted.",
+    );
+  });
+});
