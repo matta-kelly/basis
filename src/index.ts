@@ -4,6 +4,7 @@ export {
   defineRule,
   defineSchema,
   defineType,
+  description,
   extendType,
   linksOf,
   many,

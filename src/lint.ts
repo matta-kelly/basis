@@ -2,7 +2,8 @@
  * The lint: nodes and a schema in, problems out. It changes nothing. The nodes are checked against the schema and
  * the schemas it imports, as one set.
  * Each node is parsed by its type, and each link it writes must point at a node of the type the link points at, or of
- * a type that inherits it. No node is of an abstract type. A folder's lint also reads the type notes of each schema it
+ * a type that inherits it. No node is of an abstract type. A node of a described type comes from a source, and a note of
+ * type description describes it. A folder's lint also reads the type notes of each schema it
  * sees, from the folder the schema declares.
  */
 
@@ -22,6 +23,7 @@ import {
 import {
   checked,
   checkRules,
+  description,
   isOfType,
   keysOf,
   lineageOf,
@@ -79,7 +81,7 @@ export const coreRules = Object.freeze([
   {
     id: "basis/type-note-agrees",
     description:
-      "A type note has its type's description, and abstract: true when its type is abstract.",
+      "A type note has its type's description, abstract: true when its type is abstract, and described: true when its type is described.",
   },
   {
     id: "basis/type-note-type",
@@ -90,6 +92,16 @@ export const coreRules = Object.freeze([
     id: "basis/type-note-folder",
     description:
       "Each type note sits in the folder of type notes of a schema the lint sees.",
+  },
+  {
+    id: "basis/described",
+    description:
+      "Each node of a described type comes from a source, and a note of type description describes it.",
+  },
+  {
+    id: "basis/describes",
+    description:
+      "A note of type description describes a node of a described type.",
   },
 ] as const);
 
@@ -355,6 +367,59 @@ function keyProblems(seen: Seen, nodes: readonly Node[]): Problem[] {
   );
 }
 
+/**
+ * What is wrong with the nodes of a described type, and with the notes that describe them: a node of a described type
+ * comes from a source, not a note, and a note of type description describes it; a note of type description describes
+ * a node of a described type. Two notes that describe one node have a problem of their key, as any two nodes do.
+ */
+function describedProblems(
+  seen: Seen,
+  nodes: readonly Node[],
+  byName: Map<string, Node[]>,
+): Problem[] {
+  const problems: Problem[] = [];
+  const describedNames = new Set<string>();
+  for (const node of nodes) {
+    const at = nodeType(seen, node);
+    if (!at || !isNote(node) || !isOfType(at.type, description)) continue;
+    for (const name of linkNames(node, node.fields.describes)) {
+      describedNames.add(name);
+      // A name that is no node, or a node with no type of the schema, has that problem itself.
+      const types = (byName.get(name) ?? []).flatMap((target) => {
+        const of = nodeType(seen, target);
+        return of ? [of.type] : [];
+      });
+      const first = types[0];
+      if (first && !types.some((type) => type.described))
+        problems.push({
+          path: node.path,
+          rule: "basis/describes",
+          field: pointer(["describes"]),
+          message: `It describes ${name}, a ${first.name}, which is not described: a note of type description describes a node of a described type.`,
+        });
+    }
+  }
+  for (const node of nodes) {
+    const type = nodeType(seen, node)?.type;
+    // A node of an abstract type has that problem itself.
+    if (!type?.described || type.abstract) continue;
+    if (isNote(node))
+      problems.push({
+        path: node.path,
+        rule: "basis/described",
+        field: pointer(["type"]),
+        message: `A note of the type ${type.name}, which is described: a node of it comes from a source, and a note of type description describes it.`,
+      });
+    else if (!describedNames.has(node.name))
+      problems.push({
+        path: node.path,
+        rule: "basis/described",
+        message: `No note of type description describes it: make one, with describes: "[[${node.name}]]".`,
+      });
+  }
+  return problems;
+}
+
 /** What a rule gives for each thing wrong: the field it is in, if one, and the message. */
 const Report = z.strictObject({
   field: z.string().min(1).optional(),
@@ -504,6 +569,7 @@ export function lint(
       ...nodeProblems(schema, seen, node, byName, unreadNames, parsed),
     );
   problems.push(...keyProblems(seen, nodes));
+  problems.push(...describedProblems(seen, nodes, byName));
   if (parsed)
     problems.push(...ruleProblems(schema, seen, parsed, byName, unreadNames));
   return problems.sort(byPath);
@@ -555,28 +621,31 @@ function typeNoteProblems(
       field: "/description",
       message: `Not the description of ${of}: make it ${JSON.stringify(type.description)}`,
     });
-  const abstract = typeNote.fields.abstract === true;
-  if (abstract && !type.abstract)
-    problems.push({
-      rule: "basis/type-note-agrees",
-      field: "/abstract",
-      message: `True, and ${of} is not abstract: remove it.`,
-    });
-  if (!abstract && type.abstract)
-    problems.push({
-      rule: "basis/type-note-agrees",
-      field: "/abstract",
-      message: `Missing: ${of} is abstract, so add abstract: true.`,
-    });
+  // Each flag of the type, kept in the note as true, or absent.
+  for (const flag of ["abstract", "described"] as const) {
+    const on = typeNote.fields[flag] === true;
+    if (on && !type[flag])
+      problems.push({
+        rule: "basis/type-note-agrees",
+        field: `/${flag}`,
+        message: `True, and ${of} is not ${flag}: remove it.`,
+      });
+    if (!on && type[flag])
+      problems.push({
+        rule: "basis/type-note-agrees",
+        field: `/${flag}`,
+        message: `Missing: ${of} is ${flag}, so add ${flag}: true.`,
+      });
+  }
   return problems;
 }
 
 /**
  * The type notes of each schema the lint sees, read from the folder each one declares, wherever it is: each type the
- * schema owns has its note there, of type type, with its description and abstract, and each type note there explains
- * one of them. A type note outside the folder linted has the problems the lint gives a note. Each type note in the
- * folder linted is in the folder of a schema the lint sees. Folders are compared by their real paths, and each problem
- * has its path from the folder linted.
+ * schema owns has its note there, of type type, with its description, abstract and described, and each type note
+ * there explains one of them. A type note outside the folder linted has the problems the lint gives a note. Each type
+ * note in the folder linted is in the folder of a schema the lint sees. Folders are compared by their real paths, and
+ * each problem has its path from the folder linted.
  */
 async function typeNotesOf(
   schema: Schema,
@@ -714,8 +783,8 @@ const LoadedShape = z.strictObject({
 
 /**
  * What a source gives, or a throw that names the source: its function's name, or its place in the list. A source is
- * also at fault when it gives the path of a note the folder holds, or a node of type type: a type note is a note, in
- * the folder its schema declares.
+ * also at fault when it gives the path of a note the folder holds, a node of type type: a type note is a note, in
+ * the folder its schema declares, or a node of type description: a description is a note, in the folder linted.
  */
 async function read(
   source: Source,
@@ -749,6 +818,13 @@ async function read(
   if (typeNode)
     throw new Error(
       `The source ${id} gave ${typeNode.name}, of type type: a type note is a note, in the folder its schema declares.`,
+    );
+  const descriptionNode = nodes.find(
+    ({ fields }) => fields.type === description.name,
+  );
+  if (descriptionNode)
+    throw new Error(
+      `The source ${id} gave ${descriptionNode.name}, of type description: a description is a note, in the folder linted.`,
     );
   // Its own nodes, not the parse's copies: the lint changes nothing it is given.
   return loaded as Loaded;
