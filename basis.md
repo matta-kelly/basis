@@ -3,7 +3,7 @@ type: moc
 description: "basis: the root package for semantic subgraphs. The primitives, the compiler and the lint core that every subgraph imports. Read for what basis is and what it is made of."
 status: active
 ---
-Code defines, markdown describes, and the lint checks that they agree.
+Code defines, markdown describes, and the lint checks that they agree --> a tool that checks notes and code against rules, where each package brings its own rules and builds on others
 - [[#Thesis]] why an ontology, and what a subgraph is
 - [[#Seam]] what code holds, what markdown holds, where nodes come from, and how they meet
 - [[#Primitives]] the vocabulary, and the rules for how schemas combine
