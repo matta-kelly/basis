@@ -1747,6 +1747,47 @@ describe("the lint of a described type", () => {
     ]);
   });
 
+  it("gives a node of an abstract described type only the problem of its abstract type", () => {
+    const power = defineType({
+      name: "power",
+      description: "What a capability gives.",
+      abstract: true,
+      described: true,
+      fields: {},
+    });
+    const powers = defineSchema({
+      name: "powers",
+      description: "d",
+      types: { power },
+      typeNotes,
+    });
+    const flight: Node = {
+      path: "code/power.ts",
+      name: "flight",
+      fields: { type: "power", description: "Flies." },
+    };
+    expect(lint(powers, [flight])).toEqual([
+      {
+        path: "code/power.ts",
+        rule: "basis/type",
+        field: "/type",
+        message:
+          "The type power is abstract: a node is of a type that inherits it.",
+      },
+    ]);
+  });
+
+  it("gives a note of type description that links to no node only the problem of its link", () => {
+    expect(lint(fabric, [about("lost-note.md", "nowhere")])).toEqual([
+      {
+        path: "lost-note.md",
+        rule: "basis/link",
+        field: "/describes",
+        message: "It points at nowhere, which is not a node.",
+      },
+    ]);
+  });
+
   it("gives a problem for a type note whose described is not its type's: a type that inherits a described type is described", async () => {
     const { root, schema } = await folderOf({
       "types/tool.md":

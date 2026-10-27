@@ -100,10 +100,12 @@ Code defines, markdown describes, and the lint checks that they agree.
 - a linter checks definitions against rules without running anything. In: nodes. Out: a list of problems. It changes nothing
 - its rules come in layers, each one on the one before
 	- shape: the source can read the thing: for a note, the file parses and the frontmatter is valid YAML
-	- schema: the fields match the type (zod)
-	- reference: each link resolves, to a thing of the right type
+	- schema: the node has a type the schema sees, not an abstract one, and its fields match the type (zod) (`basis/type`, `basis/fields`). Its name is a slug, and not one of its fields (`basis/name`)
+	- reference: each link resolves, to a thing of the right type (`basis/link`)
+	- identity: no two nodes share a name (`basis/unique-name`), and no two nodes of a type share a key (`basis/key`)
+	- described: each node of a described type comes from a source, and a note of type `description` describes it; each note of type `description` describes a node of a described type (`basis/described`, `basis/describes`). One note for each node is the key of `description`
 	- graph: no cycles, one owner per name, imports only down. `defineSchema` refuses these when a schema is built, before any node is read
-	- type notes: for each schema the lint sees, each type it owns has its type note in the folder it declares, with the type's description, abstract and described, and each type note there explains one of its types. Each type note in the folder linted is in the folder of a schema the lint sees. `lintFolder` and the CLI read each folder from disk, by its URL, also when it is outside the folder linted, and compare folders by their real paths. A type note outside the folder linted is also checked as a note of type `type`. The in-memory `lint` reads no folder
+	- type notes: for each schema the lint sees, each type it owns has its type note in the folder it declares (`basis/type-note`), with the type's description, abstract and described (`basis/type-note-agrees`), and each type note there explains one of its types (`basis/type-note-type`). Each type note in the folder linted is in the folder of a schema the lint sees (`basis/type-note-folder`). `lintFolder` and the CLI read each folder from disk, by its URL, also when it is outside the folder linted, and compare folders by their real paths. A type note outside the folder linted is also checked as a note of type `type`. The in-memory `lint` reads no folder
 	- convention: the rules each schema brings, made with `defineRule` (the ESLint model: a small core, rules from plugins). The lint runs the rules of every schema it sees. A rule that throws, or gives a field its node's type does not have, is a fault of the rule, not of the note: the lint throws, naming both
 - a problem is `{ path, rule?, field?, message, fatal? }`, the parts of a SARIF result (`ruleId`, a location, `message`) and of ESLint's `LintMessage`
 	- `path`: where the node is, from the folder linted: a note's file, or the path a source gives
