@@ -60,7 +60,7 @@ Code defines, markdown describes, and the lint checks that they agree.
 	- **merge**: the pieces of one name are one node, as the Nix module system merges the definitions of an option, and GraphQL federation merges the fields of an entity from its subgraphs
 		- the pieces of a name all name one type, and each comes from another source: a source gives each name once, as a folder holds one note of a name. Otherwise they are not one node: each piece is a node of its own, and they share a name (`basis/unique-name`)
 		- each field comes from one piece. A field that two pieces give is a problem on each of them, which names the other (`basis/merge`). No piece overrides another, and none has a priority: one fact, one place
-		- the node is its fields, from every piece, checked against its type as one. A field its type needs and no piece gives is missing. So a note whose code piece is gone has a problem: the fields the code gave are missing
+		- the node is its fields, from every piece, checked against its type as one. A field its type needs and no piece gives is missing; a field set to undefined is not given. So a note whose code piece is gone has a problem: the fields the code gave are missing
 		- the order of the pieces does not change the node, or its problems, or their order
 		- a thing a source found and could not read may be a piece of the node of its name, so it is no second node. A note the loader could not read, beside a node with a note of its name, is a second note of that name (`basis/unique-name`)
 		- each piece writes its links in its own syntax: a note `"[[name]]"`, a source the name

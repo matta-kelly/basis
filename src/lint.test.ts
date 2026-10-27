@@ -1971,6 +1971,72 @@ describe("the merge of pieces into a node", () => {
     );
   });
 
+  it("counts a field set to undefined as not given", () => {
+    const blank: Piece = {
+      ...inCode,
+      fields: { ...inCode.fields, heldBy: undefined },
+    };
+    expect(lint(fabric, [db, blank, asNote])).toEqual([]);
+  });
+
+  it("orders pieces of one path and name by all of their fields, however long", () => {
+    // Lists that differ only past the 100th item, where inspect stops by default.
+    const [a, b]: Piece[] = ["landl-db", "nowhere"].map((last, i) => ({
+      path: "code/x.ts",
+      name: "find-fabric",
+      source: String(i),
+      fields: {
+        type: "capability",
+        touches: [...Array.from({ length: 100 }, () => "landl-db"), last],
+      },
+    }));
+    if (!a || !b) throw new Error("two pieces");
+    expect(lint(fabric, [db, b, a, asNote])).toEqual(
+      lint(fabric, [db, a, b, asNote]),
+    );
+  });
+
+  it("names the source when the piece that also gives a field has the same path", () => {
+    const [a, b]: Piece[] = ["0", "1"].map((source) => ({
+      ...inCode,
+      source,
+    }));
+    if (!a || !b) throw new Error("two pieces");
+    const merge = lint(fabric, [db, a, b, asNote]).find(
+      (p) => p.rule === "basis/merge",
+    );
+    expect(merge?.message).toMatch(
+      /^Also given by code\/warehouse\.ts \(source [01]\)/,
+    );
+  });
+
+  it("gives a rule the node of a name a source could not read a thing of", () => {
+    let got: unknown;
+    const reads = defineSchema({
+      name: "reads",
+      description: "d",
+      imports: [fabric],
+      types: {},
+      rules: [
+        defineRule({
+          name: "read",
+          description: "d",
+          on: app,
+          check: (_node, graph) => {
+            got = graph.get("find-fabric", capability);
+            return [];
+          },
+        }),
+      ],
+    });
+    lint(
+      reads,
+      [db, inCode, asNote],
+      [{ path: "code/other.ts", name: "find-fabric" }],
+    );
+    expect(got).toMatchObject({ title: "Find a fabric" });
+  });
+
   it("gives every field two pieces give a problem on each piece, and only those", () => {
     const fieldsOf = fc.dictionary(
       fc.constantFrom("description", "title", "heldBy", "touches"),

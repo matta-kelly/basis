@@ -164,7 +164,12 @@ const canonical = <T extends { path: string; name: string; fields: object }>(
   const text = new Map(
     things.map((thing) => [
       thing,
-      inspect(thing.fields, { depth: Infinity, sorted: true }),
+      inspect(thing.fields, {
+        depth: Infinity,
+        sorted: true,
+        maxArrayLength: Infinity,
+        maxStringLength: Infinity,
+      }),
     ]),
   );
   return [...things].sort((a, b) => {
@@ -193,13 +198,14 @@ function mergeOne(pieces: readonly Piece[]): {
   const fields: Record<string, unknown> = Object.create(null);
   const from = new Map<string, Piece>();
   const givers = new Map<string, Piece[]>();
-  if (Object.hasOwn(home.fields, "type")) {
+  if (home.fields.type !== undefined) {
     fields.type = home.fields.type;
     from.set("type", home);
   }
   for (const piece of sorted)
     for (const [field, value] of Object.entries(piece.fields)) {
-      if (field === "type") continue;
+      // A field set to undefined is not given.
+      if (field === "type" || value === undefined) continue;
       givers.set(field, [...(givers.get(field) ?? []), piece]);
       if (from.has(field)) continue;
       fields[field] = value;
@@ -214,7 +220,11 @@ function mergeOne(pieces: readonly Piece[]): {
           field: pointer([field]),
           message: `Also given by ${by
             .filter((other) => other !== piece)
-            .map((other) => other.path)
+            .map((other) =>
+              other.path === piece.path
+                ? `${other.path} (source ${other.source ?? "notes"})`
+                : other.path,
+            )
             .join(
               ", ",
             )}: each field comes from one piece. Remove it from all but one.`,
@@ -544,7 +554,7 @@ function ruleProblems(
   seen: Seen,
   parsed: Map<Node, unknown>,
   byName: Map<string, Node[]>,
-  unread: Set<string>,
+  contested: Set<string>,
 ): Problem[] {
   const isOf = (node: Node, type: Type) => {
     const at = nodeType(seen, node);
@@ -573,7 +583,7 @@ function ruleProblems(
       seenType(type);
       const same = byName.get(name);
       const only =
-        same?.length === 1 && !unread.has(name) ? same[0] : undefined;
+        same?.length === 1 && !contested.has(name) ? same[0] : undefined;
       return only && parsed.has(only) && isOf(only, type)
         ? (parsed.get(only) as never)
         : undefined;
@@ -656,11 +666,17 @@ export function lint(
   const { nodes, problems } = mergeAll(pieces);
   const byName = byNameOf(nodes);
 
+  // The names an unread note shares with a node that has a note: two notes of one name, so neither is the node.
+  const contested = new Set<string>();
   for (const [name, same] of byName) {
     for (const node of same) {
+      const unreadNote = node.pieces.some(isNote)
+        ? (unreadNotes.get(name) ?? [])
+        : [];
+      if (unreadNote.length) contested.add(name);
       const others = [
         ...same.filter((n) => n !== node).map((n) => n.path),
-        ...(node.pieces.some(isNote) ? (unreadNotes.get(name) ?? []) : []),
+        ...unreadNote,
       ];
       if (others.length === 0) continue;
       problems.push({
@@ -679,7 +695,7 @@ export function lint(
     );
   problems.push(...keyProblems(seen, nodes));
   if (parsed)
-    problems.push(...ruleProblems(schema, seen, parsed, byName, unreadNames));
+    problems.push(...ruleProblems(schema, seen, parsed, byName, contested));
   return problems.sort(byPath);
 }
 
