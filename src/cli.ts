@@ -1,5 +1,5 @@
 /**
- * The command line: `basis lint [folder]` checks the notes of a folder, and the nodes of each source its config names, against the schema it names, and
+ * The command line: `basis lint [folder]` checks the notes of a folder, and the pieces of each source its config names, against the schema it names, and
  * gives a line for each problem, by its path from the folder it runs in. The config is `basis.config.ts`, or `basis.config.js`, at the root of the folder.
  * A person, a hook and a pipeline run the same command, so a folder is checked the same way in each.
  */
@@ -10,7 +10,7 @@ import { pathToFileURL } from "node:url";
 import { lintFolder, type Source } from "./lint.ts";
 import type { AnySchema } from "./primitives.ts";
 
-/** What the config of a folder exports by default: the schema its nodes are checked against, what is not a note, and where more nodes come from. */
+/** What the config of a folder exports by default: the schema its nodes are checked against, what is not a note, and where more pieces come from. */
 export type Config = {
   schema: AnySchema;
   /**
@@ -18,7 +18,7 @@ export type Config = {
    * Or a function, as `lintFolder` takes it.
    */
   skip?: readonly string[] | ((path: string) => boolean);
-  /** The sources of nodes beside the folder's notes, as `lintFolder` takes them. */
+  /** The sources of pieces beside the folder's notes, as `lintFolder` takes them. */
   sources?: readonly Source[];
 };
 

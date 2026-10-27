@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import * as fc from "fast-check";
 import { afterEach, describe, expect, it } from "vitest";
 import * as z from "zod";
 import kitchen from "../fixtures/kitchen.ts";
@@ -27,8 +28,9 @@ import {
   many,
   node,
   one,
+  oneOrNone,
   type,
-  type Node,
+  type Piece,
   type Note,
   type Source,
 } from "./index.ts";
@@ -224,7 +226,7 @@ describe("the lint", () => {
       lint(
         things,
         [...withNote(linking), oven],
-        [{ path: "a/oven.md", name: "oven" }],
+        [{ path: "a/oven.md", name: "oven", note: true }],
       ),
     ).toEqual([
       {
@@ -893,7 +895,7 @@ describe("a folder", () => {
 });
 
 describe("the sources of a folder", () => {
-  // A folder with one note, slate, and a source of nodes in code beside it.
+  // A folder with one note, slate, and a source of pieces in code beside it.
   async function folderWithSlate() {
     const root = await mkdtemp(join(tmpdir(), "basis-sources-"));
     made.push(root);
@@ -931,10 +933,10 @@ describe("the sources of a folder", () => {
     representedAs: ["till-item"],
   });
   const gives =
-    (...nodes: Omit<Node, "body">[]): Source =>
-    () => ({ nodes, problems: [], unread: [] });
+    (...pieces: Omit<Piece, "body" | "source">[]): Source =>
+    () => ({ pieces, problems: [], unread: [] });
 
-  it("lints the nodes of each source and the folder's notes as one graph: a link can cross from one to the other", async () => {
+  it("lints the pieces of each source and the folder's notes as one graph: a link can cross from one to the other", async () => {
     const root = await folderWithSlate();
     expect(
       await lintFolder(things, root, {
@@ -957,18 +959,37 @@ describe("the sources of a folder", () => {
     ]);
   });
 
-  it("gives a name a note and a source's node share a problem on each", async () => {
+  it("merges a note and a source's piece of one name and one type into one node: a field both give is a problem on each", async () => {
     const root = await folderWithSlate();
     const twin = node("code/slate.ts", "slate", {
       type: "source",
       description: "Another slate.",
-      role: "entry",
     });
     expect(
       (await lintFolder(things, root, { sources: [gives(twin)] })).map((p) => [
         p.path,
         p.rule,
+        p.field,
       ]),
+    ).toEqual([
+      ["code/slate.ts", "basis/merge", "/description"],
+      ["slate.md", "basis/merge", "/description"],
+    ]);
+  });
+
+  it("gives a name a note and a source's piece of another type share a problem on each", async () => {
+    const root = await folderWithSlate();
+    const other = node("code/slate.ts", "slate", {
+      type: "object",
+      description: "A slate as a thing.",
+      key: "slate",
+      livesIn: ["till"],
+      states: ["drafted"],
+    });
+    expect(
+      (await lintFolder(things, root, { sources: [gives(till, other)] })).map(
+        (p) => [p.path, p.rule],
+      ),
     ).toEqual([
       ["code/slate.ts", "basis/unique-name"],
       ["slate.md", "basis/unique-name"],
@@ -991,7 +1012,7 @@ describe("the sources of a folder", () => {
         sources: [
           gives(till, tillItem, toOven),
           () => ({
-            nodes: [],
+            pieces: [],
             problems: [unreadable],
             unread: [{ path: "code/oven.ts", name: "oven" }],
           }),
@@ -1000,7 +1021,7 @@ describe("the sources of a folder", () => {
     ).toEqual([unreadable]);
   });
 
-  it("runs each rule on the nodes of a source", async () => {
+  it("runs each rule on the pieces of a source", async () => {
     const root = await folderWithSlate();
     const noProjection = defineRule({
       name: "no-projection",
@@ -1082,7 +1103,7 @@ describe("the sources of a folder", () => {
       lintFolder(things, root, {
         sources: [
           () => ({
-            nodes: [],
+            pieces: [],
             problems: [],
             unread: [{ path: "slate.md", name: "slate" }],
           }),
@@ -1100,7 +1121,7 @@ describe("the sources of a folder", () => {
       await expect(
         lintFolder(things, root, {
           sources: [
-            () => ({ nodes: [], problems: [problem], unread: [] }) as never,
+            () => ({ pieces: [], problems: [problem], unread: [] }) as never,
           ],
         }),
       ).rejects.toThrow(/^The source number 1 gave something other than/);
@@ -1195,18 +1216,18 @@ describe("the sources of a folder", () => {
 
   it("reads a node as a note only when its body is a string", () => {
     // An undefined body, as JavaScript can give one: its type has none.
-    const item = { ...tillItem, body: undefined } as unknown as Node;
+    const item = { ...tillItem, body: undefined } as unknown as Piece;
     expect(lint(things, [till, item])).toEqual([]);
     expect(
       lint(things, [till, { ...tillItem, body: "" }]).map((p) => p.message),
     ).toEqual(['Not a wikilink, "[[name]]".']);
   });
 
-  it("throws, naming the source, for a node with a body: a note is the loader's, from the folder that holds it", async () => {
+  it("throws, naming the source, for a piece with a body: a note is the loader's, from the folder that holds it", async () => {
     const root = await folderWithSlate();
     const typed: Source = () => ({
-      // @ts-expect-error A source's node has no body.
-      nodes: [{ ...till, body: "" }],
+      // @ts-expect-error A source's piece has no body.
+      pieces: [{ ...till, body: "" }],
       problems: [],
       unread: [],
     });
@@ -1214,7 +1235,7 @@ describe("the sources of a folder", () => {
     const untyped = [undefined, "A loaf at the till.\n"].map(
       (body) =>
         (() => ({
-          nodes: [{ ...till, body }],
+          pieces: [{ ...till, body }],
           problems: [],
           unread: [],
         })) as unknown as Source,
@@ -1227,7 +1248,7 @@ describe("the sources of a folder", () => {
       );
   });
 
-  it("throws, naming the source, when a source throws or gives something other than { nodes, problems, unread }", async () => {
+  it("throws, naming the source, when a source throws or gives something other than { pieces, problems, unread }", async () => {
     const root = await folderWithSlate();
     function plugins(): never {
       throw new Error("no plugins here");
@@ -1237,10 +1258,10 @@ describe("the sources of a folder", () => {
     ).rejects.toThrow("The source plugins threw: no plugins here");
     await expect(
       lintFolder(things, root, {
-        sources: [gives(till), () => ({ nodes: [till] }) as never],
+        sources: [gives(till), () => ({ pieces: [till] }) as never],
       }),
     ).rejects.toThrow(
-      /^The source number 2 gave something other than \{ nodes, problems, unread \}/,
+      /^The source number 2 gave something other than \{ pieces, problems, unread \}/,
     );
   });
 });
@@ -1591,243 +1612,391 @@ describe("the lint of abstract types", () => {
   });
 });
 
-describe("the lint of a described type", () => {
+describe("the merge of pieces into a node", () => {
+  const app = defineType({
+    name: "app",
+    description: "Software data lives in.",
+    fields: {},
+  });
   const capability = defineType({
     name: "capability",
-    description: "A thing the code can do.",
-    described: true,
-    fields: {},
+    description: "An outcome someone asks for.",
+    fields: {
+      title: z.string().regex(/\S/),
+      heldBy: oneOrNone(() => app),
+      touches: many(() => app),
+    },
   });
-  const tool = defineType({
-    name: "tool",
-    description: "A capability an agent calls.",
-    parents: [capability],
-    fields: {},
-  });
-  const plain = defineType({
-    name: "plain",
-    description: "A thing no note describes.",
-    fields: {},
+  const held = defineRule({
+    name: "held",
+    description: "A capability is held by an app.",
+    on: capability,
+    check: (node) =>
+      node.heldBy ? [] : [{ field: "/heldBy", message: "Held by no app." }],
   });
   const fabric = defineSchema({
     name: "fabric",
     description: "d",
-    types: { capability, tool, plain },
+    types: { app, capability },
     typeNotes,
+    rules: [held],
   });
-  const findFabric: Node = {
-    path: "code/fabric.ts",
+  const db = note("landl-db.md", { type: "app", description: "The record." });
+  // find-fabric, as warehouse's code gives it and as its note gives the rest.
+  const inCode: Piece = {
+    path: "code/warehouse.ts",
     name: "find-fabric",
-    fields: { type: "capability", description: "Finds fabric." },
+    fields: {
+      type: "capability",
+      description: "List or look up fabrics.",
+      title: "Find a fabric",
+      touches: ["landl-db"],
+    },
   };
-  const about = (path: string, describes: string) =>
-    note(path, {
-      type: "description",
-      description: "How it is used.",
-      describes: `[[${describes}]]`,
-    });
-  const noDescription = {
-    path: "code/fabric.ts",
-    rule: "basis/described",
-    message:
-      'No note of type description describes it: make one, with describes: "[[find-fabric]]".',
-  };
+  const asNote = note("find-fabric.md", {
+    type: "capability",
+    heldBy: "[[landl-db]]",
+  });
 
-  // A folder with the type notes of fabric, the type notes it is given, and the notes it is given.
-  async function folderOf(
-    typeNotes: Record<string, string>,
-    notes: Record<string, string> = {},
-  ) {
-    const root = await mkdtemp(join(tmpdir(), "basis-described-"));
+  it("gives no problem for a node whose pieces give each field once, each link in its own syntax", () => {
+    expect(lint(fabric, [db, inCode, asNote])).toEqual([]);
+  });
+
+  it("gives the node from every piece to a rule, and a report on a field is on the piece that gives it", () => {
+    const seen: unknown[] = [];
+    const looks = defineSchema({
+      name: "looks",
+      description: "d",
+      imports: [fabric],
+      types: {},
+      rules: [
+        defineRule({
+          name: "look",
+          description: "d",
+          on: capability,
+          check: (node) => {
+            seen.push(node);
+            return [
+              { field: "/title", message: "Seen." },
+              { field: "/heldBy", message: "Seen." },
+              { message: "Seen." },
+            ];
+          },
+        }),
+      ],
+    });
+    expect(lint(looks, [db, inCode, asNote])).toEqual([
+      {
+        path: "code/warehouse.ts",
+        rule: "looks/look",
+        field: "/title",
+        message: "Seen.",
+      },
+      {
+        path: "find-fabric.md",
+        rule: "looks/look",
+        field: "/heldBy",
+        message: "Seen.",
+      },
+      { path: "find-fabric.md", rule: "looks/look", message: "Seen." },
+    ]);
+    expect(seen).toEqual([
+      {
+        name: "find-fabric",
+        type: "capability",
+        description: "List or look up fabrics.",
+        title: "Find a fabric",
+        touches: ["landl-db"],
+        heldBy: "landl-db",
+      },
+    ]);
+  });
+
+  it("gives a field two pieces give a problem on each, naming the other", () => {
+    const copied = note("find-fabric.md", {
+      type: "capability",
+      title: "Find a fabric",
+      heldBy: "[[landl-db]]",
+    });
+    expect(lint(fabric, [db, inCode, copied])).toEqual([
+      {
+        path: "code/warehouse.ts",
+        rule: "basis/merge",
+        field: "/title",
+        message:
+          "Also given by find-fabric.md: each field comes from one piece. Remove it from all but one.",
+      },
+      {
+        path: "find-fabric.md",
+        rule: "basis/merge",
+        field: "/title",
+        message:
+          "Also given by code/warehouse.ts: each field comes from one piece. Remove it from all but one.",
+      },
+    ]);
+  });
+
+  it("gives a note whose code piece is gone the fields the code gave, as missing, on the note", () => {
+    expect(lint(fabric, [db, asNote])).toEqual([
+      {
+        path: "find-fabric.md",
+        rule: "basis/fields",
+        field: "/description",
+        message: "Missing: its type needs a string here.",
+      },
+      {
+        path: "find-fabric.md",
+        rule: "basis/fields",
+        field: "/title",
+        message: "Missing: its type needs a string here.",
+      },
+      {
+        path: "find-fabric.md",
+        rule: "basis/fields",
+        field: "/touches",
+        message: "Missing: its type needs a array here.",
+      },
+    ]);
+  });
+
+  it("puts a problem of a field on the piece that gives it, and one of no piece's field on the note, or with no note on the first piece", () => {
+    const wrongCode: Piece = {
+      ...inCode,
+      fields: { ...inCode.fields, title: " ", touches: ["nowhere"] },
+    };
+    const wrongNote = note("find-fabric.md", {
+      type: "capability",
+      heldBy: "[[nowhere]]",
+      colour: "blue",
+    });
+    expect(
+      lint(fabric, [db, wrongCode, wrongNote]).map((p) => [
+        p.path,
+        p.rule,
+        p.field,
+      ]),
+    ).toEqual([
+      ["code/warehouse.ts", "basis/fields", "/title"],
+      ["code/warehouse.ts", "basis/link", "/touches"],
+      ["find-fabric.md", "basis/fields", "/colour"],
+      ["find-fabric.md", "basis/link", "/heldBy"],
+    ]);
+    const second: Piece = {
+      path: "code/z-more.ts",
+      name: "find-fabric",
+      fields: { type: "capability", heldBy: "landl-db" },
+    };
+    const noTitle = Object.fromEntries(
+      Object.entries(inCode.fields).filter(([field]) => field !== "title"),
+    );
+    expect(lint(fabric, [second, { ...inCode, fields: noTitle }, db])).toEqual([
+      {
+        path: "code/warehouse.ts",
+        rule: "basis/fields",
+        field: "/title",
+        message: "Missing: its type needs a string here.",
+      },
+    ]);
+  });
+
+  it("reads each link in its own piece's syntax: a note's as a wikilink, a source's as a name", () => {
+    const bareInNote = note("find-fabric.md", {
+      type: "capability",
+      heldBy: "landl-db",
+    });
+    const wikiInCode: Piece = {
+      ...inCode,
+      fields: { ...inCode.fields, touches: ["[[landl-db]]"] },
+    };
+    expect(
+      lint(fabric, [db, inCode, bareInNote]).map((p) => [p.path, p.field]),
+    ).toEqual([["find-fabric.md", "/heldBy"]]);
+    expect(
+      lint(fabric, [db, wikiInCode, asNote]).map((p) => [p.path, p.field]),
+    ).toEqual([["code/warehouse.ts", "/touches/0"]]);
+  });
+
+  it("does not merge two pieces of one name from one source: a source gives each name once, and they share a name", async () => {
+    const twice: Piece[] = [
+      { ...inCode, source: "1" },
+      {
+        path: "code/other.ts",
+        name: "find-fabric",
+        source: "1",
+        fields: { type: "capability", heldBy: "landl-db" },
+      },
+    ];
+    expect(
+      lint(fabric, [db, ...twice])
+        .filter((p) => p.rule === "basis/unique-name")
+        .map((p) => p.path),
+    ).toEqual(["code/other.ts", "code/warehouse.ts"]);
+    const root = await mkdtemp(join(tmpdir(), "basis-twice-"));
     made.push(root);
     await mkdir(join(root, "types"));
-    const files = {
-      "types/capability.md":
-        '---\ntype: type\ndescription: "A thing the code can do."\ndescribed: true\n---\n',
-      "types/tool.md":
-        '---\ntype: type\ndescription: "A capability an agent calls."\ndescribed: true\n---\n',
-      "types/plain.md":
-        '---\ntype: type\ndescription: "A thing no note describes."\n---\n',
-      ...typeNotes,
-      ...notes,
-    };
-    for (const [path, text] of Object.entries(files))
-      await writeFile(join(root, path), text);
+    for (const [type, text] of [
+      ["app", "Software data lives in."],
+      ["capability", "An outcome someone asks for."],
+    ])
+      await writeFile(
+        join(root, "types", `${type}.md`),
+        `---\ntype: type\ndescription: "${text}"\n---\n`,
+      );
+    await writeFile(
+      join(root, "landl-db.md"),
+      '---\ntype: app\ndescription: "The record."\n---\n',
+    );
     const schema = defineSchema({
       ...fabric,
       typeNotes: pathToFileURL(join(root, "types/")),
     });
-    return { root, schema };
-  }
-  const gives =
-    (...nodes: Omit<Node, "body">[]): Source =>
-    () => ({ nodes, problems: [], unread: [] });
-  const aboutFile =
-    '---\ntype: description\ndescription: "How it is used."\ndescribes: "[[find-fabric]]"\n---\n';
-
-  it("gives a problem for a node of a described type that no note of type description describes", async () => {
-    expect(lint(fabric, [findFabric])).toEqual([noDescription]);
-    const { root, schema } = await folderOf({});
+    const given: Source = () => ({
+      pieces: twice.map(({ path, name, fields }) => ({ path, name, fields })),
+      problems: [],
+      unread: [],
+    });
     expect(
-      await lintFolder(schema, root, { sources: [gives(findFabric)] }),
-    ).toEqual([noDescription]);
+      (await lintFolder(schema, root, { sources: [given] }))
+        .filter((p) => p.rule === "basis/unique-name")
+        .map((p) => p.path),
+    ).toEqual(["code/other.ts", "code/warehouse.ts"]);
   });
 
-  it("gives no problem for a node of a described type that one note of type description describes, in a schema that imports nothing", async () => {
-    expect(fabric.imports).toEqual([]);
+  it("merges the pieces of several sources, with no note", () => {
+    const fromLandl: Piece = {
+      path: "landl/fabric.ts",
+      name: "find-fabric",
+      fields: { type: "capability", heldBy: "landl-db" },
+    };
+    expect(lint(fabric, [db, inCode, fromLandl])).toEqual([]);
+  });
+
+  it("does not merge two notes of one name, or pieces of two types: each is a node, and they share a name", () => {
+    const again = note("other/find-fabric.md", {
+      type: "capability",
+      heldBy: "[[landl-db]]",
+    });
     expect(
-      lint(fabric, [findFabric, about("find-fabric-note.md", "find-fabric")]),
-    ).toEqual([]);
-    const { root, schema } = await folderOf(
-      {},
-      { "find-fabric-note.md": aboutFile },
+      lint(fabric, [db, inCode, asNote, again])
+        .filter((p) => p.rule === "basis/unique-name")
+        .map((p) => p.path),
+    ).toEqual(["code/warehouse.ts", "find-fabric.md", "other/find-fabric.md"]);
+    const anApp: Piece = {
+      path: "code/apps.ts",
+      name: "find-fabric",
+      fields: { type: "app", description: "An app." },
+    };
+    expect(
+      lint(fabric, [db, inCode, asNote, anApp])
+        .filter((p) => p.rule === "basis/unique-name")
+        .map((p) => p.path),
+    ).toEqual(["code/apps.ts", "code/warehouse.ts", "find-fabric.md"]);
+  });
+
+  it("keeps a field named __proto__ as a field: the world stays closed", () => {
+    const proto = note("find-fabric.md", {
+      type: "capability",
+      heldBy: "[[landl-db]]",
+    });
+    Object.defineProperty(proto.fields, "__proto__", {
+      value: "x",
+      enumerable: true,
+    });
+    expect(
+      lint(fabric, [db, inCode, proto]).map((p) => [p.path, p.rule, p.field]),
+    ).toEqual([["find-fabric.md", "basis/fields", "/__proto__"]]);
+  });
+
+  it("counts a note it could not read as a second note of a name, and another thing it could not read as no duplicate", () => {
+    const unread = (note?: true) => [
+      { path: "find-fabric.md", name: "find-fabric", ...(note && { note }) },
+    ];
+    // A source's piece, and a note that could not be read: the note may be its other piece.
+    const names = (problems: readonly { rule?: string }[]) =>
+      problems.filter((p) => p.rule === "basis/unique-name");
+    expect(names(lint(fabric, [db, inCode], unread(true)))).toEqual([]);
+    // A note, and a note that could not be read: two notes of one name.
+    const other = { ...asNote, path: "other/find-fabric.md" };
+    expect(
+      lint(fabric, [db, inCode, other], unread(true)).map((p) => p.rule),
+    ).toEqual(["basis/unique-name"]);
+    // A note, and a thing a source could not read: it may be the code's piece.
+    expect(lint(fabric, [db, inCode, asNote], unread())).toEqual([]);
+  });
+
+  it("gives the same problems, in the same order, whatever the order of the pieces", () => {
+    // Pieces of three names, each of whose fields one or more pieces give, some of them wrong.
+    const pieceOf = fc.record({
+      name: fc.constantFrom("find-fabric", "find-company", "landl-db"),
+      note: fc.boolean(),
+      at: fc.constantFrom("a", "b", "c"),
+      type: fc.constantFrom("capability", "app"),
+      fields: fc.dictionary(
+        fc.constantFrom("description", "title", "heldBy", "touches", "colour"),
+        fc.constantFrom<unknown>(
+          "d",
+          " ",
+          "landl-db",
+          "[[landl-db]]",
+          ["landl-db"],
+          ["[[landl-db]]"],
+          [],
+        ),
+      ),
+    });
+    const toPiece = (p: {
+      name: string;
+      note: boolean;
+      at: string;
+      type: string;
+      fields: Record<string, unknown>;
+    }): Piece => ({
+      path: p.note ? `${p.at}/${p.name}.md` : `code/${p.at}.ts`,
+      name: p.name,
+      fields: { ...p.fields, type: p.type },
+      ...(p.note && { body: "" }),
+    });
+    fc.assert(
+      fc.property(
+        fc.array(pieceOf, { maxLength: 8 }).map((ps) => ps.map(toPiece)),
+        fc.func(fc.integer()),
+        (pieces, rank) => {
+          const shuffled = pieces
+            .map((piece, i) => ({ piece, k: rank(i) }))
+            .sort((x, y) => x.k - y.k)
+            .map(({ piece }) => piece);
+          expect(lint(fabric, shuffled)).toEqual(lint(fabric, pieces));
+        },
+      ),
     );
-    expect(
-      await lintFolder(schema, root, { sources: [gives(findFabric)] }),
-    ).toEqual([]);
   });
 
-  it("gives each of two notes that describe one node a problem of its key", () => {
-    expect(
-      lint(fabric, [
-        findFabric,
-        about("a.md", "find-fabric"),
-        about("b.md", "find-fabric"),
-      ]),
-    ).toEqual([
-      {
-        path: "a.md",
-        rule: "basis/key",
-        field: "/describes",
-        message:
-          'The key describes "find-fabric" of the type description is also the key of b.md.',
-      },
-      {
-        path: "b.md",
-        rule: "basis/key",
-        field: "/describes",
-        message:
-          'The key describes "find-fabric" of the type description is also the key of a.md.',
-      },
-    ]);
-  });
-
-  it("gives a problem for a note of a described type, or of a type that inherits one: its node comes from a source", () => {
-    const asNote = note("find-fabric.md", {
-      type: "tool",
-      description: "Finds fabric.",
-    });
-    expect(
-      lint(fabric, [asNote, about("find-fabric-note.md", "find-fabric")]),
-    ).toEqual([
-      {
-        path: "find-fabric.md",
-        rule: "basis/described",
-        field: "/type",
-        message:
-          "A note of the type tool, which is described: a node of it comes from a source, and a note of type description describes it.",
-      },
-    ]);
-  });
-
-  it("gives a problem for a note of type description that describes a node of a type that is not described", () => {
-    const thing: Node = {
-      path: "code/fabric.ts",
-      name: "thing",
-      fields: { type: "plain", description: "A thing." },
-    };
-    expect(lint(fabric, [thing, about("thing-note.md", "thing")])).toEqual([
-      {
-        path: "thing-note.md",
-        rule: "basis/describes",
-        field: "/describes",
-        message:
-          "It describes thing, a plain, which is not described: a note of type description describes a node of a described type.",
-      },
-    ]);
-  });
-
-  it("gives a node of an abstract described type only the problem of its abstract type", () => {
-    const power = defineType({
-      name: "power",
-      description: "What a capability gives.",
-      abstract: true,
-      described: true,
-      fields: {},
-    });
-    const powers = defineSchema({
-      name: "powers",
-      description: "d",
-      types: { power },
-      typeNotes,
-    });
-    const flight: Node = {
-      path: "code/power.ts",
-      name: "flight",
-      fields: { type: "power", description: "Flies." },
-    };
-    expect(lint(powers, [flight])).toEqual([
-      {
-        path: "code/power.ts",
-        rule: "basis/type",
-        field: "/type",
-        message:
-          "The type power is abstract: a node is of a type that inherits it.",
-      },
-    ]);
-  });
-
-  it("gives a note of type description that links to no node only the problem of its link", () => {
-    expect(lint(fabric, [about("lost-note.md", "nowhere")])).toEqual([
-      {
-        path: "lost-note.md",
-        rule: "basis/link",
-        field: "/describes",
-        message: "It points at nowhere, which is not a node.",
-      },
-    ]);
-  });
-
-  it("gives a problem for a type note whose described is not its type's: a type that inherits a described type is described", async () => {
-    const { root, schema } = await folderOf({
-      "types/tool.md":
-        '---\ntype: type\ndescription: "A capability an agent calls."\n---\n',
-      "types/plain.md":
-        '---\ntype: type\ndescription: "A thing no note describes."\ndescribed: true\n---\n',
-    });
-    expect(await lintFolder(schema, root)).toEqual([
-      {
-        path: "types/plain.md",
-        rule: "basis/type-note-agrees",
-        field: "/described",
-        message:
-          "True, and the type plain of fabric is not described: remove it.",
-      },
-      {
-        path: "types/tool.md",
-        rule: "basis/type-note-agrees",
-        field: "/described",
-        message:
-          "Missing: the type tool of fabric is described, so add described: true.",
-      },
-    ]);
-  });
-
-  it("throws, naming the source, for a node of type description: a description is a note, in the folder linted", async () => {
-    const { root, schema } = await folderOf({});
-    const aboutNode = {
-      path: "code/about.ts",
-      name: "about",
-      fields: {
-        type: "description",
-        description: "How it is used.",
-        describes: "find-fabric",
-      },
-    };
-    await expect(
-      lintFolder(schema, root, { sources: [gives(findFabric, aboutNode)] }),
-    ).rejects.toThrow(
-      "The source number 1 gave about, of type description: a description is a note, in the folder linted.",
+  it("gives every field two pieces give a problem on each piece, and only those", () => {
+    const fieldsOf = fc.dictionary(
+      fc.constantFrom("description", "title", "heldBy", "touches"),
+      fc.constant("x"),
+    );
+    fc.assert(
+      fc.property(fc.array(fieldsOf, { minLength: 1, maxLength: 4 }), (all) => {
+        const pieces: Piece[] = all.map((fields, i) => ({
+          path: `code/${i}.ts`,
+          name: "find-fabric",
+          fields: { ...fields, type: "capability" },
+        }));
+        const expected = all.flatMap((fields, i) =>
+          Object.keys(fields)
+            .filter((field) =>
+              all.some((other, j) => j !== i && Object.hasOwn(other, field)),
+            )
+            .map((field) => `code/${i}.ts /${field}`),
+        );
+        expect(
+          lint(fabric, pieces)
+            .filter((p) => p.rule === "basis/merge")
+            .map((p) => `${p.path} ${p.field}`)
+            .sort(),
+        ).toEqual(expected.sort());
+      }),
     );
   });
 });

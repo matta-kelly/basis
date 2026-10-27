@@ -36,10 +36,10 @@ Code defines, markdown describes, and the lint checks that they agree.
 	- a thing that is only written, such as an issue or a decision, has its note as its one form. The note is its node, and its frontmatter holds its fields
 	- a thing that lives in code, such as a plugin, gives a piece of its node from code, by a source. Its note, of the same name, is another piece of the same node: the note gives the prose, and the facts the code does not hold. The lint merges the pieces into one node ([[#Primitives]], merge)
 - one fact, one place: each field of a node comes from one piece, in code or in a note. A field that two pieces give is a problem. A copy that is kept on purpose, such as a type note's description, is checked to be the same
-- source: where nodes come from. The notes of a folder are basis's own source. A config can name more, each a function that gives nodes, such as a package's reader of its things in code. basis reads no code itself: the package that knows a thing's shape reads it
-	- a source gives `{ nodes, problems, unread }`, as the loader gives a folder. A source of a config gives nodes, not notes: every note is the loader's, read from the folder that holds it. Each path is from the folder linted, and is not a note's path. A link is the name of the node it points at. Its problems are only what it cannot read (`fatal`): a check of what it read is a rule
-	- it gives no node of type `type`: a type note is a note, in the folder its schema declares
-	- a source that throws, or gives another shape, is at fault, not a node: the lint throws, naming it
+- source: where pieces come from. The notes of a folder are basis's own source. A config can name more, each a function that gives pieces, such as a package's reader of its things in code. basis reads no code itself: the package that knows a thing's shape reads it
+	- a source gives `{ pieces, problems, unread }`, as the loader gives a folder. A source of a config gives pieces, not notes: every note is the loader's, read from the folder that holds it. Each path is from the folder linted, and is not a note's path. A link is the name of the node it points at. Its problems are only what it cannot read (`fatal`): a check of what it read is a rule
+	- it gives no piece of type `type`: a type note is a note, in the folder its schema declares
+	- a source that throws, or gives another shape, is at fault, not a piece: the lint throws, naming it
 - one graph, one linter: every node, from every source, goes into one graph, and is checked against its type, each link against the type it points at, and the rules of each schema. A node is of a type the schema sees, whatever its source: the world stays closed
 - type note: the documentation of a type, as a docstring is the documentation of a function
 	- one per type, of type `type`, with the type's name as its file name. `type` is built into basis, and every schema sees it without an import
@@ -54,14 +54,15 @@ Code defines, markdown describes, and the lint checks that they agree.
 
 - the vocabulary: what a subgraph is made of. Each one is in `src/primitives.ts`, and this section says what it means
 	- **node**: one actual thing, made of one or more pieces
-		- every node has what PG-Schema gives every node: an identity, its `name`, which no two nodes share (a note's is its file name); a label, its `type`, the name of its type; and a property, its `description`
+		- every node has what PG-Schema gives every node: an identity, its `name`, a slug as the open standards take one (lowercase letters and digits, with single hyphens between them), which no two nodes share (a note's is its file name); a label, its `type`, the name of its type; and a property, its `description`
 		- in code these are the fields of `node`, the abstract parent of every type, which every type inherits unlisted
 	- **piece**: what one source gives of a node: a note, whose frontmatter holds its fields, or a piece a source gives. Each piece has the node's name, names the node's type, and gives some of its fields
 	- **merge**: the pieces of one name are one node, as the Nix module system merges the definitions of an option, and GraphQL federation merges the fields of an entity from its subgraphs
-		- the pieces of a name all name one type, and at most one of them is a note. Otherwise they are not one node: each piece is a node of its own, and they share a name (`basis/unique-name`)
+		- the pieces of a name all name one type, and each comes from another source: a source gives each name once, as a folder holds one note of a name. Otherwise they are not one node: each piece is a node of its own, and they share a name (`basis/unique-name`)
 		- each field comes from one piece. A field that two pieces give is a problem on each of them, which names the other (`basis/merge`). No piece overrides another, and none has a priority: one fact, one place
 		- the node is its fields, from every piece, checked against its type as one. A field its type needs and no piece gives is missing. So a note whose code piece is gone has a problem: the fields the code gave are missing
-		- the order of the pieces does not change the node, or its problems
+		- the order of the pieces does not change the node, or its problems, or their order
+		- a thing a source found and could not read may be a piece of the node of its name, so it is no second node. A note the loader could not read, beside a node with a note of its name, is a second note of that name (`basis/unique-name`)
 		- each piece writes its links in its own syntax: a note `"[[name]]"`, a source the name
 		- a problem of a field is on the piece that gives the field. A problem of the whole node is on its note, or, with no note, on its first piece by path
 	- **type**: a kind of node, with its fields beside those every node has. Made with `defineType`
@@ -102,12 +103,12 @@ Code defines, markdown describes, and the lint checks that they agree.
 
 ## Lint
 
-- a linter checks definitions against rules without running anything. In: nodes. Out: a list of problems. It changes nothing
+- a linter checks definitions against rules without running anything. In: pieces, merged into nodes. Out: a list of problems. It changes nothing
 - its rules come in layers, each one on the one before
 	- shape: the source can read the thing: for a note, the file parses and the frontmatter is valid YAML
+	- merge: the pieces of one name are one node, and no two of them give one field (`basis/merge`)
 	- schema: the node has a type the schema sees, not an abstract one, and its fields match the type (zod) (`basis/type`, `basis/fields`). Its name is a slug, and not one of its fields (`basis/name`)
 	- reference: each link resolves, to a thing of the right type (`basis/link`)
-	- merge: the pieces of one name are one node, and no two of them give one field (`basis/merge`)
 	- identity: no two nodes share a name (`basis/unique-name`), and no two nodes of a type share a key (`basis/key`)
 	- graph: no cycles, one owner per name, imports only down. `defineSchema` refuses these when a schema is built, before any node is read
 	- type notes: for each schema the lint sees, each type it owns has its type note in the folder it declares (`basis/type-note`), with the type's description and abstract (`basis/type-note-agrees`), and each type note there explains one of its types (`basis/type-note-type`). Each type note in the folder linted is in the folder of a schema the lint sees (`basis/type-note-folder`). `lintFolder` and the CLI read each folder from disk, by its URL, also when it is outside the folder linted, and compare folders by their real paths. A type note outside the folder linted is also checked as a note of type `type`. The in-memory `lint` reads no folder
@@ -130,7 +131,7 @@ Code defines, markdown describes, and the lint checks that they agree.
 - parse, don't validate (Alexis King): zod turns raw fields into a typed value. After the lint passes, code downstream trusts the shape
 - one linter, not one per subgraph: separate linters drift, and none can check an edge that crosses subgraphs. A subgraph brings its rules to it, as it brings its types
 - front ends call the core (`lint`, `lintFolder`)
-	- the CLI, `basis lint [folder]`, for a person, a hook and CI. It reads `basis.config.ts` (or `.js`) at the root of the folder: the schema, the paths to skip, and the sources of nodes beside the folder's notes. It gives each problem by its path from where it runs, and exits 0 when every node fits, 1 when one does not, and 2 when it cannot check. A `.ts` config needs Node 22.18 or later, which strips types
+	- the CLI, `basis lint [folder]`, for a person, a hook and CI. It reads `basis.config.ts` (or `.js`) at the root of the folder: the schema, the paths to skip, and the sources of pieces beside the folder's notes. It gives each problem by its path from where it runs, and exits 0 when every node fits, 1 when one does not, and 2 when it cannot check. A `.ts` config needs Node 22.18 or later, which strips types
 	- not in the code yet: an Obsidian plugin on save
 
 ## Foundation
@@ -152,6 +153,6 @@ Code defines, markdown describes, and the lint checks that they agree.
 	- `defineSchema` is also the compiler: a schema and its imports become one ontology. It refuses cycles, two schemas of one name, a schema named `basis` that is not the built-in one, two owners of one type name, a schema that holds a type of its own and declares no folder of type notes (`typeNotes`), two schemas it sees that declare one folder, a rule on a type it does not see, and two owners of one rule name
 	- what makes basis more than a zod wrapper: where schemas become one graph
 	- prior art: NixOS module merging
-2. loader: basis's own source. A folder in, notes out, each a node (path, name, fields) with its body. A `skip` option leaves out the paths that are not notes, such as a README or code
-3. lint: a schema and the pieces in, problems out: the pieces merged into nodes, then the rule layers, the rules of each schema it sees last. A folder's lint (`lintFolder`) reads the folder's notes and the nodes of each source it is given, and checks the type notes against the types
+2. loader: basis's own source. A folder in, notes out, each a piece of a node (path, name, fields) with its body. A `skip` option leaves out the paths that are not notes, such as a README or code
+3. lint: a schema and the pieces in, problems out: the pieces merged into nodes, then the rule layers, the rules of each schema it sees last. A folder's lint (`lintFolder`) reads the folder's notes and the pieces of each source it is given, and checks the type notes against the types
 4. cli: `basis lint [folder]`, the lint run on a folder with the schema, skip and sources of its config. The one command a person, a hook and a pipeline run

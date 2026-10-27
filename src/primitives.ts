@@ -1,7 +1,7 @@
 /**
  * The primitives as code: a type, a link, and a schema that holds them.
- * A node is one thing of a type, from a source: a note, whose frontmatter holds its fields and whose file name is its
- * name, or a node a source gives.
+ * A node is one thing of a type, made of pieces: a note, whose frontmatter holds its fields and whose file name is its
+ * name, and the pieces sources give. The lint merges the pieces of one name into one node.
  * The world is closed: a node carries the fields of its type, its properties and the links
  * that start from it, and nothing else.
  */
@@ -10,9 +10,10 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as z from "zod";
 
-// A name's schema, new each time: each link is made of schemas of its own.
+// A name's schema, new each time: each link is made of schemas of its own. A slug as the open standards take one
+// (Agent Plugins, Agent Skills): lowercase letters and digits, with single hyphens between them.
 const nameOf = () =>
-  z.string().regex(/^[a-z][a-z0-9-]*$/, "Not a lowercase slug.");
+  z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Not a lowercase slug.");
 
 /** A node is named by a short slug, so one node can point at another by name. */
 export const Name = nameOf();
@@ -38,7 +39,7 @@ const isPrototypeName = (field: string) =>
 const wikilinkOf = () =>
   z
     .string()
-    .regex(/^\[\[[a-z][a-z0-9-]*\]\]$/, 'Not a wikilink, "[[name]]".')
+    .regex(/^\[\[[a-z0-9]+(?:-[a-z0-9]+)*\]\]$/, 'Not a wikilink, "[[name]]".')
     .transform((link) => link.slice(2, -2));
 
 /** One link as a note writes it, to read one value by. Not a part of a link: each link is made of schemas of its own. */
@@ -81,11 +82,6 @@ export type Type = {
   schema: z.ZodObject;
   /** No node is of it (PG-Schema's ABSTRACT, GraphQL's interface): its nodes are of the types that inherit it. */
   abstract?: boolean;
-  /**
-   * Each node of it comes from a source, and one note of type description describes it. A type that inherits it, or
-   * extends it, is described too.
-   */
-  described?: boolean;
   /** The types it inherits (PG-Schema's &): their fields and keys are its own. Every type inherits node, unlisted. */
   parents?: readonly Type[];
   /** The type it extends (GraphQL's extend type): the same type, under its name, with more fields. */
@@ -144,8 +140,7 @@ const ownFields = new WeakMap<Type, readonly string[]>();
 
 /**
  * A kind of node, and the fields its nodes carry beside those every node has: its parents' and its own. An abstract
- * type has no nodes; the types that inherit it do. A described type, or one whose parent is, has its nodes from a
- * source, each with a note that describes it. The schema that holds it checks it.
+ * type has no nodes; the types that inherit it do. The schema that holds it checks it.
  */
 export function defineType<
   const N extends string,
@@ -156,7 +151,6 @@ export function defineType<
   name: N;
   description: string;
   abstract?: boolean;
-  described?: boolean;
   parents?: P;
   fields: F;
   key?: K;
@@ -169,8 +163,6 @@ export function defineType<
     name: type.name,
     description: type.description,
     abstract: type.abstract === true,
-    described:
-      type.described === true || parents.some((parent) => parent.described),
     parents,
     // The fields every node has first, then the parents', then its own. Spread before the fields, the literal keeps
     // its type. A field a parent has, or named type, is refused by the schema that holds the type.
@@ -190,7 +182,7 @@ export function defineType<
 /**
  * A type that extends another, as GraphQL's extend type: the same type, under its name and description, with its
  * fields and more, in a schema that imports it. Its zod schema is the extended type's, extended. It is abstract when
- * that type is, described when that type is, and has its parents. The schema that holds it checks it.
+ * that type is, and has its parents. The schema that holds it checks it.
  * The extended type's shape and config are inferred from its schema, so the extension's schema is zod's own type for
  * it. It has the extended type's key. When that type has none, it can add one, over its own fields and that type's.
  */
@@ -217,7 +209,6 @@ export function extendType<
     name,
     description: original.description,
     abstract: original.abstract === true,
-    described: original.described === true,
     parents: original.parents ?? Object.freeze([]),
     extends: original,
     schema: schema.extend(fields),
@@ -982,34 +973,16 @@ export const type = defineType({
       .describe(
         "true when the type is abstract: no note is of it, only of the types that inherit it",
       ),
-    described: z
-      .literal(true)
-      .optional()
-      .describe(
-        "true when the type is described: each node of it comes from a source, and one note of type description describes it",
-      ),
   },
 });
 
-/**
- * The type of a description: the note that explains one node a source gives, as a type note explains a type. It is
- * basis's own, as type is, so every schema sees it. Its key is the node it describes: one note for each node.
- */
-export const description = defineType({
-  name: "description",
-  description:
-    "A note that explains one node a source gives: what it is, why, and when to use it. It links to the node, and does not repeat a fact of it.",
-  fields: { describes: one(() => node) },
-  key: ["describes"],
-});
-
-const builtInTypes = { node, type, description };
+const builtInTypes = { node, type };
 
 /** The built-in schema: the types every schema sees without an import. */
 export const basis = defineSchema({
   name: "basis",
   description:
-    "The types basis gives every schema: node, the parent of every type, type, the type of a type note, and description, the type of the note that explains a node a source gives.",
+    "The types basis gives every schema: node, the parent of every type, and type, the type of a type note.",
   types: builtInTypes,
   typeNotes: new URL("../types/", import.meta.url),
 });

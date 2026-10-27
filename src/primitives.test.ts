@@ -13,7 +13,6 @@ import {
   basis,
   defineSchema,
   defineType,
-  description,
   extendType,
   linksOf,
   many,
@@ -1252,7 +1251,7 @@ describe("the built-in type type", () => {
   it("is a type of the built-in schema basis, with node", () => {
     expect(basis.name).toBe("basis");
     expect(basis.imports).toEqual([]);
-    expect(basis.types).toEqual({ node, type, description });
+    expect(basis.types).toEqual({ node, type });
   });
 
   it("declares basis's types folder as the folder of its type notes", () => {
@@ -1316,85 +1315,5 @@ describe("the built-in type type", () => {
         typeNotes,
       }),
     ).toThrow(/The type type of p has the name of a type of basis/);
-  });
-});
-
-describe("a described type", () => {
-  const capability = defineType({
-    name: "capability",
-    description: "A thing the code can do.",
-    described: true,
-    fields: {},
-  });
-  const tool = defineType({
-    name: "tool",
-    description: "A capability an agent calls.",
-    parents: [capability],
-    fields: {},
-  });
-
-  it("is described, and so is a type that inherits it or extends it: abstract does not pass to a type that inherits it", () => {
-    expect(capability.described).toBe(true);
-    expect(tool.described).toBe(true);
-    expect(extendType(capability, { fields: {} }).described).toBe(true);
-    expect(source.described).toBe(false);
-  });
-});
-
-describe("the built-in type description", () => {
-  const about = {
-    name: "find-fabric-note",
-    type: "description",
-    description: "How find-fabric is used.",
-    describes: "find-fabric",
-  };
-
-  it("is not described, and is keyed by its one link, to the node it describes", () => {
-    expect(description.described).toBe(false);
-    expect(description.key).toEqual(["describes"]);
-    expect(linksOf(description)).toEqual([
-      expect.objectContaining({
-        name: "describes",
-        cardinality: "one",
-        optional: false,
-      }),
-    ]);
-    expect(linksOf(description)[0]?.to()).toEqual([node]);
-    expect(basis.parse("description", about)).toEqual(about);
-    expect(() =>
-      basis.parse("description", without(about, "describes")),
-    ).toThrow(/describes/);
-  });
-
-  it("is seen by a schema that imports nothing: a link can point at it", () => {
-    const about = defineType({
-      name: "about",
-      description: "d",
-      fields: { explains: one(() => description) },
-    });
-    expect(() =>
-      defineSchema({
-        name: "p",
-        description: "d",
-        types: { about },
-        typeNotes,
-      }),
-    ).not.toThrow();
-  });
-
-  it("is taken by a type note as described: true, and only as true", () => {
-    const typeNote = {
-      name: "capability",
-      type: "type",
-      description: "A thing the code can do.",
-    };
-    expect(basis.parse("type", { ...typeNote, described: true })).toEqual({
-      ...typeNote,
-      described: true,
-    });
-    for (const described of [false, "true", null])
-      expect(() => basis.parse("type", { ...typeNote, described })).toThrow(
-        /described/,
-      );
   });
 });

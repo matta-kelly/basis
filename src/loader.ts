@@ -3,31 +3,36 @@ import { basename, join } from "node:path";
 import { parseDocument } from "yaml";
 
 /**
- * The loader: basis's own source. Notes in, as text, and each one out as a node. It reads, and judges nothing a
+ * The loader: basis's own source. Notes in, as text, and each one out as a piece of a node. It reads, and judges nothing a
  * schema says; that is the lint's work.
  */
 
-/** One node, as the lint takes it from a source: where it is, its name, its fields, as read, and a note's body. */
-export type Node = {
+/**
+ * One piece of a node, as the lint takes it from a source: where it is, the name of its node, the fields it gives, as
+ * read, and a note's body. The lint merges the pieces of one name into one node.
+ */
+export type Piece = {
   /** From the folder its source reads, with `/` between parts: for a lint, the folder linted. */
   path: string;
-  /** Its identity: no two nodes share one. */
+  /** The name of its node: its identity. */
   name: string;
   /** Its fields, as read. The lint parses them by its type. */
   fields: Record<string, unknown>;
   /** Its body, if it is a note: a note writes each link "[[name]]". */
   body?: string;
+  /** The source that gave it, when the lint knows it: one source gives each name once. The loader's are notes. */
+  source?: string;
 };
 
-/** One note: a node whose name is its file name, without `.md`, and whose fields are its frontmatter, with its body. */
-export type Note = Node & { body: string };
+/** One note: a piece whose name is its file name, without `.md`, and whose fields are its frontmatter, with its body. */
+export type Note = Piece & { body: string };
 
 /**
- * What a source gives: the nodes it read, in path order, a problem for each thing it could not read, and each thing
+ * What a source gives: the pieces it read, in path order, a problem for each thing it could not read, and each thing
  * it found and could not read, by its path and name. A link to one of those is not a problem: it has its own.
  */
-export type Loaded<N extends Node = Node> = {
-  nodes: readonly N[];
+export type Loaded<N extends Piece = Piece> = {
+  pieces: readonly N[];
   problems: readonly Problem[];
   unread: readonly { path: string; name: string }[];
 };
@@ -145,7 +150,7 @@ async function notePaths(
   return { paths, skipped };
 }
 
-/** Orders nodes and problems by path. The loader and the lint use it, so their orders agree. */
+/** Orders pieces and problems by path. The loader and the lint use it, so their orders agree. */
 export const byPath = (a: { path: string }, b: { path: string }) =>
   a.path < b.path ? -1 : Number(a.path > b.path);
 
@@ -158,7 +163,7 @@ export async function loadFolder(
   { skip }: FolderOptions = {},
 ): Promise<Loaded<Note>> {
   const { paths, skipped } = await notePaths(folder, skip);
-  const nodes: Note[] = [];
+  const pieces: Note[] = [];
   const problems = [...skipped];
   // The notes found and not read: the files, not a link or a folder.
   const unread: { path: string; name: string }[] = [];
@@ -178,14 +183,14 @@ export async function loadFolder(
       continue;
     }
     const read = readNote(path, text);
-    if (read.ok) nodes.push(read.note);
+    if (read.ok) pieces.push(read.note);
     else {
       problems.push(read.problem);
       notRead(path);
     }
   }
   return {
-    nodes: nodes.sort(byPath),
+    pieces: pieces.sort(byPath),
     problems: problems.sort(byPath),
     unread: unread.sort(byPath),
   };

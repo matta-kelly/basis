@@ -63,12 +63,6 @@ const grain = defineType({
   abstract: true,
   fields: {},
 });
-const woven = defineType({
-  name: "woven",
-  description: "d",
-  described: true,
-  fields: {},
-});
 const inRecord = defineRule({
   name: "in-record",
   description: "An object lives in at least one source of record.",
@@ -82,7 +76,7 @@ const shop = defineSchema({
   name: "shop",
   description: "things, with a keyed type, an abstract type and a rule.",
   imports: [things],
-  types: { stamp, grain, woven },
+  types: { stamp, grain },
   typeNotes: new URL("../fixtures/types/shop/", import.meta.url),
   rules: [inRecord],
 });
@@ -106,13 +100,14 @@ const notes = [
   note("two.md", { type: "stamp", description: "d", code: "x" }),
   note("slashed.md", { ...loaf, key: "j", "a/b~c": 1 }),
   note("bare.md", { type: "source", role: "record" }),
-  note("cloth.md", { type: "woven", description: "d" }),
-  note("about.md", {
-    type: "description",
-    description: "d",
-    describes: "[[ledger]]",
-  }),
 ];
+
+// A piece from code of the node bare, which gives the field its note gives too.
+const bareInCode = {
+  path: "code/bare.ts",
+  name: "bare",
+  fields: { type: "source", role: "record" },
+};
 
 /** A folder with a symbolic link, a file that cannot be read, and a folder that cannot be read. */
 async function unreadable(): Promise<Problem[]> {
@@ -135,7 +130,7 @@ async function unreadable(): Promise<Problem[]> {
 async function everyProblem(): Promise<Problem[]> {
   return [
     ...(await unreadable()),
-    ...lint(shop, notes),
+    ...lint(shop, [...notes, bareInCode]),
     ...(await lintFolder(kitchen, fixture("types"))),
     ...(await lintFolder(things, fixture("loader"))),
     ...(await lintFolder(things, fixture("lint"))),
@@ -385,6 +380,7 @@ describe("basis's rules", () => {
     expect(coreIds).toEqual([
       "basis/name",
       "basis/unique-name",
+      "basis/merge",
       "basis/type",
       "basis/fields",
       "basis/link",
@@ -393,8 +389,6 @@ describe("basis's rules", () => {
       "basis/type-note-agrees",
       "basis/type-note-type",
       "basis/type-note-folder",
-      "basis/described",
-      "basis/describes",
     ]);
     for (const rule of coreRules) expect(rule.description).not.toBe("");
     expect(Object.isFrozen(coreRules)).toBe(true);

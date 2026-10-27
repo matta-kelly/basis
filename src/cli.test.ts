@@ -124,9 +124,9 @@ describe("basis lint", () => {
     expect((await cli(["lint"], root)).code).toBe(0);
   });
 
-  it("lints the nodes of each source its config names, with the folder's notes", async () => {
+  it("lints the pieces of each source its config names, with the folder's notes", async () => {
     // A node of code that links to the note slate, and one that does not fit its type.
-    const sources = `[() => ({ nodes: [{ path: "code/loaf.ts", name: "loaf", fields: { type: "object", description: "A bake.", key: "k", states: ["drafted"], livesIn: ["slate"] } }, { path: "code/oven.ts", name: "oven", fields: { type: "source" } }], problems: [], unread: [] })]`;
+    const sources = `[() => ({ pieces: [{ path: "code/loaf.ts", name: "loaf", fields: { type: "object", description: "A bake.", key: "k", states: ["drafted"], livesIn: ["slate"] } }, { path: "code/oven.ts", name: "oven", fields: { type: "source" } }], problems: [], unread: [] })]`;
     const root = await folderOf({
       "basis.config.ts": `import things from ${JSON.stringify(things)};\nexport default { schema: things, sources: ${sources} };\n`,
       "slate.md": slate,

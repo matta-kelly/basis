@@ -4,7 +4,6 @@ export {
   defineRule,
   defineSchema,
   defineType,
-  description,
   extendType,
   linksOf,
   many,
@@ -29,7 +28,7 @@ export {
   readNote,
   type FolderOptions,
   type Loaded,
-  type Node,
+  type Piece,
   type Note,
   type Problem,
   type Read,
@@ -41,5 +40,6 @@ export {
   pointer,
   type LintOptions,
   type Source,
+  type Unread,
 } from "./lint.ts";
 export { configNames, run, type Config, type Out } from "./cli.ts";

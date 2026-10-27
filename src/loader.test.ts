@@ -135,7 +135,11 @@ describe("a folder", () => {
       skipped.push(path);
       return ["README.md", "code", "linked.md"].includes(path);
     };
-    const { nodes, problems, unread } = await loadFolder(root, { skip });
+    const {
+      pieces: nodes,
+      problems,
+      unread,
+    } = await loadFolder(root, { skip });
     expect(nodes.map((note) => note.path)).toEqual(["a.md", "nodes/c.md"]);
     expect(problems).toEqual([]);
     expect(unread).toEqual([]);
@@ -145,7 +149,7 @@ describe("a folder", () => {
   });
 
   it("is read into its nodes and the problems of the nodes it cannot read, in path order, and names those nodes", async () => {
-    const { nodes, problems, unread } = await loadFolder(folder);
+    const { pieces: nodes, problems, unread } = await loadFolder(folder);
     expect(nodes.map((note) => note.path)).toEqual([
       "empty.md",
       "loaf.md",
@@ -165,7 +169,7 @@ describe("a folder", () => {
   });
 
   it("gives each note its frontmatter as its fields, as the file has it", async () => {
-    const { nodes } = await loadFolder(folder);
+    const { pieces: nodes } = await loadFolder(folder);
     expect(nodes.find((note) => note.name === "loaf")).toEqual({
       path: "loaf.md",
       name: "loaf",
@@ -189,7 +193,7 @@ describe("a folder", () => {
       ["a.md", ""],
       ["b.md", ""],
     ]);
-    const { nodes } = await loadFolder(root);
+    const { pieces: nodes } = await loadFolder(root);
     expect(nodes.map((note) => note.path)).toEqual([
       "a.md",
       "a/z.md",
@@ -210,7 +214,7 @@ describe("a folder", () => {
     await lock(join(root, "lockeddir.md"));
     await symlink(join(root, "a.md"), join(root, "linked.md"));
     await symlink(join(root, "real"), join(root, "linkdir"));
-    const { nodes, problems, unread } = await loadFolder(root);
+    const { pieces: nodes, problems, unread } = await loadFolder(root);
     expect(nodes.map((note) => note.path)).toEqual(["a.md", "real/r.md"]);
     // A symbolic link and a folder are not nodes the loader could not read.
     expect(unread).toEqual([
