@@ -1317,3 +1317,29 @@ describe("the built-in type type", () => {
     ).toThrow(/The type type of p has the name of a type of basis/);
   });
 });
+
+describe("a link's own message", () => {
+  it("is on the link's record, and absent when the link gives none", () => {
+    const message = () => "No such source.";
+    const t = defineType({
+      name: "t",
+      description: "d",
+      fields: {
+        at: one(() => source, { message }),
+        from: manyOrNone(() => source),
+      },
+    });
+    expect(linksOf(t).map((link) => [link.name, link.message])).toEqual([
+      ["at", message],
+      ["from", undefined],
+    ]);
+    expect(Object.hasOwn(linksOf(t)[1] ?? {}, "message")).toBe(false);
+  });
+
+  it("is a function: a link kind refuses any other message", () => {
+    for (const kind of [one, oneOrNone, many, manyOrNone])
+      expect(() => kind(() => source, { message: "No." as never })).toThrow(
+        "The message of a link is a function of the failure and the graph.",
+      );
+  });
+});

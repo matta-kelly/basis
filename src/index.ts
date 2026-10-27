@@ -18,6 +18,7 @@ export type {
   AnySchema,
   Graph,
   Link,
+  LinkFailure,
   Report,
   Rule,
   Schema,

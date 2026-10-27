@@ -26,10 +26,13 @@ import {
   lint,
   lintFolder,
   many,
+  manyOrNone,
   node,
   one,
   oneOrNone,
   type,
+  type Graph,
+  type LinkFailure,
   type Piece,
   type Note,
   type Source,
@@ -2064,5 +2067,380 @@ describe("the merge of pieces into a node", () => {
         ).toEqual(expected.sort());
       }),
     );
+  });
+});
+
+describe("a link's own message", () => {
+  // Like que's plugins: an op names one of its plugin's roles.
+  const accessRole = defineType({
+    name: "access-role",
+    description: "d",
+    fields: {},
+  });
+  const local = (name: string) => name.replace(/^dagster-/, "");
+  // Annotated: the message reads the plugins, whose ops link to the op that holds the message.
+  const failures: LinkFailure[] = [];
+  const roleMessage = (f: LinkFailure, graph: Graph): string | undefined => {
+    failures.push(f);
+    if (f.kind !== "not-a-node") return undefined;
+    const held: { name: string; roles?: string[] | undefined } | undefined =
+      graph.all(plugin).find((p) => p.ops?.includes(f.node));
+    if (!held) return undefined;
+    const roles = (held.roles ?? []).map(local).join(", ");
+    return `${local(f.target)} is not one of ${held.name}'s roles (${roles}).`;
+  };
+  const op = defineType({
+    name: "op",
+    description: "d",
+    fields: { role: oneOrNone(() => accessRole, { message: roleMessage }) },
+  });
+  // An op whose message gives each field of a wrong-type failure.
+  const opWith = defineType({
+    name: "op-with",
+    description: "d",
+    fields: {
+      role: oneOrNone(() => accessRole, {
+        message: (f) =>
+          f.kind === "wrong-type"
+            ? `${f.node} -> ${f.target}: ${f.targetType}`
+            : undefined,
+      }),
+    },
+  });
+  const plugin = defineType({
+    name: "plugin",
+    description: "d",
+    fields: {
+      roles: manyOrNone(() => accessRole),
+      ops: manyOrNone(() => [op, opWith]),
+    },
+  });
+  const schema = defineSchema({
+    name: "p",
+    description: "d",
+    types: { "access-role": accessRole, op, "op-with": opWith, plugin },
+    typeNotes,
+  });
+  // A schema of one type of op, with the message given.
+  const opSchema = (message: (f: LinkFailure) => unknown) =>
+    defineSchema({
+      name: "q",
+      description: "d",
+      types: {
+        "access-role": accessRole,
+        "other-op": defineType({
+          name: "other-op",
+          description: "d",
+          fields: {
+            role: oneOrNone(() => accessRole, {
+              message: message as (f: LinkFailure) => string | undefined,
+            }),
+          },
+        }),
+      },
+      typeNotes,
+    });
+  const roles = [
+    note("roles/dagster-read-only.md", {
+      type: "access-role",
+      description: "d",
+    }),
+    note("roles/dagster-trigger.md", { type: "access-role", description: "d" }),
+  ];
+  const dagster = (path: string) =>
+    note(path, {
+      type: "plugin",
+      description: "d",
+      roles: ["[[dagster-read-only]]", "[[dagster-trigger]]"],
+      ops: ["[[dagster-run]]"],
+    });
+  const run = (role: unknown, opType = "op") =>
+    note("ops/dagster-run.md", { type: opType, description: "d", role });
+
+  it("is the message of the one problem of a link to no node, from the graph", () => {
+    expect(
+      lint(schema, [...roles, dagster("dagster.md"), run("[[dagster-admin]]")]),
+    ).toEqual([
+      {
+        path: "ops/dagster-run.md",
+        rule: "basis/link",
+        field: "/role",
+        message: "admin is not one of dagster's roles (read-only, trigger).",
+      },
+    ]);
+  });
+
+  it("reads every node of the graph, also one after its node by path", () => {
+    expect(
+      lint(schema, [
+        ...roles,
+        dagster("plugins/dagster.md"),
+        run("[[dagster-admin]]"),
+      ]).map((p) => p.message),
+    ).toEqual(["admin is not one of dagster's roles (read-only, trigger)."]);
+  });
+
+  it("gives way to basis's message when it gives undefined", () => {
+    failures.length = 0;
+    expect(
+      lint(schema, [...roles, dagster("dagster.md"), run("[[dagster]]")]),
+    ).toEqual([
+      {
+        path: "ops/dagster-run.md",
+        rule: "basis/link",
+        field: "/role",
+        message: "It points at dagster, which is a plugin, not a access-role.",
+      },
+    ]);
+    expect(failures).toEqual([
+      {
+        kind: "wrong-type",
+        node: "dagster-run",
+        target: "dagster",
+        targetType: "plugin",
+      },
+    ]);
+  });
+
+  it("is the message of a required link that gives no name, absent or an empty list", () => {
+    const model = defineType({ name: "model", description: "d", fields: {} });
+    const message = (f: LinkFailure) =>
+      f.kind === "missing"
+        ? "Missing: name a model config the deployment lists."
+        : undefined;
+    const agent = defineType({
+      name: "agent",
+      description: "d",
+      fields: { model: one(() => model, { message }) },
+    });
+    const crew = defineType({
+      name: "crew",
+      description: "d",
+      fields: { models: many(() => model, { message }) },
+    });
+    const harness = defineSchema({
+      name: "harness",
+      description: "d",
+      types: { model, agent, crew },
+      typeNotes,
+    });
+    expect(
+      lint(harness, [
+        note("a.md", { type: "agent", description: "d" }),
+        note("c.md", { type: "crew", description: "d", models: [] }),
+      ]),
+    ).toEqual([
+      {
+        path: "a.md",
+        rule: "basis/fields",
+        field: "/model",
+        message: "Missing: name a model config the deployment lists.",
+      },
+      {
+        path: "c.md",
+        rule: "basis/fields",
+        field: "/models",
+        message: "Missing: name a model config the deployment lists.",
+      },
+    ]);
+  });
+
+  it("gets the node by name, the target by name and the target's type", () => {
+    expect(
+      lint(schema, [
+        ...roles,
+        dagster("dagster.md"),
+        run("[[dagster]]", "op-with"),
+      ]).map((p) => p.message),
+    ).toEqual(["dagster-run -> dagster: plugin"]);
+  });
+
+  it("goes with the link to a type that inherits it, and to an extension", () => {
+    const target = defineType({ name: "target", description: "d", fields: {} });
+    const base = defineType({
+      name: "base",
+      description: "d",
+      fields: {
+        to: one(() => target, {
+          message: (f) =>
+            f.kind === "not-a-node" ? `No ${f.target}.` : undefined,
+        }),
+      },
+    });
+    const child = defineType({
+      name: "child",
+      description: "d",
+      parents: [base],
+      fields: {},
+    });
+    const inner = defineSchema({
+      name: "inner",
+      description: "d",
+      types: { target, base, child },
+      typeNotes,
+    });
+    const outer = defineSchema({
+      name: "outer",
+      description: "d",
+      imports: [inner],
+      types: {
+        base: extendType(base, { fields: { extra: z.string().optional() } }),
+      },
+    });
+    const pieces = [
+      note("b.md", { type: "base", description: "d", to: "[[nobody]]" }),
+      note("c.md", { type: "child", description: "d", to: "[[nobody]]" }),
+    ];
+    expect(lint(outer, pieces).map((p) => `${p.path} ${p.message}`)).toEqual([
+      "b.md No nobody.",
+      "c.md No nobody.",
+    ]);
+  });
+
+  it("leaves every problem of a link with none as it was", () => {
+    const model = defineType({ name: "model", description: "d", fields: {} });
+    const agent = defineType({
+      name: "agent",
+      description: "d",
+      fields: {
+        model: one(() => model),
+        models: many(() => model),
+        role: oneOrNone(() => accessRole),
+      },
+    });
+    const plain = defineSchema({
+      name: "plain",
+      description: "d",
+      types: { model, agent, "access-role": accessRole },
+      typeNotes,
+    });
+    expect(
+      lint(plain, [
+        note("m.md", { type: "model", description: "d" }),
+        note("a.md", { type: "agent", description: "d", models: [] }),
+        note("b.md", {
+          type: "agent",
+          description: "d",
+          model: "[[nobody]]",
+          models: ["[[m]]"],
+          role: "[[m]]",
+        }),
+        note("c.md", {
+          type: "agent",
+          description: "d",
+          model: "m",
+          models: ["[[m]]"],
+        }),
+      ]),
+    ).toEqual([
+      {
+        path: "a.md",
+        rule: "basis/fields",
+        field: "/model",
+        message: "Missing: its type needs a string here.",
+      },
+      {
+        path: "a.md",
+        rule: "basis/fields",
+        field: "/models",
+        message: "Too small: expected array to have >=1 items",
+      },
+      {
+        path: "b.md",
+        rule: "basis/link",
+        field: "/model",
+        message: "It points at nobody, which is not a node.",
+      },
+      {
+        path: "b.md",
+        rule: "basis/link",
+        field: "/role",
+        message: "It points at m, which is a model, not a access-role.",
+      },
+      {
+        path: "c.md",
+        rule: "basis/fields",
+        field: "/model",
+        message: 'Not a wikilink, "[[name]]".',
+      },
+    ]);
+  });
+
+  it("throws, naming the type, the link and the node, when it throws or gives other than a message or undefined", () => {
+    const pieces = [...roles, run("[[dagster-admin]]", "other-op")];
+    expect(() =>
+      lint(
+        opSchema(() => {
+          throw new Error("no roles here");
+        }),
+        pieces,
+      ),
+    ).toThrow(
+      "The message of the link role of other-op threw on ops/dagster-run.md: no roles here",
+    );
+    for (const given of ["", 5, null])
+      expect(() =>
+        lint(
+          opSchema(() => given),
+          pieces,
+        ),
+      ).toThrow(
+        "The message of the link role of other-op gave something other than a message or undefined for ops/dagster-run.md.",
+      );
+  });
+
+  it("is not called for a value that is not a wikilink, which keeps basis's message", () => {
+    const calls: LinkFailure[] = [];
+    const counted = opSchema((f) => {
+      calls.push(f);
+      return "never";
+    });
+    expect(lint(counted, [...roles, run("dagster-admin", "other-op")])).toEqual(
+      [
+        {
+          path: "ops/dagster-run.md",
+          rule: "basis/fields",
+          field: "/role",
+          message: 'Not a wikilink, "[[name]]".',
+        },
+      ],
+    );
+    expect(calls).toEqual([]);
+  });
+
+  it("is called once for each bad name of a many link, and each problem has its own", () => {
+    const calls: LinkFailure[] = [];
+    const bundle = defineType({
+      name: "bundle",
+      description: "d",
+      fields: {
+        roles: many(() => accessRole, {
+          message: (f) => {
+            calls.push(f);
+            return f.kind === "not-a-node" ? `No ${f.target}.` : undefined;
+          },
+        }),
+      },
+    });
+    const bundles = defineSchema({
+      name: "bundles",
+      description: "d",
+      types: { bundle, "access-role": accessRole },
+      typeNotes,
+    });
+    expect(
+      lint(bundles, [
+        ...roles,
+        note("b.md", {
+          type: "bundle",
+          description: "d",
+          roles: ["[[x]]", "[[dagster-trigger]]", "[[y]]"],
+        }),
+      ]).map((p) => `${p.field} ${p.message}`),
+    ).toEqual(["/roles No x.", "/roles No y."]);
+    expect(calls).toEqual([
+      { kind: "not-a-node", node: "b", target: "x" },
+      { kind: "not-a-node", node: "b", target: "y" },
+    ]);
   });
 });

@@ -77,6 +77,12 @@ Code defines, markdown describes, and the lint checks that they agree.
 		- `Schema.parse` takes the values of the graph: a link is a name
 		- one, oneOrNone, many (one or more), or manyOrNone (none, or an empty list). The lint checks each one points at a node of one of its types, or of a type that inherits one
 		- a link to `node` takes a node of any type: for a link that can point at any note. A list of types is for a link whose targets mean something
+		- a link can carry its own message: `one(() => model, { message })`, and the same for each kind. `message` is a function of the failure and the graph, `(failure, graph) => string | undefined`, which gives the message, or undefined for basis's. The rule and the field stay basis's (SHACL's `sh:message`, zod's `error`)
+			- the failure (`LinkFailure`) is one of: `missing`, a required link that gives no name (absent, or an empty list); `not-a-node`, the name is no node; `wrong-type`, the node of the name is of another type (`targetType`). Each has `node`, the name of the node the link starts from, and the last two `target`, the name it points at
+			- `node` is a name, not a value: a node with a missing link did not parse. A message reads a parsed node through the graph, which is the graph a rule gets: every node that parsed, in the whole lint
+			- a value that is not one name in its piece's syntax, such as a note's link without `[[ ]]`, keeps basis's message: it is the syntax of a piece, not what the link means
+			- a type that inherits the link, or extends its type, has its message. The message is the lint's: `Schema.parse` gives zod's
+			- a message that throws, or gives other than a non-empty string or undefined, is a fault of the link: the lint throws, naming the type, the link and the node's path
 		- data on a link itself is not supported yet
 		- whether an absent optional link is worth a warning is a lint rule, not a schema question
 	- **schema**: a named set of types, with the schemas it imports. Made with `defineSchema`
@@ -108,7 +114,7 @@ Code defines, markdown describes, and the lint checks that they agree.
 	- shape: the source can read the thing: for a note, the file parses and the frontmatter is valid YAML
 	- merge: the pieces of one name are one node, and no two of them give one field (`basis/merge`)
 	- schema: the node has a type the schema sees, not an abstract one, and its fields match the type (zod) (`basis/type`, `basis/fields`). Its name is a slug, and not one of its fields (`basis/name`)
-	- reference: each link resolves, to a thing of the right type (`basis/link`)
+	- reference: each link resolves, to a thing of the right type (`basis/link`). A link's message, when it gives one, is the problem's message, here and for a required link that gives no name (`basis/fields`)
 	- identity: no two nodes share a name (`basis/unique-name`), and no two nodes of a type share a key (`basis/key`)
 	- graph: no cycles, one owner per name, imports only down. `defineSchema` refuses these when a schema is built, before any node is read
 	- type notes: for each schema the lint sees, each type it owns has its type note in the folder it declares (`basis/type-note`), with the type's description and abstract (`basis/type-note-agrees`), and each type note there explains one of its types (`basis/type-note-type`). Each type note in the folder linted is in the folder of a schema the lint sees (`basis/type-note-folder`). `lintFolder` and the CLI read each folder from disk, by its URL, also when it is outside the folder linted, and compare folders by their real paths. A type note outside the folder linted is also checked as a note of type `type`. The in-memory `lint` reads no folder
@@ -149,7 +155,7 @@ Code defines, markdown describes, and the lint checks that they agree.
 
 ## Components
 
-1. primitives: `defineType` (with `abstract` and `parents`), `extendType`, the links `one`, `oneOrNone`, `many` and `manyOrNone`, `defineRule`, `defineSchema`, and the built-in types `node` and `type` in the built-in schema `basis`. The vocabulary as code
+1. primitives: `defineType` (with `abstract` and `parents`), `extendType`, the links `one`, `oneOrNone`, `many` and `manyOrNone`, each with an optional `{ message }` (missing, not a node, of another type), with basis's message as the fallback, `defineRule`, `defineSchema`, and the built-in types `node` and `type` in the built-in schema `basis`. The vocabulary as code
 	- `defineSchema` is also the compiler: a schema and its imports become one ontology. It refuses cycles, two schemas of one name, a schema named `basis` that is not the built-in one, two owners of one type name, a schema that holds a type of its own and declares no folder of type notes (`typeNotes`), two schemas it sees that declare one folder, a rule on a type it does not see, and two owners of one rule name
 	- what makes basis more than a zod wrapper: where schemas become one graph
 	- prior art: NixOS module merging

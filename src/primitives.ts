@@ -218,14 +218,41 @@ export function extendType<
   return made;
 }
 
-/** A link: the field it is, what it points at, how many, and whether a node can leave it out. */
+/** A link: the field it is, what it points at, how many, whether a node can leave it out, and its own message. */
 export type Link = {
   name: string;
   /** A thunk, so a link can point at a type defined later. A node of any of its types is a target. */
   to: () => readonly Type[];
   cardinality: "one" | "many";
   optional: boolean;
+  /** The message of a failure of the link, or none for basis's. */
+  message?: LinkMessage;
 };
+
+/**
+ * What is wrong with one name of a link, in the lint. `node` is the name of the node the link starts from: in
+ * "missing" it did not parse, so a message reads a parsed node through the graph. `target` is the name in the graph,
+ * and `targetType` the target's type.
+ */
+export type LinkFailure =
+  /** A required link gives no name: absent, or an empty list. */
+  | { kind: "missing"; node: string }
+  /** The name is no node. */
+  | { kind: "not-a-node"; node: string; target: string }
+  /** The node of the name is of another type. */
+  | { kind: "wrong-type"; node: string; target: string; targetType: string };
+
+/**
+ * A link's own message (SHACL's sh:message, zod's error): a function of the failure and the graph a rule gets. It
+ * gives the message, or undefined for basis's. The rule and the field stay basis's.
+ */
+export type LinkMessage = (
+  failure: LinkFailure,
+  graph: Graph,
+) => string | undefined;
+
+/** What a link kind takes beside its targets. */
+type LinkOptions = { message?: LinkMessage };
 
 /** The target of each link schema, kept beside the schema and not in its type. */
 const links = new WeakMap<object, Omit<Link, "name">>();
@@ -238,9 +265,24 @@ type Targets = () => Type | readonly [Type, ...Type[]];
 
 function link<S extends z.ZodType>(
   schema: S,
-  { to, ...target }: Omit<Link, "name" | "to"> & { to: Targets },
+  {
+    to,
+    message,
+    ...target
+  }: Omit<Link, "name" | "to" | "message"> & {
+    to: Targets;
+    message: LinkMessage | undefined;
+  },
 ): S {
-  links.set(schema, { ...target, to: () => [to()].flat() });
+  if (message !== undefined && typeof message !== "function")
+    throw new Error(
+      "The message of a link is a function of the failure and the graph.",
+    );
+  links.set(schema, {
+    ...target,
+    to: () => [to()].flat(),
+    ...(message && { message }),
+  });
   for (const part of partsOf(schema)) linkParts.add(part);
   return schema;
 }
@@ -256,27 +298,34 @@ const linkSchema = (
 };
 
 /** A link to one node: its value is the node's name. */
-export const one = (to: Targets) =>
-  link(nameOf(), { to, cardinality: "one", optional: false });
+export const one = (to: Targets, { message }: LinkOptions = {}) =>
+  link(nameOf(), { to, cardinality: "one", optional: false, message });
 
 /** A link to one node or none: the key holds a name, or is absent. */
-export const oneOrNone = (to: Targets) =>
-  link(nameOf().optional(), { to, cardinality: "one", optional: true });
+export const oneOrNone = (to: Targets, { message }: LinkOptions = {}) =>
+  link(nameOf().optional(), {
+    to,
+    cardinality: "one",
+    optional: true,
+    message,
+  });
 
 /** A link to one or more nodes. */
-export const many = (to: Targets) =>
+export const many = (to: Targets, { message }: LinkOptions = {}) =>
   link(z.array(nameOf()).min(1), {
     to,
     cardinality: "many",
     optional: false,
+    message,
   });
 
 /** A link to any number of nodes: an absent key and an empty list both mean none. */
-export const manyOrNone = (to: Targets) =>
+export const manyOrNone = (to: Targets, { message }: LinkOptions = {}) =>
   link(z.array(nameOf()).optional(), {
     to,
     cardinality: "many",
     optional: true,
+    message,
   });
 
 /** For each type, its schema as a note writes it. */

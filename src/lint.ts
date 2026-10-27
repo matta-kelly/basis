@@ -35,6 +35,8 @@ import {
   noteSchemaOf,
   Wikilink,
   type Graph,
+  type Link,
+  type LinkFailure,
   type Schema,
   type Type,
 } from "./primitives.ts";
@@ -301,8 +303,62 @@ function schemaOf(type: Type, node: Node): z.ZodObject {
   return schema;
 }
 
-/** A parse's issues as problems, one for each field, each on the piece that gives the field. A bad name is a problem of the name. */
-function fieldProblems(node: Node, error: z.ZodError): Problem[] {
+/** Each node's parse, once, by the type the schema sees: the lint's problems and the graph read the same one. */
+const parses = new WeakMap<Node, z.ZodSafeParseResult<unknown>>();
+
+/** A node parsed by its type, as its pieces write it, with its name. */
+function parseOf(type: Type, node: Node): z.ZodSafeParseResult<unknown> {
+  let result = parses.get(node);
+  if (!result) {
+    result = schemaOf(type, node).safeParse({
+      ...node.fields,
+      name: node.name,
+    });
+    parses.set(node, result);
+  }
+  return result;
+}
+
+/**
+ * A link's own message for a failure, or none for basis's. A message that throws, or gives other than a non-empty
+ * string or undefined, is a fault of the link, not of the node: the lint throws, naming both.
+ */
+function linkMessage(
+  type: Type,
+  link: Link,
+  node: Node,
+  failure: LinkFailure,
+  graph: Graph,
+): string | undefined {
+  if (!link.message) return undefined;
+  const of = `The message of the link ${link.name} of ${type.name}`;
+  let message: unknown;
+  try {
+    message = link.message(failure, graph);
+  } catch (error) {
+    throw new Error(
+      `${of} threw on ${node.path}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+  if (message !== undefined && (typeof message !== "string" || message === ""))
+    throw new Error(
+      `${of} gave something other than a message or undefined for ${node.path}.`,
+    );
+  return message;
+}
+
+/**
+ * A parse's issues as problems, one for each field, each on the piece that gives the field. A bad name is a problem of
+ * the name. A required link that gives no name, absent or an empty list, has the link's own message, if it gives one.
+ */
+function fieldProblems(
+  type: Type,
+  node: Node,
+  error: z.ZodError,
+  graph: Graph,
+): Problem[] {
+  const links = new Map(linksOf(type).map((link) => [link.name, link]));
   return error.issues.flatMap((issue): Problem[] => {
     if (issue.code === "unrecognized_keys")
       return issue.keys.map((key) => ({
@@ -322,6 +378,22 @@ function fieldProblems(node: Node, error: z.ZodError): Problem[] {
     // A field the node does not have, whatever zod's code for it: what its type needs there is the fix.
     const missing =
       issue.path.length > 0 && valueAt(node.fields, issue.path) === undefined;
+    const link =
+      issue.path.length === 1 ? links.get(String(issue.path[0])) : undefined;
+    const value = link && node.fields[link.name];
+    const noName =
+      link !== undefined &&
+      !link.optional &&
+      (value === undefined || (Array.isArray(value) && value.length === 0));
+    const own = noName
+      ? linkMessage(
+          type,
+          link,
+          node,
+          { kind: "missing", node: node.name },
+          graph,
+        )
+      : undefined;
     const needed =
       issue.code === "invalid_type"
         ? `a ${issue.expected}`
@@ -333,9 +405,9 @@ function fieldProblems(node: Node, error: z.ZodError): Problem[] {
         path: pathOf(node, issue.path[0]),
         rule: "basis/fields",
         ...(issue.path.length > 0 && { field: pointer(issue.path) }),
-        message: missing
-          ? `Missing: its type needs ${needed} here.`
-          : issue.message,
+        message:
+          own ??
+          (missing ? `Missing: its type needs ${needed} here.` : issue.message),
       },
     ];
   });
@@ -370,7 +442,7 @@ function nodeProblems(
   node: Node,
   byName: Map<string, Node[]>,
   unread: Set<string>,
-  parsed?: Map<Node, unknown>,
+  graph: Graph,
 ): Problem[] {
   const problem = (
     rule: CoreRule,
@@ -424,21 +496,15 @@ function nodeProblems(
       ),
     ];
 
-  try {
-    // By the type the schema sees, as its pieces write it: a node of an imported type is of that type.
-    const value = schemaOf(at.type, node).parse({
-      ...node.fields,
-      name: node.name,
-    });
-    // A copy: the caller's fields stay as they were, and stay theirs.
-    parsed?.set(node, deepFreeze(structuredClone(value)));
-  } catch (error) {
-    if (!(error instanceof z.ZodError)) throw error;
-    problems.push(...fieldProblems(node, error));
-  }
+  // By the type the schema sees, as its pieces write it: a node of an imported type is of that type.
+  const parse = parseOf(at.type, node);
+  if (!parse.success)
+    problems.push(...fieldProblems(at.type, node, parse.error, graph));
 
   for (const link of linksOf(at.type)) {
     const to = link.to().map((type) => type.name);
+    const own = (failure: LinkFailure) =>
+      linkMessage(at.type, link, node, failure, graph);
     for (const name of linkNames(node, link.name)) {
       const targets = byName.get(name);
       if (!targets) {
@@ -448,7 +514,8 @@ function nodeProblems(
           problem(
             "basis/link",
             link.name,
-            `It points at ${name}, which is not a node.`,
+            own({ kind: "not-a-node", node: node.name, target: name }) ??
+              `It points at ${name}, which is not a node.`,
           ),
         );
       } else if (
@@ -460,11 +527,18 @@ function nodeProblems(
           return to.some((type) => lineage.has(type));
         })
       ) {
+        const targetType = String(targets[0]?.fields.type);
         problems.push(
           problem(
             "basis/link",
             link.name,
-            `It points at ${name}, which is a ${String(targets[0]?.fields.type)}, not a ${to.join(" or a ")}.`,
+            own({
+              kind: "wrong-type",
+              node: node.name,
+              target: name,
+              targetType,
+            }) ??
+              `It points at ${name}, which is a ${targetType}, not a ${to.join(" or a ")}.`,
           ),
         );
       }
@@ -543,30 +617,48 @@ function deepFreeze<V>(value: V): V {
   return value;
 }
 
+/** The graph a rule and a link's message read, and each node of a type that parsed, with its value, in path order. */
+type Parsed = {
+  graph: Graph;
+  nodesOf: (type: Type) => [Node, unknown][];
+};
+
 /**
- * What the rules of each schema the lint sees find wrong: each rule runs on each node of its type that parsed, and
- * each `{ field?, message }` it gives is a problem of rule `<schema>/<rule>`, on the piece that gives the field. A check
- * that throws, or gives something other than a list of `{ field?, message }`, is a fault of the rule, not of the node:
- * the lint throws, naming both.
+ * The graph of the nodes linted: each node that parsed, by its name or by its type. Each node is parsed when the graph
+ * is first read, so it is whole wherever it is read from. A name two nodes share, or an unread note shares, gives none.
  */
-function ruleProblems(
+function parsedOf(
   schema: Schema,
   seen: Seen,
-  parsed: Map<Node, unknown>,
+  nodes: readonly Node[],
   byName: Map<string, Node[]>,
   contested: Set<string>,
-): Problem[] {
+): Parsed {
   const isOf = (node: Node, type: Type) => {
     const at = nodeType(seen, node);
     return at !== undefined && isOfType(at.type, type);
   };
-  const nodes = [...parsed].sort(([a], [b]) => byPath(a, b));
+  let values: Map<Node, unknown> | undefined;
+  const valuesOf = () => {
+    values ??= new Map(
+      [...nodes].sort(byPath).flatMap((node): [Node, unknown][] => {
+        const at = nodeType(seen, node);
+        if (!at || at.type.abstract) return [];
+        const parse = parseOf(at.type, node);
+        // A copy: the caller's fields stay as they were, and stay theirs.
+        return parse.success
+          ? [[node, deepFreeze(structuredClone(parse.data))]]
+          : [];
+      }),
+    );
+    return values;
+  };
   const ofType = new Map<Type, [Node, unknown][]>();
   const nodesOf = (type: Type) => {
     if (!ofType.has(type))
       ofType.set(
         type,
-        nodes.filter(([node]) => isOf(node, type)),
+        [...valuesOf()].filter(([node]) => isOf(node, type)),
       );
     return ofType.get(type) ?? [];
   };
@@ -584,12 +676,26 @@ function ruleProblems(
       const same = byName.get(name);
       const only =
         same?.length === 1 && !contested.has(name) ? same[0] : undefined;
-      return only && parsed.has(only) && isOf(only, type)
-        ? (parsed.get(only) as never)
+      return only && valuesOf().has(only) && isOf(only, type)
+        ? (valuesOf().get(only) as never)
         : undefined;
     },
     all: (type) => nodesOf(seenType(type)).map(([, value]) => value as never),
   };
+  return { graph, nodesOf };
+}
+
+/**
+ * What the rules of each schema the lint sees find wrong: each rule runs on each node of its type that parsed, and
+ * each `{ field?, message }` it gives is a problem of rule `<schema>/<rule>`, on the piece that gives the field. A check
+ * that throws, or gives something other than a list of `{ field?, message }`, is a fault of the rule, not of the node:
+ * the lint throws, naming both.
+ */
+function ruleProblems(
+  schema: Schema,
+  seen: Seen,
+  { graph, nodesOf }: Parsed,
+): Problem[] {
   const problems: Problem[] = [];
   for (const { rule, owner } of rulesSeen(schema)) {
     const id = `${owner.name}/${rule.name}`;
@@ -654,6 +760,15 @@ export function lint(
   pieces: readonly Piece[],
   unread: readonly Unread[] = [],
 ): Problem[] {
+  return linted(schema, pieces, unread).problems;
+}
+
+/** The lint, with the graph of the nodes linted: a folder's lint gives it to the links of type notes outside the folder. */
+function linted(
+  schema: Schema,
+  pieces: readonly Piece[],
+  unread: readonly Unread[],
+): { problems: Problem[]; graph: Graph } {
   const unreadNotes = new Map<string, string[]>();
   for (const { path, name, note } of unread)
     if (note) unreadNotes.set(name, [...(unreadNotes.get(name) ?? []), path]);
@@ -686,17 +801,14 @@ export function lint(
       });
     }
   }
-  // The parsed nodes, kept only for the rules to read.
-  const parsed =
-    rulesSeen(schema).length > 0 ? new Map<Node, unknown>() : undefined;
+  const parsed = parsedOf(schema, seen, nodes, byName, contested);
   for (const node of nodes)
     problems.push(
-      ...nodeProblems(schema, seen, node, byName, unreadNames, parsed),
+      ...nodeProblems(schema, seen, node, byName, unreadNames, parsed.graph),
     );
   problems.push(...keyProblems(seen, nodes));
-  if (parsed)
-    problems.push(...ruleProblems(schema, seen, parsed, byName, contested));
-  return problems.sort(byPath);
+  problems.push(...ruleProblems(schema, seen, parsed));
+  return { problems: problems.sort(byPath), graph: parsed.graph };
 }
 
 /**
@@ -773,6 +885,7 @@ async function typeNotesOf(
   schema: Schema,
   folder: string,
   linted: { pieces: Piece[]; problems: Problem[] },
+  graph: Graph,
 ): Promise<Problem[]> {
   const root = resolve(folder);
   const realRoot = await realPathOf(root);
@@ -845,7 +958,9 @@ async function typeNotesOf(
   const outsideNodes = outside.map((piece) => mergeOne([piece]).node);
   const byName = byNameOf([...mergeAll(linted.pieces).nodes, ...outsideNodes]);
   for (const node of outsideNodes)
-    problems.push(...nodeProblems(schema, seen, node, byName, new Set()));
+    problems.push(
+      ...nodeProblems(schema, seen, node, byName, new Set(), graph),
+    );
   for (const piece of linted.pieces.filter(isTypeNote))
     if (!folders.includes(dirname(join(realRoot, piece.path))))
       problems.push({
@@ -982,9 +1097,10 @@ export async function lintFolder(
     ...notes.unread.map((u) => ({ ...u, note: true as const })),
     ...loaded.slice(1).flatMap((l) => l.unread),
   ];
+  const result = linted(schema, pieces, unread);
   return [
     ...problems,
-    ...lint(schema, pieces, unread),
-    ...(await typeNotesOf(schema, folder, { pieces, problems })),
+    ...result.problems,
+    ...(await typeNotesOf(schema, folder, { pieces, problems }, result.graph)),
   ].sort(byPath);
 }
