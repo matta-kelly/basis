@@ -1,5 +1,7 @@
+import { createReadStream } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { createInterface } from "node:readline";
 import { parseDocument } from "yaml";
 
 /**
@@ -226,4 +228,50 @@ export async function loadFolder(
     problems: problems.sort(byPath),
     unread: unread.sort(byPath),
   };
+}
+
+/** Whether `skip` names a path, itself or by a folder it is in. */
+const skips = (skip: (path: string) => boolean, path: string) =>
+  path.split("/").some((_, i, parts) => skip(parts.slice(0, i + 1).join("/")));
+
+/** Whether a file's frontmatter parses and has a `type`. It reads the file only to the end of its frontmatter. */
+async function typed(file: string): Promise<boolean> {
+  const stream = createReadStream(file, { encoding: "utf8" });
+  const lines = createInterface({ input: stream, crlfDelay: Infinity });
+  const head: string[] = [];
+  const fence = /^---[ \t]*$/;
+  try {
+    for await (const line of lines) {
+      head.push(line);
+      // The first line, after a BOM, opens the frontmatter, or there is none; the next line of --- closes it.
+      const first = head.length === 1;
+      if (first ? !fence.test(line.replace(/^\uFEFF/, "")) : fence.test(line))
+        break;
+    }
+  } catch {
+    // A file that cannot be read cannot say it is a note.
+    return false;
+  } finally {
+    lines.close();
+    stream.destroy();
+  }
+  const read = readNote(file, head.join("\n"));
+  return read.ok && Object.hasOwn(read.note.fields, "type");
+}
+
+/**
+ * The notes a skip hides, in path order: each `.md` file under a folder that `skip` names, itself or by a folder it is
+ * in, whose frontmatter parses and has a `type`. A path `apart` names, such as a folder another place reads, is not
+ * looked at. A file is read only to the end of its frontmatter.
+ */
+export async function hiddenNotes(
+  folder: string,
+  skip: (path: string) => boolean,
+  apart: (path: string) => boolean,
+): Promise<string[]> {
+  const { paths } = await notePaths(folder, apart);
+  const hidden: string[] = [];
+  for (const path of paths.filter((path) => skips(skip, path)))
+    if (await typed(join(folder, path))) hidden.push(path);
+  return hidden.sort();
 }

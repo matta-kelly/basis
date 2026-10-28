@@ -15,6 +15,7 @@ import { definitionOf } from "./definition.ts";
 import {
   byPath,
   type FolderOptions,
+  hiddenNotes,
   type Loaded,
   loadFolder,
   type Note,
@@ -106,6 +107,11 @@ export const coreRules = Object.freeze([
     id: "basis/definition-piece",
     description:
       "Each definition a schema's exports give is a piece a source gives, of its name and type.",
+  },
+  {
+    id: "basis/skip",
+    description:
+      "A skip leaves out no note: no .md file it names has a type in its frontmatter.",
   },
 ] as const);
 
@@ -1281,13 +1287,14 @@ export async function lintFolder(
         other.folder !== place.folder && within(place.folder, other.folder),
     );
     // A folder another place reads is that place's: all in it, or, for a folder of type notes, its own notes.
-    const skip = (path: string) =>
-      (place.skip?.(path) ?? false) ||
+    const elsewhere = (path: string) =>
       inner.some((other) =>
         other.typeNotes
           ? dirname(at(place, path)) === other.folder && path.endsWith(".md")
           : within(other.folder, at(place, path)),
       );
+    const skip = (path: string) =>
+      (place.skip?.(path) ?? false) || elsewhere(path);
     let read: Loaded<Note, Unread>;
     try {
       read = await loadFolder(place.folder, { skip });
@@ -1313,6 +1320,15 @@ export async function lintFolder(
     );
     for (const p of [...read.pieces, ...read.problems, ...read.unread])
       notePaths.add(at(place, p.path));
+    // The skip of a folder of type notes is basis's own, not a package's.
+    if (place.skip && !place.typeNotes)
+      for (const path of await hiddenNotes(place.folder, place.skip, elsewhere))
+        problems.push({
+          path: from(at(place, path)),
+          rule: "basis/skip",
+          message:
+            "The skip leaves out this file, and its frontmatter has a type: it is a note the lint does not see. Take it out of the skip, or take the type out of its frontmatter.",
+        });
   }
   let sourcesRead = 0;
   for (const place of places) {
