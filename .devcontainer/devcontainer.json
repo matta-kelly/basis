@@ -15,9 +15,9 @@
   "remoteUser": "node",
   "updateRemoteUserUID": false,
 
-  // Packages live in a podman volume, not the repo folder.
+  // Packages live in a podman volume, not the repo folder: one per checkout, so a worktree has its own. VS Code's id is not the one `just` names its volume by, so a checkout used by both has two.
   "mounts": [
-    "source=basis-node-modules,target=${containerWorkspaceFolder}/node_modules,type=volume"
+    "source=basis-node-modules-${devcontainerId},target=${containerWorkspaceFolder}/node_modules,type=volume"
   ],
 
   // A new volume starts root-owned: hand it to `node`, then install.

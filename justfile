@@ -21,15 +21,27 @@ _up:
     set -euo pipefail
     c=$(just _container)
     if [ -z "$c" ]; then
-        podman run -d --name basis-dev -l "devcontainer.local_folder={{root}}" \
+        # One container and one node_modules volume per checkout, named by a short hash of its path, so a worktree
+        # never shares them with another checkout.
+        id=$(printf '%s' "{{root}}" | sha256sum | cut -c1-12)
+        c=basis-dev-$id
+        podman run -d --name "$c" -l "devcontainer.local_folder={{root}}" \
             --userns=keep-id:uid=1000,gid=1000 --security-opt label=disable \
             --mount "type=bind,source={{root}},target={{root}}" \
-            --mount "type=volume,source=basis-node-modules,target={{root}}/node_modules" \
+            --mount "type=volume,source=basis-node-modules-$id,target={{root}}/node_modules" \
             mcr.microsoft.com/devcontainers/javascript-node:22 sleep infinity >/dev/null
-        podman exec -u root basis-dev chown node:node "{{root}}/node_modules"
+        podman exec -u root "$c" chown node:node "{{root}}/node_modules"
     else
         podman start "$c" >/dev/null
     fi
+
+# Remove this checkout's dev container and its node_modules volume: run before the worktree is removed.
+down:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    id=$(printf '%s' "{{root}}" | sha256sum | cut -c1-12)
+    podman ps -aq --filter "label=devcontainer.local_folder={{root}}" | xargs -r podman rm -f >/dev/null
+    podman volume rm -f "basis-node-modules-$id" >/dev/null
 
 _container:
     @podman ps -a --filter "label=devcontainer.local_folder={{root}}" --format '{{{{.Names}}' | head -1
