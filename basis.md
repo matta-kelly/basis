@@ -5,7 +5,7 @@ status: active
 ---
 Code defines, markdown describes, and the lint checks that they agree --> a tool that checks notes and code against rules, where each package brings its own rules and builds on others. The terms of this note are those of [[state-machine]].
 - [[#Intent]] what basis is for: why an ontology, and what a subgraph is for
-- [[#Specification]] the state basis checks, the vocabulary a state is made of, how a state changes, and the invariants true of every state
+- [[#Specification]] the state basis checks and what it is made of, the schema that says what a valid state is, how a state changes, and the invariants true of every state
 - [[#Checking]] the lint that checks a graph against its specification, and what the rules do not yet say
 - [[#Implementation]] a graph's code and notes; basis's own code: the language, the libraries, its tests, and the parts of basis in the order they depend on each other
 
@@ -47,12 +47,7 @@ Code defines, markdown describes, and the lint checks that they agree --> a tool
 - ground: the part of a folder that a graph reads as its own notes: its schema's notes folder, less its skip
 - package: an npm package. It exports a schema, which names its notes, its type notes and its sources, and imports the schemas it builds on. It ships the folders its schema names, so a package that imports it lints them
 	- a package inside another's folder is set apart by its import: the folder of an imported schema is that schema's, read once, by its skip and with its sources. A folder no schema the lint sees names is read as the notes of the folder that holds it (Bazel's package boundary, set here by the import, which already says it). This is short of the invariant that a ground ends where a subgraph's root begins, which has no rule yet ([[#Invariants]], graph and subgraph)
-
-### Primitives
-
-- the vocabulary: the parts a graph and its schema are made of. The schema, its rules and how schemas combine are the specification; the other terms are what a state is made of. Each one is in `src/primitives.ts`, the definition in `src/definition.ts`, and this section says what it means
-- the words are those of the property graph (PG-Schema): node, type, property, link, schema, abstract type. Content collections (Astro) use other words for the same parts: a type is a collection, a node is an entry, and a link is a `reference()`
-- **node**: one actual thing of a type: its name, its fields, and its links to other nodes by name. It is made of one or more pieces
+- **node**: one actual thing of a type ([[#Schema]]): its name, its fields, and its links to other nodes by name. It is made of one or more pieces
 	- every node has what PG-Schema gives every node: an identity, its `name`, a slug as the open standards take one (lowercase letters and digits, with single hyphens between them), which no two nodes share (a note's is its file name); a label, its `type`, the name of its type; and a property, its `description`
 	- in code these are the fields of `node`, the abstract parent of every type, which every type inherits unlisted
 - **piece**: what one source gives of a node: a note, whose frontmatter holds its fields, or a piece a source gives. Each piece has the node's name, names the node's type, gives some of its fields, and names its source
@@ -66,7 +61,7 @@ Code defines, markdown describes, and the lint checks that they agree --> a tool
 	- it gives no piece of type `type`: a type's pieces are its code, which basis reads from `defineType`, and its type note, in the folder its schema declares
 	- a source that throws, or gives another shape, is at fault, not a piece: the lint throws, naming it
 	- a source does not name itself on its pieces or its unread things: a folder's lint names each source. The loader's notes, and the notes it could not read, are of the source `notes`
-- **definition**: a value that code gives as one node, marked with its name and type by `markDefinition(value, { name, type })`, which marks the value and gives it back. A package's `define*` function calls it on what it gives
+- **definition**: a value that code gives as one node, marked with its name and type by `markDefinition(value, { name, type })` (`src/definition.ts`), which marks the value and gives it back. A package's `define*` function calls it on what it gives
 	- the mark is a property of the value under `Symbol.for("@mku1tra/basis/definition")`, the global symbol registry's key, so a value marked by another install of basis, or another copy of its module, reads the same: read by its shape, not by which copy made it (React marks an element with `Symbol.for("react.element")` for the same reason). The key, once released, keeps its name, as an id does
 	- the mark is not enumerable: a spread, `Object.entries` and JSON do not see it, and it cannot change. A name that is no slug, or a type that is no non-empty string, throws a TypeError; so does a value that is no object, is frozen, or is marked already, as `Object.defineProperty` does
 	- it is not a piece: a source gives the piece of a definition. The lint finds each definition in a package's exports itself, and does not take its source's word for what it read: a definition that no source gives a piece of is a problem (`basis/definition-piece`, [[#Conformance]])
@@ -79,6 +74,11 @@ Code defines, markdown describes, and the lint checks that they agree --> a tool
 	- each piece writes its links in its own syntax: a note `"[[name]]"`, a source the name
 	- a problem of a field is on the piece that gives the field. A problem of the whole node is on its note, or, with no note, on its first piece by path
 	- a node keeps each value as its piece gives it. A live value, such as a function or a zod schema, stays live, and its type describes it (`z.custom`, `z.instanceof`). Only plain data, arrays and objects of no class, is copied and frozen, so a rule cannot change what the next one reads, and a piece's values stay its source's
+
+### Schema
+
+- the schema is the specification: a model of every valid graph. Its parts are below; in code they are in `src/primitives.ts`
+- the words are those of the property graph (PG-Schema): node, type, property, link, schema, abstract type. Content collections (Astro) use other words for the same parts: a type is a collection, a node is an entry, and a link is a `reference()`
 - **type**: a kind of node, defined once in code, as zod in `defineType`: its properties and its links, beside those every node has, and a one-line description. It says what a valid thing of that kind is
 	- one definition: code takes a thing's contract from its type, and declares no second shape of it. `basis/one-definition` holds it over what a package exports ([[#Conformance]])
 	- **key**: fields of a type that, together, no two of its nodes share (PG-Schema's key). A type has none unless it says
@@ -133,7 +133,7 @@ Code defines, markdown describes, and the lint checks that they agree --> a tool
 
 ### Invariants
 
-An invariant is a property true in every state. One with a rule is checked; one with "no rule yet" is a target, and can be false now. Under each is its rule, or "no rule yet" with the reason. They are grouped by the primitive they hold true.
+An invariant is a property true in every state. One with a rule is checked; one with "no rule yet" is a target, and can be false now. Under each is its rule, or "no rule yet" with the reason. They are grouped by what they hold true.
 
 - **piece and node:** how a node is made
 	- every piece can be read: a note parses, and its frontmatter is YAML
