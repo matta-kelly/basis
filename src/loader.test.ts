@@ -164,9 +164,9 @@ describe("a folder", () => {
       "unclosed.md",
     ]);
     expect(unread).toEqual([
-      { path: "broken.md", name: "broken" },
-      { path: "list.md", name: "list" },
-      { path: "unclosed.md", name: "unclosed" },
+      { path: "broken.md", name: "broken", source: "notes" },
+      { path: "list.md", name: "list", source: "notes" },
+      { path: "unclosed.md", name: "unclosed", source: "notes" },
     ]);
   });
 
@@ -221,8 +221,8 @@ describe("a folder", () => {
     expect(nodes.map((note) => note.path)).toEqual(["a.md", "real/r.md"]);
     // A symbolic link and a folder are not nodes the loader could not read.
     expect(unread).toEqual([
-      { path: "latin1.md", name: "latin1" },
-      { path: "locked.md", name: "locked" },
+      { path: "latin1.md", name: "latin1", source: "notes" },
+      { path: "locked.md", name: "locked", source: "notes" },
     ]);
     expect(problems.map((problem) => problem.path)).toEqual([
       "latin1.md",

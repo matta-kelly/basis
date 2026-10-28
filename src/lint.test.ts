@@ -2350,7 +2350,7 @@ describe("the merge of pieces into a node", () => {
     );
   });
 
-  it("throws, naming its path, when a piece names no source", () => {
+  it("throws, naming its path, when a piece names no source, or an empty one", () => {
     const untagged = {
       path: "code/warehouse.ts",
       name: "find-fabric",
@@ -2359,11 +2359,19 @@ describe("the merge of pieces into a node", () => {
     expect(() => lint(fabric, [db, untagged as Piece, asNote])).toThrow(
       "The piece at code/warehouse.ts names no source: each piece names the source that gave it, and a note's is notes.",
     );
+    expect(() => lint(fabric, [db, { ...inCode, source: "" }, asNote])).toThrow(
+      "The piece at code/warehouse.ts names no source: each piece names the source that gave it, and a note's is notes.",
+    );
   });
 
-  it("throws, naming its path, when a thing it could not read names no source", () => {
+  it("throws, naming its path, when a thing it could not read names no source, or an empty one", () => {
     const untagged = { path: "find-fabric.md", name: "find-fabric" };
     expect(() => lint(fabric, [db, inCode], [untagged as Unread])).toThrow(
+      "The thing at find-fabric.md, not read, names no source: each names the source that found it, and a note's is notes.",
+    );
+    expect(() =>
+      lint(fabric, [db, inCode], [{ ...untagged, source: "" }]),
+    ).toThrow(
       "The thing at find-fabric.md, not read, names no source: each names the source that found it, and a note's is notes.",
     );
   });
@@ -2418,7 +2426,8 @@ describe("the merge of pieces into a node", () => {
       ],
       unread: [{ path: "code/broken.ts", name: "find-company" }],
     });
-    // The pieces and unread things lintFolder reads: the loader's notes and the source's, each with its source.
+    // The pieces and unread things lintFolder reads: the loader's, which name the source notes, and the source's,
+    // with its number, as lintFolder gives it.
     const notes = await loadFolder(root);
     const fromSource = await given();
     const pieces: Piece[] = [
@@ -2426,7 +2435,7 @@ describe("the merge of pieces into a node", () => {
       ...fromSource.pieces.map((piece) => ({ ...piece, source: "1" })),
     ];
     const unread = [
-      ...notes.unread.map((u) => ({ ...u, source: "notes" })),
+      ...notes.unread,
       ...fromSource.unread.map((u) => ({ ...u, source: "1" })),
     ];
     const folderLint = await lintFolder(schema, root, { sources: [given] });
