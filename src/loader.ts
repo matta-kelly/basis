@@ -33,14 +33,21 @@ export type Piece = {
  */
 export type Note = Piece & { body: string; source: "notes" };
 
+/** A thing a source found and could not read, by its path and name. */
+type NotRead = { path: string; name: string };
+
 /**
  * What a source gives: the pieces it read, in path order, a problem for each thing it could not read, and each thing
- * it found and could not read, by its path and name. A link to one of those is not a problem: it has its own.
+ * it found and could not read, by its path and name. A link to one of those is not a problem: it has its own. The
+ * loader's pieces and unread things name their source, notes; another source's name none.
  */
-export type Loaded<N extends Omit<Piece, "source"> = Piece> = {
+export type Loaded<
+  N extends Omit<Piece, "source"> = Piece,
+  U extends NotRead = NotRead,
+> = {
   pieces: readonly N[];
   problems: readonly Problem[];
-  unread: readonly { path: string; name: string }[];
+  unread: readonly U[];
 };
 
 /**
@@ -182,18 +189,18 @@ export const byPath = (a: { path: string }, b: { path: string }) =>
 // Fails on bytes that are not UTF-8, where a plain read would change them with no word.
 const utf8 = new TextDecoder("utf-8", { fatal: true });
 
-/** Every note in a folder and the folders in it, in path order, a problem for each note that cannot be read, and the notes found and not read. The files are read one at a time. */
+/** Every note in a folder and the folders in it, in path order, a problem for each note that cannot be read, and the notes found and not read, each of the source notes. The files are read one at a time. */
 export async function loadFolder(
   folder: string,
   { skip }: FolderOptions = {},
-): Promise<Loaded<Note>> {
+): Promise<Loaded<Note, NotRead & { source: "notes" }>> {
   const { paths, skipped } = await notePaths(folder, skip);
   const pieces: Note[] = [];
   const problems = [...skipped];
   // The notes found and not read: the files, not a link or a folder.
-  const unread: { path: string; name: string }[] = [];
+  const unread: (NotRead & { source: "notes" })[] = [];
   const notRead = (path: string) =>
-    unread.push({ path, name: basename(path, ".md") });
+    unread.push({ path, name: basename(path, ".md"), source: "notes" });
   for (const path of paths) {
     let text: string;
     try {

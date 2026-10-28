@@ -787,14 +787,17 @@ export function lint(
   pieces: readonly Piece[],
   unread: readonly Unread[] = [],
 ): LintResult {
-  // A piece with no source is the caller's fault: the merge tells two things from one by their sources.
+  // A piece with no source is the caller's fault: the merge tells two things from one by their sources. The empty
+  // string names none.
+  const named = (source: unknown) =>
+    typeof source === "string" && source !== "";
   for (const piece of pieces)
-    if (typeof piece.source !== "string")
+    if (!named(piece.source))
       throw new Error(
         `The piece at ${piece.path} names no source: each piece names the source that gave it, and a note's is notes.`,
       );
   for (const thing of unread)
-    if (typeof thing.source !== "string")
+    if (!named(thing.source))
       throw new Error(
         `The thing at ${thing.path}, not read, names no source: each names the source that found it, and a note's is notes.`,
       );
@@ -1207,7 +1210,7 @@ export async function lintFolder(
           ? dirname(at(place, path)) === other.folder && path.endsWith(".md")
           : within(other.folder, at(place, path)),
       );
-    let read: Loaded<Note>;
+    let read: Loaded<Note, Unread>;
     try {
       read = await loadFolder(place.folder, { skip });
     } catch (error) {
@@ -1227,7 +1230,6 @@ export async function lintFolder(
     unread.push(
       ...read.unread.map((u) => ({
         ...placed(place)(u),
-        source: "notes",
         at: at(place, u.path),
       })),
     );
