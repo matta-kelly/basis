@@ -20,9 +20,10 @@ if [ -e node_modules/@mku1tra/basis/node_modules/zod ]; then
 fi
 
 printf -- '---\ntype: source\ndescription: "Where each bake is written."\nrole: entry\n---\n' >notes/slate.md
-# The type note of source, in the folder its schema declares. basis's own, for the type type, is in its package.
+# The type note of source, in the folder its schema declares: its prose, as its code gives its description. basis's
+# own, for the type type, is in its package.
 mkdir types
-printf -- '---\ntype: type\ndescription: "A place data lives."\n---\n' >types/source.md
+printf -- '---\ntype: type\n---\nA place data lives: a database, a file, an app.\n' >types/source.md
 printf -- '---\ntype: source\nrole: entry\n---\n' >notes/oven.md
 
 node --input-type=module -e '

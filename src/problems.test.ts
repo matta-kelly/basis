@@ -386,7 +386,6 @@ describe("basis's rules", () => {
       "basis/link",
       "basis/key",
       "basis/type-note",
-      "basis/type-note-agrees",
       "basis/type-note-type",
       "basis/type-note-folder",
     ]);

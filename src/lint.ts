@@ -83,11 +83,6 @@ export const coreRules = Object.freeze([
       "Each type a schema owns has its type note, in the folder the schema declares.",
   },
   {
-    id: "basis/type-note-agrees",
-    description:
-      "A type note has its type's description, and abstract: true when its type is abstract.",
-  },
-  {
     id: "basis/type-note-type",
     description:
       "Each type note in a schema's folder explains a type of that schema.",
@@ -796,7 +791,18 @@ export function lint(
   // A schema made another way than defineSchema, such as a spread, has its rules checked here.
   checkRules(schema);
   const seen: Seen = seenTypes<Schema>(schema);
-  const { nodes, problems } = mergeAll(pieces);
+  // A type's code piece joins its one type note. Two type notes of one name are two nodes that share it, and neither
+  // is the type's.
+  const typeNotes = new Map<string, number>();
+  for (const piece of pieces)
+    if (isNote(piece) && isTypeNote(piece))
+      typeNotes.set(piece.name, (typeNotes.get(piece.name) ?? 0) + 1);
+  const { nodes, problems } = mergeAll([
+    ...pieces,
+    ...pieces.flatMap((piece) =>
+      typeNotes.get(piece.name) === 1 ? (codePieceOf(seen, piece) ?? []) : [],
+    ),
+  ]);
   const byName = byNameOf(nodes);
 
   // The names an unread note shares with a node that has a note: two notes of one name, so neither is the node.
@@ -854,60 +860,10 @@ async function realPathOf(path: string): Promise<string> {
 
 const isTypeNote = (piece: Piece) => piece.fields.type === "type";
 
-/** What is wrong with the type note of one type, if it has one. */
-function typeNoteProblems(
-  owner: Schema,
-  type: Type,
-  typeNote: Piece | undefined,
-): { rule: CoreRule; field?: string; message: string }[] {
-  const of = `the type ${type.name} of ${owner.name}`;
-  if (!typeNote)
-    return [
-      {
-        rule: "basis/type-note",
-        message: `The type ${type.name} of ${owner.name} has no type note: make this note, of type type, with the description of ${type.name}.`,
-      },
-    ];
-  const problems: { rule: CoreRule; field?: string; message: string }[] = [];
-  if (typeNote.fields.description !== type.description)
-    problems.push({
-      rule: "basis/type-note-agrees",
-      field: "/description",
-      message: `Not the description of ${of}: make it ${JSON.stringify(type.description)}`,
-    });
-  // The flag of the type, kept in the note as true, or absent.
-  const on = typeNote.fields.abstract === true;
-  if (on && !type.abstract)
-    problems.push({
-      rule: "basis/type-note-agrees",
-      field: "/abstract",
-      message: `True, and ${of} is not abstract: remove it.`,
-    });
-  if (!on && type.abstract)
-    problems.push({
-      rule: "basis/type-note-agrees",
-      field: "/abstract",
-      message: `Missing: ${of} is abstract, so add abstract: true.`,
-    });
-  return problems;
-}
-
-/**
- * The type notes of each schema the lint sees, read from the folder each one declares, wherever it is: each type the
- * schema owns has its note there, of type type, with its description and abstract, and each type note there explains
- * one of them. A type note outside the folder linted has the problems the lint gives a note. Each type note in the
- * folder linted is in the folder of a schema the lint sees. Folders are compared by their real paths, and each problem
- * has its path from the folder linted.
- */
-async function typeNotesOf(
-  schema: Schema,
-  folder: string,
-  linted: { pieces: Piece[]; problems: Problem[] },
-  graph: Graph,
-): Promise<Problem[]> {
+/** The folder linted, as its real path, and a path from it: as the loader gives it inside, and as given outside. */
+async function placeOf(folder: string) {
   const root = resolve(folder);
   const realRoot = await realPathOf(root);
-  // A path in the folder linted is from it as the loader gives it; another path is from the folder as it was given.
   const from = (path: string) => {
     const inside = relative(realRoot, path);
     const at =
@@ -916,8 +872,49 @@ async function typeNotesOf(
         : inside;
     return at.split(sep).join("/") || ".";
   };
+  return { realRoot, from };
+}
+
+/**
+ * The code piece of the type a type note explains, when the schema sees a type of its name: its description and
+ * abstract, as defineType made it, of the source defineType, at the note's path. The note gives the prose, and the two
+ * are pieces of one node.
+ */
+function codePieceOf(seen: Seen, piece: Piece): Piece | undefined {
+  const at =
+    isNote(piece) && isTypeNote(piece) ? seen.get(piece.name) : undefined;
+  return (
+    at && {
+      path: piece.path,
+      name: piece.name,
+      source: "defineType",
+      fields: {
+        type: "type",
+        description: at.type.description,
+        abstract: at.type.abstract === true,
+      },
+    }
+  );
+}
+
+/**
+ * The type notes of each schema the lint sees, read from the folder each one declares, wherever it is: each type the
+ * schema owns has its note there, of type type, and each type note there explains one of them. A type note outside the
+ * folder linted is merged with its type's code piece, and has the problems the lint gives a node. Each type note in the
+ * folder linted is in the folder of a schema the lint sees. Folders are compared by their real paths, and each problem
+ * has its path from the folder linted.
+ */
+async function typeNotesOf(
+  schema: Schema,
+  { realRoot, from }: Awaited<ReturnType<typeof placeOf>>,
+  linted: { notes: Loaded; pieces: Piece[] },
+  graph: Graph,
+): Promise<Problem[]> {
   const loaded = new Set(
-    [...linted.pieces, ...linted.problems].map((p) => join(realRoot, p.path)),
+    // The folder's notes, read or not: a piece of another source can share a note's path, and holds no note.
+    [...linted.notes.pieces, ...linted.notes.problems].map((p) =>
+      join(realRoot, p.path),
+    ),
   );
   const seen: Seen = seenTypes<Schema>(schema);
   const problems: Problem[] = [];
@@ -954,16 +951,13 @@ async function typeNotesOf(
       })),
     );
     const own = ownTypesOf(owner.types);
-    for (const type of own) {
-      if (unread.has(type.name)) continue;
-      const path = from(join(typesFolder, `${type.name}.md`));
-      for (const problem of typeNoteProblems(
-        owner,
-        type,
-        typeNotes.get(type.name),
-      ))
-        problems.push({ path, ...problem });
-    }
+    for (const type of own)
+      if (!unread.has(type.name) && !typeNotes.has(type.name))
+        problems.push({
+          path: from(join(typesFolder, `${type.name}.md`)),
+          rule: "basis/type-note",
+          message: `The type ${type.name} of ${owner.name} has no type note: make this note, of type type, and say in its body what ${type.name} is for.`,
+        });
     for (const typeNote of typeNotes.values())
       if (!own.some((type) => type.name === typeNote.name))
         problems.push({
@@ -972,14 +966,19 @@ async function typeNotesOf(
           message: `The schema ${owner.name} has no type ${typeNote.name}: remove this type note, or give it the name of a type of ${owner.name}.`,
         });
   }
-  // A type note outside the folder linted is a node of its own: it merges with no piece.
-  const outsideNodes = outside.map((piece) => mergeOne([piece]).node);
+  // A type note outside the folder linted is one node with its type's code piece, and with no other piece.
+  const outsideNodes = outside.map((piece) => {
+    const code = codePieceOf(seen, piece);
+    const merged = mergeOne(code ? [code, piece] : [piece]);
+    problems.push(...merged.problems);
+    return merged.node;
+  });
   const byName = byNameOf([...mergeAll(linted.pieces).nodes, ...outsideNodes]);
   for (const node of outsideNodes)
     problems.push(
       ...nodeProblems(schema, seen, node, byName, new Set(), graph),
     );
-  for (const piece of linted.pieces.filter(isTypeNote))
+  for (const piece of linted.notes.pieces.filter(isTypeNote))
     if (!folders.includes(dirname(join(realRoot, piece.path))))
       problems.push({
         path: piece.path,
@@ -1096,6 +1095,7 @@ export async function lintFolder(
   const notePaths = new Set(
     [...notes.pieces, ...notes.problems, ...notes.unread].map((p) => p.path),
   );
+  const place = await placeOf(folder);
   const loaded: Loaded[] = [
     notes,
     ...(await Promise.all(
@@ -1121,12 +1121,7 @@ export async function lintFolder(
     problems: [
       ...problems,
       ...result.problems,
-      ...(await typeNotesOf(
-        schema,
-        folder,
-        { pieces, problems },
-        result.graph,
-      )),
+      ...(await typeNotesOf(schema, place, { notes, pieces }, result.graph)),
     ].sort(byPath),
     graph: result.graph,
   };

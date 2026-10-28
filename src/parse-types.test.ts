@@ -301,7 +301,7 @@ describe("a type that extends another, in a schema that imports it", () => {
     });
     expectTypeOf(parserOf(typed, "type"))
       .returns.toHaveProperty("abstract")
-      .toEqualTypeOf<true | undefined>();
+      .toEqualTypeOf<boolean | undefined>();
   });
 
   it("is refused by the compiler for an extension of an extension of the built-in type, in a schema that does not import it", () => {

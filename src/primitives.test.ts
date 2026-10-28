@@ -1260,13 +1260,14 @@ describe("the built-in type type", () => {
     );
   });
 
-  it("parses a type note, and takes abstract only as true", () => {
+  it("parses a type note, and takes abstract only as true or false", () => {
     expect(basis.parse("type", typeNote)).toEqual(typeNote);
-    expect(basis.parse("type", { ...typeNote, abstract: true })).toEqual({
-      ...typeNote,
-      abstract: true,
-    });
-    for (const abstract of [false, "true", null])
+    for (const abstract of [true, false])
+      expect(basis.parse("type", { ...typeNote, abstract })).toEqual({
+        ...typeNote,
+        abstract,
+      });
+    for (const abstract of ["true", null])
       expect(() => basis.parse("type", { ...typeNote, abstract })).toThrow(
         /abstract/,
       );

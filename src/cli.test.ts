@@ -81,7 +81,7 @@ describe("basis lint", () => {
     const { code, log } = await cli(["lint"], root);
     expect(code).toBe(1);
     expect(log).toContain(
-      `${relative(root, bun)}: The type bun of kitchen has no type note: make this note, of type type, with the description of bun. (basis/type-note)`,
+      `${relative(root, bun)}: The type bun of kitchen has no type note: make this note, of type type, and say in its body what bun is for. (basis/type-note)`,
     );
   });
 

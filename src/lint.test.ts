@@ -25,6 +25,7 @@ import {
   extendType,
   lint,
   lintFolder,
+  loadFolder,
   many,
   manyOrNone,
   node,
@@ -808,26 +809,80 @@ describe("the lint of a link to node", () => {
 
 describe("the lint of a type note", () => {
   it("gives no problem for a note of the built-in type type under a schema that imports nothing", () => {
-    const typeNote = note("source.md", {
-      type: "type",
-      description: "A place data lives.",
-    });
+    const typeNote = note("source.md", { type: "type" });
     expect(things.imports).toEqual([]);
     expect(lint(things, [...right, typeNote]).problems).toEqual([]);
   });
 
-  it("gives a problem for a type note whose abstract is not true", () => {
-    const typeNote = note("source.md", {
+  it("merges a type note read from a folder with its type's code, into one node of the code's description and abstract", async () => {
+    const root = await mkdtemp(join(tmpdir(), "basis-lint-"));
+    made.push(root);
+    await writeFile(
+      join(root, "source.md"),
+      "---\ntype: type\n---\nA place data lives: a database, a file, an app.\n",
+    );
+    const { pieces } = await loadFolder(root);
+    const { problems, graph } = lint(things, [...right, ...pieces]);
+    expect(problems).toEqual([]);
+    expect(graph.get("source", type)).toEqual({
+      name: "source",
       type: "type",
       description: "A place data lives.",
       abstract: false,
     });
-    expect(lint(things, [...right, typeNote]).problems).toEqual([
+  });
+
+  it("gives two type notes of one name only their own problems: a name they share, and no code piece to either", () => {
+    const one = note("a/source.md", { type: "type" });
+    const other = note("b/source.md", { type: "type" });
+    expect(lint(things, [...right, one, other]).problems).toEqual([
+      {
+        path: "a/source.md",
+        rule: "basis/unique-name",
+        message: "The name source is also the name of b/source.md.",
+      },
+      {
+        path: "a/source.md",
+        rule: "basis/fields",
+        field: "/description",
+        message: "Missing: its type needs a string here.",
+      },
+      {
+        path: "b/source.md",
+        rule: "basis/unique-name",
+        message: "The name source is also the name of a/source.md.",
+      },
+      {
+        path: "b/source.md",
+        rule: "basis/fields",
+        field: "/description",
+        message: "Missing: its type needs a string here.",
+      },
+    ]);
+  });
+
+  it("gives basis/merge for a type note read from a folder that says its type is abstract, which its code says", async () => {
+    const root = await mkdtemp(join(tmpdir(), "basis-lint-"));
+    made.push(root);
+    await writeFile(
+      join(root, "source.md"),
+      "---\ntype: type\nabstract: true\n---\n",
+    );
+    const { pieces } = await loadFolder(root);
+    expect(lint(things, [...right, ...pieces]).problems).toEqual([
       {
         path: "source.md",
-        rule: "basis/fields",
+        rule: "basis/merge",
         field: "/abstract",
-        message: expect.stringMatching(/^Invalid/),
+        message:
+          "Also given by source.md (source notes): each field comes from one piece. Remove it from all but one.",
+      },
+      {
+        path: "source.md",
+        rule: "basis/merge",
+        field: "/abstract",
+        message:
+          "Also given by source.md (source defineType): each field comes from one piece. Remove it from all but one.",
       },
     ]);
   });
@@ -1340,8 +1395,9 @@ describe("the type notes of a folder", () => {
         "bun.md",
         "crumb.md",
         "loaf.md",
-        "oven.md",
+        "loaf.md",
         "pan.md",
+        "scone.md",
         "scone.md",
         "till.md",
       ].map(at),
@@ -1354,42 +1410,62 @@ describe("the type notes of a folder", () => {
       path: "kitchen/bun.md",
       rule: "basis/type-note",
       message:
-        "The type bun of kitchen has no type note: make this note, of type type, with the description of bun.",
+        "The type bun of kitchen has no type note: make this note, of type type, and say in its body what bun is for.",
     });
     expect(problems).toContainEqual({
       path: "kitchen/pan.md",
       rule: "basis/type-note",
       message:
-        "The type pan of kitchen has no type note: make this note, of type type, with the description of pan.",
+        "The type pan of kitchen has no type note: make this note, of type type, and say in its body what pan is for.",
     });
   });
 
-  it("gives a problem for a type note whose description is not its type's", async () => {
-    expect((await lintFolder(kitchen, types)).problems).toContainEqual({
-      path: "kitchen/loaf.md",
-      rule: "basis/type-note-agrees",
-      field: "/description",
-      message:
-        'Not the description of the type loaf of kitchen: make it "A loaf of bread."',
+  it("merges a type note that gives only prose with its type's code, into one node of the code's description and abstract", async () => {
+    const { root, schema } = await folderWithBun({
+      "bun.md": "---\ntype: type\n---\nA soft bread, and when to bake one.\n",
+    });
+    const { problems, graph } = await lintFolder(schema, root);
+    expect(problems).toEqual([]);
+    expect(graph.get("bun", type)).toEqual({
+      name: "bun",
+      type: "type",
+      description: "A soft bread.",
+      abstract: false,
     });
   });
 
-  it("gives a problem for a type note whose abstract is not its type's", async () => {
+  it("gives basis/merge, naming its type's code, for a type note that gives its description or abstract again", async () => {
     const problems = (await lintFolder(kitchen, types)).problems;
-    expect(problems).toContainEqual({
-      path: "kitchen/oven.md",
-      rule: "basis/type-note-agrees",
-      field: "/abstract",
-      message:
-        "Missing: the type oven of kitchen is abstract, so add abstract: true.",
-    });
-    expect(problems).toContainEqual({
-      path: "kitchen/scone.md",
-      rule: "basis/type-note-agrees",
-      field: "/abstract",
-      message:
-        "True, and the type scone of kitchen is not abstract: remove it.",
-    });
+    expect(problems.filter((p) => p.rule === "basis/merge")).toEqual([
+      {
+        path: "kitchen/loaf.md",
+        rule: "basis/merge",
+        field: "/description",
+        message:
+          "Also given by kitchen/loaf.md (source notes): each field comes from one piece. Remove it from all but one.",
+      },
+      {
+        path: "kitchen/loaf.md",
+        rule: "basis/merge",
+        field: "/description",
+        message:
+          "Also given by kitchen/loaf.md (source defineType): each field comes from one piece. Remove it from all but one.",
+      },
+      {
+        path: "kitchen/scone.md",
+        rule: "basis/merge",
+        field: "/abstract",
+        message:
+          "Also given by kitchen/scone.md (source notes): each field comes from one piece. Remove it from all but one.",
+      },
+      {
+        path: "kitchen/scone.md",
+        rule: "basis/merge",
+        field: "/abstract",
+        message:
+          "Also given by kitchen/scone.md (source defineType): each field comes from one piece. Remove it from all but one.",
+      },
+    ]);
   });
 
   it("gives a problem for a type note in a schema's folder that names no type of that schema", async () => {
@@ -1432,12 +1508,12 @@ describe("the type notes of a folder", () => {
       path: "away/bun.md",
       rule: "basis/type-note",
       message:
-        "The type bun of away has no type note: make this note, of type type, with the description of bun.",
+        "The type bun of away has no type note: make this note, of type type, and say in its body what bun is for.",
     });
   });
 
   // A new folder, with the files given, and a schema of one type, bun, whose type notes are in it.
-  const bunNote = '---\ntype: type\ndescription: "A soft bread."\n---\n';
+  const bunNote = "---\ntype: type\n---\nA soft bread.\n";
   async function folderWithBun(files: Record<string, string>) {
     const root = await mkdtemp(join(tmpdir(), "basis-lint-"));
     made.push(root);
@@ -1461,6 +1537,66 @@ describe("the type notes of a folder", () => {
   }
   const basisTypes = fileURLToPath(new URL("../types", import.meta.url));
 
+  it("checks a type note that a source's piece shares a path with, in a folder skip names", async () => {
+    const root = await mkdtemp(join(tmpdir(), "basis-lint-"));
+    made.push(root);
+    await mkdir(join(root, "types"));
+    await writeFile(
+      join(root, "types/bun.md"),
+      "---\ntype: type\nextra: 1\n---\n",
+    );
+    const schema = defineSchema({
+      name: "buns",
+      description: "d",
+      imports: [things],
+      types: {
+        bun: defineType({
+          name: "bun",
+          description: "A soft bread.",
+          fields: {},
+        }),
+      },
+      typeNotes: pathToFileURL(`${root}/types/`),
+    });
+    const tray: Source = () => ({
+      pieces: [
+        {
+          path: "types/bun.md",
+          name: "tray",
+          fields: { type: "source", description: "d", role: "entry" },
+        },
+      ],
+      problems: [],
+      unread: [],
+    });
+    const { problems } = await lintFolder(schema, root, {
+      skip: (path) => path === "types",
+      sources: [tray],
+    });
+    expect(problems).toEqual([
+      {
+        path: "types/bun.md",
+        rule: "basis/fields",
+        field: "/extra",
+        message: "Not a field of its type: remove it, or add it to the type.",
+      },
+    ]);
+  });
+
+  it("gives a note of another type in a schema's folder of type notes only the problem of its type's missing note", async () => {
+    const { root, schema } = await folderWithBun({
+      "bun.md": '---\ntype: bun\ndescription: "One bun."\n---\n',
+    });
+    expect((await lintFolder(schema, root)).problems).toEqual([
+      {
+        path: "bun.md",
+        rule: "basis/type-note",
+        message:
+          "The type bun of buns has no type note: make this note, of type type, and say in its body what bun is for.",
+      },
+    ]);
+  });
+
   it("finds each type note in its folder when it lints through a symbolic link", async () => {
     const root = await mkdtemp(join(tmpdir(), "basis-lint-"));
     made.push(root);
@@ -1474,15 +1610,13 @@ describe("the type notes of a folder", () => {
 
   it("gives a type note read from a folder the problems the lint gives a note of type type", async () => {
     const { schema } = await folderWithBun({
-      "bun.md":
-        '---\ntype: type\ndescription: "A soft bread."\nname: bun\nabstract: false\nextra: 1\n---\n',
+      "bun.md": "---\ntype: type\nname: bun\nextra: 1\n---\n",
     });
     const root = await mkdtemp(join(tmpdir(), "basis-lint-"));
     made.push(root);
     const problems = (await lintFolder(schema, root)).problems;
     expect(problems.map((p) => [p.rule, p.field])).toEqual([
       ["basis/name", "/name"],
-      ["basis/fields", "/abstract"],
       ["basis/fields", "/extra"],
     ]);
   });

@@ -1,5 +1,4 @@
 ---
 type: type
-description: "Where a bake is made."
 ---
-Its note does not say the type is abstract, which it is.
+Where a bake is made. Its type is abstract, which its code says, not its note.

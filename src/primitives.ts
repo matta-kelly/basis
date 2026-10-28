@@ -1017,10 +1017,10 @@ export const type = defineType({
     "A note that explains one type of a schema: what it is for, and when to use it over the others. Its body is the template a new note of that type starts from.",
   fields: {
     abstract: z
-      .literal(true)
+      .boolean()
       .optional()
       .describe(
-        "true when the type is abstract: no note is of it, only of the types that inherit it",
+        "true when the type is abstract: no note is of it, only of the types that inherit it. The type's code gives it",
       ),
   },
 });
