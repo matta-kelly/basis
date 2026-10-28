@@ -77,54 +77,54 @@ Code defines, markdown describes, and the lint checks that they agree --> a tool
 
 ### Schema
 
-- the schema is the specification: a model of every valid graph. Its parts are below; in code they are in `src/primitives.ts`
-- the words are those of the property graph (PG-Schema): node, type, property, link, schema, abstract type. Content collections (Astro) use other words for the same parts: a type is a collection, a node is an entry, and a link is a `reference()`
+- **schema**: a named set of types, with the schemas it imports, and the subgraph they make: its rules, the folder of its notes (`notes`, a file URL), the paths there that are not notes (`skip`), the sources of its pieces (`sources`), its package's exports (`exports`, a function that gives them, `() => import("./index.ts")`), and the names of the exports that are bridges (`bridges`). Made with `defineSchema`. As a CUE package holds its types and its values, and as Bazel builds a target with all its deps, a schema's lint is its notes and every import's
+	- the schema is the specification: a model of every valid graph. Its parts are below; in code they are in `src/primitives.ts`
+	- the words are those of the property graph (PG-Schema): node, type, property, link, schema, abstract type. Content collections (Astro) use other words for the same parts: a type is a collection, a node is an entry, and a link is a `reference()`
+	- **built-in types**: `node` and `type`, held in the built-in schema `basis`. Every schema sees them as if it imported `basis`, as every GraphQL schema has `__Type`. They are basis's own words: no schema can define another type of their names
+		- `node`: the abstract parent of every type, as GraphQL's `Node` interface. A link to it, or a rule on it, takes every node. No type lists it as a parent, and no schema extends it
+		- `type`: the type of a type note. A schema can extend it. Its field `abstract` is `true` when the type the note explains is abstract, and `false` when not. The type's code gives it, as it gives `description`
+	- **bridge**: an export a schema names in `bridges`: a shape an outside standard asks for, which no type defines
+	- how schemas combine
+		- dependency: a schema depends only downward. The graph has no cycles
+			- test: "to understand this, what else must I understand?" Every answer points down
+			- a cycle is fixed by a merge, or by a third piece both sit on
+		- namespace: each name has one owner. Others refer to it, and never define it again
+			- the same word in two schemas is two things (`shopify:product`, `odoo:product`)
+			- outside copies of one thing link to it (the crosswalk pattern), and are not a second definition
+		- extend, never override: a type can extend an imported type, and cannot change it
+		- public and private: others depend on what a schema exposes, never on its insides
 - **type**: a kind of node, defined once in code, as zod in `defineType`: its properties and its links, beside those every node has, and a one-line description. It says what a valid thing of that kind is
 	- one definition: code takes a thing's contract from its type, and declares no second shape of it. `basis/one-definition` holds it over what a package exports ([[#Conformance]])
 	- **key**: fields of a type that, together, no two of its nodes share (PG-Schema's key). A type has none unless it says
 	- **parents**: the types it inherits (PG-Schema's `&`). Their fields, links and keys are its own, and a key of a parent holds over the nodes of every type that inherits it. A field two parents give differently, or one it gives again, is refused: extend, never override
 	- **abstract**: a type no node is of (PG-Schema's `ABSTRACT`, GraphQL's interface). Its nodes are of the types that inherit it, and a link to it takes a node of any of them
 	- **extension**: the same type, under its name, with more fields, in a schema that imports it (GraphQL's `extend type`). Made with `extendType`. It cannot change the fields it extends
-- **type note**: the documentation of a type, as a docstring is the documentation of a function
-	- one per type, of type `type`, with the type's name as its file name. `type` is built into basis, and every schema sees it without an import
-	- it sits in the folder its schema declares: `defineSchema({ ..., typeNotes: new URL("./types/", import.meta.url) })`. basis's own type notes are in `types/` (`node.md`, `type.md`), in its package
-	- a type is one node: its code piece, as `defineType` made it, gives its `description` and `abstract`, and its type note gives the prose. The lint adds the code piece of each type note it is given, named for a type the schema sees, at the note's path, of the source `defineType`, and merges the two by name (merge, above). A note that gives the description or abstract again is `basis/merge`, which names the code
-	- an extension is the type it extends: its type note is the one of the schema that owns that type
-	- its body says what the type is for, and when to use it over another. It is the template for a new node of that type
-- **property**: a named field of a type, with a zod schema
-- **constraint**: a rule on a field, such as required, a minimum or a pattern. It is the field's zod schema, not a primitive of its own. A check over several fields, or several nodes, is a rule
-- **link**: a field of the type it starts from, whose schema records the type it points at. Its value is the name of the node it points at, as PG-Schema's edge ends at a node's identity
-	- a note writes it `"[[name]]"`, quoted, as an Obsidian property writes a link. That is the syntax of markdown, not the value: the lint reads a note's links as wikilinks, by its type, and a link a note writes without `[[ ]]` is a problem. Another source gives the name
-	- `Schema.parse` takes the values of the graph: a link is a name
-	- one, oneOrNone, many (one or more), or manyOrNone (none, or an empty list). The lint checks each one points at a node of one of its types, or of a type that inherits one
-	- a link to `node` takes a node of any type: for a link that can point at any note. A list of types is for a link whose targets mean something
-	- a link can carry its own message: `one(() => model, { message })`, and the same for each kind. `message` is a function of the failure and the graph, `(failure, graph) => string | undefined`, which gives the message, or undefined for basis's. The rule and the field stay basis's (SHACL's `sh:message`, zod's `error`)
-		- the failure (`LinkFailure`) is one of: `missing`, a required link that gives no name (absent, or an empty list); `not-a-node`, the name is no node; `wrong-type`, the node of the name is of another type (`targetType`). Each has `node`, the name of the node the link starts from, and the last two `target`, the name it points at
-		- `node` is a name, not a value: a node with a missing link did not parse. A message reads a parsed node through the graph, which is the graph a rule gets: every node that parsed, in the whole lint
-		- a value that is not one name in its piece's syntax, such as a note's link without `[[ ]]`, keeps basis's message: it is the syntax of a piece, not what the link means
-		- a type that inherits the link, or extends its type, has its message. The message is the lint's: `Schema.parse` gives zod's
-		- a message that throws, or gives other than a non-empty string or undefined, is a fault of the link: the lint throws, naming the type, the link and the node's path
-	- data on a link itself is not supported yet
-	- whether an absent optional link is worth a warning is a lint rule, not a schema question
-- **schema**: a named set of types, with the schemas it imports, and the subgraph they make: its rules, the folder of its notes (`notes`, a file URL), the paths there that are not notes (`skip`), the sources of its pieces (`sources`), its package's exports (`exports`, a function that gives them, `() => import("./index.ts")`), and the names of the exports that are bridges (`bridges`). Made with `defineSchema`. As a CUE package holds its types and its values, and as Bazel builds a target with all its deps, a schema's lint is its notes and every import's
-- **bridge**: an export a schema names in `bridges`: a shape an outside standard asks for, which no type defines
-- **built-in types**: `node` and `type`, held in the built-in schema `basis`. Every schema sees them as if it imported `basis`, as every GraphQL schema has `__Type`. They are basis's own words: no schema can define another type of their names
-	- `node`: the abstract parent of every type, as GraphQL's `Node` interface. A link to it, or a rule on it, takes every node. No type lists it as a parent, and no schema extends it
-	- `type`: the type of a type note. A schema can extend it. Its field `abstract` is `true` when the type the note explains is abstract, and `false` when not. The type's code gives it, as it gives `description`
+	- **property**: a named field of a type, with a zod schema
+		- **constraint**: a rule on a field, such as required, a minimum or a pattern. It is the field's zod schema, not a primitive of its own. A check over several fields, or several nodes, is a rule
+	- **link**: a field of the type it starts from, whose schema records the type it points at. Its value is the name of the node it points at, as PG-Schema's edge ends at a node's identity
+		- a note writes it `"[[name]]"`, quoted, as an Obsidian property writes a link. That is the syntax of markdown, not the value: the lint reads a note's links as wikilinks, by its type, and a link a note writes without `[[ ]]` is a problem. Another source gives the name
+		- `Schema.parse` takes the values of the graph: a link is a name
+		- one, oneOrNone, many (one or more), or manyOrNone (none, or an empty list). The lint checks each one points at a node of one of its types, or of a type that inherits one
+		- a link to `node` takes a node of any type: for a link that can point at any note. A list of types is for a link whose targets mean something
+		- a link can carry its own message: `one(() => model, { message })`, and the same for each kind. `message` is a function of the failure and the graph, `(failure, graph) => string | undefined`, which gives the message, or undefined for basis's. The rule and the field stay basis's (SHACL's `sh:message`, zod's `error`)
+			- the failure (`LinkFailure`) is one of: `missing`, a required link that gives no name (absent, or an empty list); `not-a-node`, the name is no node; `wrong-type`, the node of the name is of another type (`targetType`). Each has `node`, the name of the node the link starts from, and the last two `target`, the name it points at
+			- `node` is a name, not a value: a node with a missing link did not parse. A message reads a parsed node through the graph, which is the graph a rule gets: every node that parsed, in the whole lint
+			- a value that is not one name in its piece's syntax, such as a note's link without `[[ ]]`, keeps basis's message: it is the syntax of a piece, not what the link means
+			- a type that inherits the link, or extends its type, has its message. The message is the lint's: `Schema.parse` gives zod's
+			- a message that throws, or gives other than a non-empty string or undefined, is a fault of the link: the lint throws, naming the type, the link and the node's path
+		- data on a link itself is not supported yet
+		- whether an absent optional link is worth a warning is a lint rule, not a schema question
+	- **type note**: the documentation of a type, as a docstring is the documentation of a function
+		- one per type, of type `type`, with the type's name as its file name. `type` is built into basis, and every schema sees it without an import
+		- it sits in the folder its schema declares: `defineSchema({ ..., typeNotes: new URL("./types/", import.meta.url) })`. basis's own type notes are in `types/` (`node.md`, `type.md`), in its package
+		- a type is one node: its code piece, as `defineType` made it, gives its `description` and `abstract`, and its type note gives the prose. The lint adds the code piece of each type note it is given, named for a type the schema sees, at the note's path, of the source `defineType`, and merges the two by name (merge, above). A note that gives the description or abstract again is `basis/merge`, which names the code
+		- an extension is the type it extends: its type note is the one of the schema that owns that type
+		- its body says what the type is for, and when to use it over another. It is the template for a new node of that type
 - **rule**: a check a schema brings, beside basis's own. Made with `defineRule`, held by a schema (`defineSchema({ rules })`), and seen by every schema that imports it, as a type is. Its name is unique in its schema, and its id is `<schema>/<name>`, as ESLint's `plugin/rule`: two schemas can each have a rule of one name
 	- it runs on a type (`on`): each node of that type, or of a type that inherits it, that parsed. A rule on an extension does not run on a type that inherits the type extended: that type does not have the extension's fields
 	- it gets the node, parsed by its type, and the graph: each node that parsed, its own too, by name (`get`) and by type (`all`), of a type the schema sees. It gives back what is wrong: a list of `{ field?, message }`, where `field` is a JSON Pointer into a field of its node's type, other than `name`
 	- it sees the nodes linted, from every source and every schema the lint sees, type notes too
 	- a node that did not parse is not in the graph: it has its own problem, and a rule that reads it can give a second one, which goes when the first is fixed
-- how schemas combine
-	- dependency: a schema depends only downward. The graph has no cycles
-		- test: "to understand this, what else must I understand?" Every answer points down
-		- a cycle is fixed by a merge, or by a third piece both sit on
-	- namespace: each name has one owner. Others refer to it, and never define it again
-		- the same word in two schemas is two things (`shopify:product`, `odoo:product`)
-		- outside copies of one thing link to it (the crosswalk pattern), and are not a second definition
-	- extend, never override: a type can extend an imported type, and cannot change it
-	- public and private: others depend on what a schema exposes, never on its insides
 
 ### Transition
 
