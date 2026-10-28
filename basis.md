@@ -6,8 +6,8 @@ status: active
 Code defines, markdown describes, and the lint checks that they agree --> a tool that checks notes and code against rules, where each package brings its own rules and builds on others. The terms of this note are those of [[state-machine]].
 - [[#Intent]] what basis is for: why an ontology, and what a subgraph is for
 - [[#Specification]] the state basis checks, the vocabulary a state is made of, how a state changes, and the invariants true of every state
-- [[#Checking]] the lint that checks the invariants, basis's own properties, and what the rules do not yet say
-- [[#Implementation]] the language, the libraries, and the parts of basis in the order they depend on each other
+- [[#Checking]] the lint that checks a graph against its specification, and what the rules do not yet say
+- [[#Implementation]] a graph's code and notes; basis's own code: the language, the libraries, its tests, and the parts of basis in the order they depend on each other
 
 ---
 ## Intent
@@ -27,31 +27,38 @@ Code defines, markdown describes, and the lint checks that they agree --> a tool
 
 ## Specification
 
-- specification: basis's schema, a model of every valid graph
-- behavior: the composed graph over commits
+- the system modelled is a graph. Its specification is basis's schema, its implementation is the graph's code and notes, and the lint checks the one against the other
+	- specification: a schema, that is the types and rules of a graph: a model of every valid graph
+	- implementation: a graph's code and notes
+	- conformance: the lint's check of a graph against its specification ([[#Conformance]])
 
 ### State
 
-- state: the composed graph at one commit, linted from its root, every node merged from its pieces. Its bar: every rule holds
 - the graph and its subgraphs are relative terms: the graph is the one linted from its root, and its subgraphs are what it imports
+- root: the graph a lint starts from: its schema, and the folder of its notes
+- composed graph: the graph of a root and every subgraph it imports, joined into one graph
+- outermost graph: a graph that no other graph imports
+- state: the composed graph at one commit, linted from its root, every node merged from its pieces. Its bar: every rule holds
+- behavior: the composed graph over commits
 - subgraph: a package, with its notes, its types (made with basis, on zod), and a `package.json` that names what it depends on
 	- in code, a subgraph is its schema: its types and rules, its notes and its sources, and the schemas it imports
 	- npm gives versions, resolution and install. No own package format
-- composed graph: a subgraph and every subgraph it imports, joined into one graph. The lint of a schema is the lint of its subgraph: it and every schema it imports, as one graph
+	- the lint of a schema is the lint of its subgraph: it and every schema it imports, as one graph (composed graph, above)
+- ground: the part of a folder that a graph reads as its own notes: its schema's notes folder, less its skip
 - package: an npm package. It exports a schema, which names its notes, its type notes and its sources, and imports the schemas it builds on. It ships the folders its schema names, so a package that imports it lints them
 	- a package inside another's folder is set apart by its import: the folder of an imported schema is that schema's, read once, by its skip and with its sources. A folder no schema the lint sees names is read as the notes of the folder that holds it (Bazel's package boundary, set here by the import, which already says it). This is short of the invariant that a ground ends where a subgraph's root begins, which has no rule yet ([[#Invariants]], graph and subgraph)
 
 ### Primitives
 
-- the vocabulary: what a state is made of. Each one is in `src/primitives.ts`, the definition in `src/definition.ts`, and this section says what it means
+- the vocabulary: the parts a graph and its schema are made of. The schema, its rules and how schemas combine are the specification; the other terms are what a state is made of. Each one is in `src/primitives.ts`, the definition in `src/definition.ts`, and this section says what it means
 - the words are those of the property graph (PG-Schema): node, type, property, link, schema, abstract type. Content collections (Astro) use other words for the same parts: a type is a collection, a node is an entry, and a link is a `reference()`
-- **node**: one actual thing of a type, made of one or more pieces: its name, its fields, and its links to other nodes by name
+- **node**: one actual thing of a type: its name, its fields, and its links to other nodes by name. It is made of one or more pieces
 	- every node has what PG-Schema gives every node: an identity, its `name`, a slug as the open standards take one (lowercase letters and digits, with single hyphens between them), which no two nodes share (a note's is its file name); a label, its `type`, the name of its type; and a property, its `description`
 	- in code these are the fields of `node`, the abstract parent of every type, which every type inherits unlisted
 - **piece**: what one source gives of a node: a note, whose frontmatter holds its fields, or a piece a source gives. Each piece has the node's name, names the node's type, gives some of its fields, and names its source
 	- every piece names its source: a note's is `notes`, a code piece's is the source that gave it. A piece is a note when its source is `notes`; a note's body is its prose, and does not make it a note
 	- a piece that names no source, or the empty string, is the caller's fault, not a problem: the in-memory `lint` throws, naming its path. So does a thing not read that names none. `lintFolder` and the CLI name the source of each piece they read, so the in-memory `lint` and a folder's lint give the same problems for the same pieces
-- **note**: the documentation layer, a markdown file that explains a thing: what it is, why, and when to use it
+- **note**: a markdown file that explains a thing: what it is, why, and when to use it. Notes are the documentation layer
 	- a thing that is only written, such as an issue or a decision, has its note as its one form. The note is its node, and its frontmatter holds its fields
 	- a thing that lives in code, such as a plugin, gives a piece of its node from code, by a source. Its note, of the same name, is another piece of the same node: the note gives the prose, and the facts the code does not hold. The lint merges the pieces into one node (merge, below)
 - **source**: where pieces come from. The notes of a folder are basis's own source. A schema, or a config, can name more, each a function that gives pieces, such as a package's reader of its things in code. basis reads no code itself: the package that knows a thing's shape reads it
@@ -126,7 +133,7 @@ Code defines, markdown describes, and the lint checks that they agree --> a tool
 
 ### Invariants
 
-Each invariant is true of every state. Under each is the rule that holds it, or "no rule yet". They are grouped by the primitive they hold true.
+An invariant is a property true in every state. One with a rule is checked; one with "no rule yet" is a target, and can be false now. Under each is its rule, or "no rule yet" with the reason. They are grouped by the primitive they hold true.
 
 - **piece and node:** how a node is made
 	- every piece can be read: a note parses, and its frontmatter is YAML
@@ -138,7 +145,7 @@ Each invariant is true of every state. Under each is the rule that holds it, or 
 	- a thing's note and its code are pieces of one node, joined by its name: the code gives what runs, the note the prose and the facts the code does not hold
 		- rule: `basis/merge`, `basis/unique-name`
 	- each instance that code defines is a node: it reaches the lint as a piece of its type
-		- rule: a source gives the piece, and `basis/type` and `basis/fields` check it. `basis/definition-piece` fails a definition marked by `markDefinition`, in a schema's exports, that no source gives as a piece. It sees only what a schema's `exports` reaches, in plain data
+		- rule: a source gives the piece, and `basis/type` and `basis/fields` check it. `basis/definition-piece` fails a definition marked by `markDefinition`, in a schema's exports, that no source gives as a piece.
 	- a node keeps each value as its piece gives it: a live value (a function, a zod schema) stays live, and its type describes it
 		- rule: the lint's parse: plain data is copied and frozen, and any other value is kept as its piece gives it
 - **type:** what a thing is
@@ -149,7 +156,7 @@ Each invariant is true of every state. Under each is the rule that holds it, or 
 	- a type is one node: its code piece, at its type note's path, gives `description` and `abstract`, and its type note gives the prose
 		- rule: `basis/merge`, over a type's code piece and its note
 	- each type has one definition: code takes a thing's contract from its type, and declares no second shape of it
-		- rule: `basis/one-definition`, over the exports each schema gives: an exported zod object that is no part of a type the schema sees, nor a bridge it names, fails, and so does a bridge that excuses nothing. It runs in `lintFolder` and the CLI, not the in-memory `lint`. It does not see a TypeScript-only type or a zod object a package does not export
+		- rule: `basis/one-definition`, over the exports each schema gives: an exported zod object that is no part of a type the schema sees, nor a bridge it names, fails, and so does a bridge that excuses nothing. It runs in `lintFolder` and the CLI, not the in-memory `lint`
 - **name and link:** identity and relations
 	- a name is a slug, and not one of its node's fields
 		- rule: `basis/name`
@@ -158,13 +165,13 @@ Each invariant is true of every state. Under each is the rule that holds it, or 
 	- every link resolves, to a node of the right type
 		- rule: `basis/link`
 	- a relation is stated once: one link, on one node. Its reverse comes from the graph, not from a second link
-		- rule: none in basis. Each schema writes its own rule over the graph; a schema that states a relation twice and writes no rule is not caught
+		- no rule yet: basis has none. A schema can write its own rule over the graph; a schema that states a relation twice and writes none is not caught
 - **graph and subgraph:** how layers build on basis
 	- a graph stands alone: linted from its own root, it and its subgraphs pass, with nothing above it
-		- no rule yet: no check lints each root alone. Only the outermost graph is linted
+		- no rule yet: no check lints each root alone
 	- a subgraph is the same inside a graph as alone: a graph has a subgraph only through the subgraph's schema, once, and never reads its ground
-		- each note has one owner: one graph's ground holds it. A ground is a schema's notes folder, less its skip, and it ends where a subgraph's root begins
-			- no rule yet. A ground does not end at a subgraph's root: a package inside another's folder is set apart by its import ([[#State]], package), and the outermost graph's skip stands in for the rest
+		- each note has one owner: one graph's ground holds it, and a ground ends where a subgraph's root begins
+			- no rule yet: a ground does not end at a subgraph's root: a package inside another's folder is set apart by its import ([[#State]], package), and the outermost graph's skip stands in for the rest
 		- a skip leaves out only what is not a note: a file whose frontmatter has a `type` is a note, so a skip that names one fails
 			- rule: `basis/skip`
 		- a second copy of a subgraph's notes is two nodes of one name
@@ -174,12 +181,12 @@ Each invariant is true of every state. Under each is the rule that holds it, or 
 	- schemas form no cycle, and imports point only down
 		- rule: `defineSchema` refuses these when a schema is built
 	- every push lints the graph pushed, from its root
-		- no rule yet. How the push runs it is open: each repo's own check, or one shared gate
+		- no rule yet: how the push runs it is open: each repo's own check, or one shared gate
 	- packages are nodes, and each dependency is on a published package, by version: never a path into another repo
-		- rule: `lot/by-version`, lot's rule, not basis's, over lot's packages source (each `package.json` in the vault): a dependency npm resolves to a place (a folder, a tarball, a git or other url), a published package used as a workspace, or a workspace with no package fails. It reads `package.json`, not code, so it does not see an import by a relative path
+		- rule: a rule of the graph that holds the packages, none in basis. It reads each `package.json`: a dependency npm resolves to a place (a folder, a tarball, a git or other url), a published package used as a workspace, or a workspace with no package fails. It reads `package.json`, not code, so it does not see an import by a relative path
 - **outside:** what basis meets but does not read
 	- no lint or rule reads a bridge
-		- rule: none. It holds by construction: que writes its card for Agent Plugins at publish only, never commits it, and has no reader of it
+		- no rule yet: it holds by construction. A graph that meets an outside standard writes its bridge at publish only, never commits it, and has no reader of it
 
 ## Checking
 
@@ -190,7 +197,7 @@ Each invariant is true of every state. Under each is the rule that holds it, or 
 
 ### Conformance
 
-- conformance: the verification of the implementation against the specification. For basis it is the lint, over the composed graph, from the root of the graph linted
+- conformance: the verification of a graph's code and notes against its specification ([[#Specification]]). It is the lint, over the composed graph, from its root
 - a linter checks definitions against rules without running anything. In: pieces, merged into nodes. Out: a list of problems, and the graph it checked. It changes nothing
 	- the graph (`{ problems, graph }`, as zod's `safeParse` gives the data with its error) is the one a rule reads: each node that parsed, by its name (`get`) and by its type (`all`), with each value as its piece gives it. A program runs on it once the problems are none, so the lint and the program read one graph
 - one graph, one linter: every node, from every source, goes into one graph, and is checked against its type, each link against the type it points at, and the rules of each schema. A node is of a type the schema sees, whatever its source: the world stays closed
@@ -229,19 +236,22 @@ Each invariant is true of every state. Under each is the rule that holds it, or 
 
 ### Internal verification
 
-- internal verification: the verification of the specification against its own properties. For basis it is the fast-check properties in its tests: over random pieces of three names, each of whose fields one or more pieces give, the order of the pieces does not change the problems or their order (merge, [[#Primitives]])
+- internal verification: the verification of a specification against its own properties, as TLC checks a TLA+ specification. basis has no technique for it: nothing checks a schema against properties of its own
 
 ### Validation
 
 - validation: the check that the specification gives what the intent asks for. Does the rule set say all that "each real thing is defined once" means?
-- where the rules do not yet say it all
-	- blind spots: `basis/one-definition` does not see a TypeScript-only type, or a zod object a package does not export or holds inside another export; `basis/definition-piece` does not see a definition the exports do not reach, or one held by a value that is no plain data ([[#Conformance]])
-	- a relation stated twice is caught only where a schema writes its own rule over the graph ([[#Invariants]], name and link)
+- what the rule set does not say ([[#Invariants]])
+	- the invariants with no rule yet: a graph stands alone; a ground ends where a subgraph's root begins; every push lints the graph pushed, from its root
+	- the invariant held by construction: no lint or rule reads a bridge
+	- a relation stated twice is caught only where a schema writes its own rule over the graph
 	- transitions: basis checks one state of the graph, never a move from one state to the next. No rule can say what a change may do
+- the blind spots of a rule are gaps of conformance, under the rule they belong to ([[#Conformance]])
 
 ## Implementation
 
-- implementation: basis's code, which implements the specification. A graph built on basis has its own code and notes, which the lint checks against the specification
+- implementation: a graph's code and notes ([[#Specification]]). basis's own code is the implementation of the lint, and its tests check that code
+	- two of its tests are fast-check properties of the merge: over random pieces of three names, each of whose fields one or more pieces give, the order of the pieces does not change the problems or their order; and every field two pieces give is a problem on each piece, and only those
 
 ### Foundation
 
