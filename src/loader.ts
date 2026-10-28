@@ -1,7 +1,5 @@
-import { createReadStream } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
+import { open, readdir, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { createInterface } from "node:readline";
 import { parseDocument } from "yaml";
 
 /**
@@ -230,48 +228,83 @@ export async function loadFolder(
   };
 }
 
-/** Whether `skip` names a path, itself or by a folder it is in. */
-const skips = (skip: (path: string) => boolean, path: string) =>
-  path.split("/").some((_, i, parts) => skip(parts.slice(0, i + 1).join("/")));
+/** The most of a skipped file read for its frontmatter. A note's frontmatter closes long before it. */
+const headBytes = 64 * 1024;
 
-/** Whether a file's frontmatter parses and has a `type`. It reads the file only to the end of its frontmatter. */
+/**
+ * Whether a file's frontmatter, as the loader reads it, parses and has a `type`. It reads at most the file's first
+ * `headBytes`, to the end of its last whole line there: a frontmatter that does not close in them is none.
+ */
 async function typed(file: string): Promise<boolean> {
-  const stream = createReadStream(file, { encoding: "utf8" });
-  const lines = createInterface({ input: stream, crlfDelay: Infinity });
-  const head: string[] = [];
-  const fence = /^---[ \t]*$/;
+  let head: string;
   try {
-    for await (const line of lines) {
-      head.push(line);
-      // The first line, after a BOM, opens the frontmatter, or there is none; the next line of --- closes it.
-      const first = head.length === 1;
-      if (first ? !fence.test(line.replace(/^\uFEFF/, "")) : fence.test(line))
-        break;
+    const handle = await open(file);
+    try {
+      const { buffer, bytesRead } = await handle.read(
+        Buffer.alloc(headBytes),
+        0,
+        headBytes,
+        0,
+      );
+      // A line the bound cuts is not read. A byte of \n is never inside a character of UTF-8, so no character is cut.
+      const end =
+        bytesRead < headBytes ? bytesRead : buffer.lastIndexOf(0x0a) + 1;
+      head = utf8.decode(buffer.subarray(0, end));
+    } finally {
+      await handle.close();
     }
   } catch {
-    // A file that cannot be read cannot say it is a note.
+    // A file the loader could not read cannot say it is a note.
     return false;
-  } finally {
-    lines.close();
-    stream.destroy();
   }
-  const read = readNote(file, head.join("\n"));
+  const read = readNote(file, head);
   return read.ok && Object.hasOwn(read.note.fields, "type");
 }
 
 /**
+ * The `.md` files under the paths `skip` names, itself or by a folder it is in, by their paths from the folder read.
+ * It walks only to those paths, and a path `apart` names is not looked at.
+ */
+async function skippedPaths(
+  root: string,
+  skip: (path: string) => boolean,
+  apart: (path: string) => boolean,
+  folder = "",
+): Promise<string[]> {
+  const paths: string[] = [];
+  let entries;
+  try {
+    entries = await readdir(join(root, folder), { withFileTypes: true });
+  } catch {
+    // The loader gives the problem of a folder it cannot read.
+    return paths;
+  }
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue;
+    const path = folder ? `${folder}/${entry.name}` : entry.name;
+    if (apart(path)) continue;
+    if (!skip(path)) {
+      if (entry.isDirectory())
+        paths.push(...(await skippedPaths(root, skip, apart, path)));
+    } else if (entry.isDirectory())
+      paths.push(...(await notePaths(root, apart, path)).paths);
+    else if (entry.isFile() && entry.name.endsWith(".md")) paths.push(path);
+  }
+  return paths;
+}
+
+/**
  * The notes a skip hides, in path order: each `.md` file under a folder that `skip` names, itself or by a folder it is
- * in, whose frontmatter parses and has a `type`. A path `apart` names, such as a folder another place reads, is not
- * looked at. A file is read only to the end of its frontmatter.
+ * in, whose frontmatter, as the loader reads it, parses and has a `type`. A path `apart` names, such as a folder another
+ * place reads, is not looked at. A file is read at most to its first 64 KiB.
  */
 export async function hiddenNotes(
   folder: string,
   skip: (path: string) => boolean,
   apart: (path: string) => boolean,
 ): Promise<string[]> {
-  const { paths } = await notePaths(folder, apart);
   const hidden: string[] = [];
-  for (const path of paths.filter((path) => skips(skip, path)))
+  for (const path of await skippedPaths(folder, skip, apart))
     if (await typed(join(folder, path))) hidden.push(path);
   return hidden.sort();
 }
