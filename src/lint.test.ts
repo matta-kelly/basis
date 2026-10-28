@@ -1836,6 +1836,30 @@ describe("the lint of a schema and the schemas it imports, as one graph", () => 
       const { problems } = await lintFolder(skipping(base), base);
       expect(problems).toEqual([]);
     });
+
+    it("that names a .md file the loader could not read, or finds no frontmatter in, is no problem", async () => {
+      const base = await filesIn({
+        "slate.md": slateNote,
+        // Lines that end in CR alone: the loader finds no frontmatter.
+        "drafts/cr-only.md": slateNote.replaceAll("\n", "\r"),
+      });
+      // A byte that is not UTF-8 in the frontmatter: the loader cannot read the file.
+      await writeFile(
+        join(base, "drafts/latin1.md"),
+        Buffer.from(slateNote.replace("Where", "Caf\u00e9"), "latin1"),
+      );
+      const { problems } = await lintFolder(skipping(base), base);
+      expect(problems).toEqual([]);
+    });
+
+    it("that names a .md file whose frontmatter does not close in its first 64 KiB is no problem", async () => {
+      const base = await filesIn({
+        "slate.md": slateNote,
+        "drafts/long.md": `---\ntype: source\nlong: ${"x".repeat(64 * 1024)}\n---\n`,
+      });
+      const { problems } = await lintFolder(skipping(base), base);
+      expect(problems).toEqual([]);
+    });
   });
 });
 
