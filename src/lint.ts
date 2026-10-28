@@ -16,8 +16,10 @@ import {
   type FolderOptions,
   type Loaded,
   loadFolder,
+  type Note,
   type Piece,
   type Problem,
+  type Source,
 } from "./loader.ts";
 import {
   checked,
@@ -835,20 +837,6 @@ export function lint(
   return { problems: problems.sort(byPath), graph: parsed.graph };
 }
 
-/**
- * The notes of one folder, read as the loader reads a folder, with the folders in it left out. A folder that is not
- * there holds none.
- */
-async function notesIn(folder: string) {
-  try {
-    return await loadFolder(folder, { skip: (path) => path.includes("/") });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT")
-      return { pieces: [], problems: [], unread: [] };
-    throw error;
-  }
-}
-
 /** A path, as its real path: through each symbolic link. A path that is not there is kept. */
 async function realPathOf(path: string): Promise<string> {
   try {
@@ -897,68 +885,48 @@ function codePieceOf(seen: Seen, piece: Piece): Piece | undefined {
   );
 }
 
+/** A note, by its path from the folder linted, with its real path. */
+type Placed = { piece: Piece; at: string };
+
 /**
- * The type notes of each schema the lint sees, read from the folder each one declares, wherever it is: each type the
- * schema owns has its note there, of type type, and each type note there explains one of them. A type note outside the
- * folder linted is merged with its type's code piece, and has the problems the lint gives a node. Each type note in the
- * folder linted is in the folder of a schema the lint sees. Folders are compared by their real paths, and each problem
- * has its path from the folder linted.
+ * What is wrong with the type notes of each schema the lint sees, in the folder each one declares: each type the schema
+ * owns has its note there, and each type note there explains one of them. Each type note is in the folder of a schema
+ * the lint sees. Folders are compared by their real paths.
  */
-async function typeNotesOf(
+async function typeNoteProblems(
   schema: Schema,
-  { realRoot, from }: Awaited<ReturnType<typeof placeOf>>,
-  linted: { notes: Loaded; pieces: Piece[] },
-  graph: Graph,
+  notes: readonly Placed[],
+  unread: readonly { name: string; at: string }[],
+  from: (path: string) => string,
 ): Promise<Problem[]> {
-  const loaded = new Set(
-    // The folder's notes, read or not: a piece of another source can share a note's path, and holds no note.
-    [...linted.notes.pieces, ...linted.notes.problems].map((p) =>
-      join(realRoot, p.path),
-    ),
-  );
-  const seen: Seen = seenTypes<Schema>(schema);
   const problems: Problem[] = [];
   const folders: string[] = [];
-  const outside: Piece[] = [];
+  const typeNotes = notes.filter(({ piece }) => isTypeNote(piece));
   for (const owner of schemasSeen(schema)) {
     if (!owner.typeNotes) continue;
     const typesFolder = await realPathOf(
       resolve(fileURLToPath(owner.typeNotes)),
     );
     folders.push(typesFolder);
-    const read = await notesIn(typesFolder);
-    // A note in the folder linted has the loader's problems and the lint's already.
-    const notLoaded = <P extends { path: string }>(p: P) =>
-      !loaded.has(join(typesFolder, p.path));
-    for (const problem of read.problems.filter(notLoaded))
-      problems.push({
-        ...problem,
-        path: from(join(typesFolder, problem.path)),
-      });
-    const unread = new Set(read.unread.map(({ name }) => name));
-    const typeNotes = new Map(
-      read.pieces
-        .filter(isTypeNote)
-        .map((piece) => [
-          piece.name,
-          { ...piece, path: from(join(typesFolder, piece.path)) },
-        ]),
+    const here = new Map(
+      typeNotes
+        .filter(({ at }) => dirname(at) === typesFolder)
+        .map(({ piece }) => [piece.name, piece]),
     );
-    outside.push(
-      ...read.pieces.filter(notLoaded).map((piece) => ({
-        ...piece,
-        path: from(join(typesFolder, piece.path)),
-      })),
+    const notRead = new Set(
+      unread
+        .filter(({ at }) => dirname(at) === typesFolder)
+        .map(({ name }) => name),
     );
     const own = ownTypesOf(owner.types);
     for (const type of own)
-      if (!unread.has(type.name) && !typeNotes.has(type.name))
+      if (!notRead.has(type.name) && !here.has(type.name))
         problems.push({
           path: from(join(typesFolder, `${type.name}.md`)),
           rule: "basis/type-note",
           message: `The type ${type.name} of ${owner.name} has no type note: make this note, of type type, and say in its body what ${type.name} is for.`,
         });
-    for (const typeNote of typeNotes.values())
+    for (const typeNote of here.values())
       if (!own.some((type) => type.name === typeNote.name))
         problems.push({
           path: typeNote.path,
@@ -966,20 +934,8 @@ async function typeNotesOf(
           message: `The schema ${owner.name} has no type ${typeNote.name}: remove this type note, or give it the name of a type of ${owner.name}.`,
         });
   }
-  // A type note outside the folder linted is one node with its type's code piece, and with no other piece.
-  const outsideNodes = outside.map((piece) => {
-    const code = codePieceOf(seen, piece);
-    const merged = mergeOne(code ? [code, piece] : [piece]);
-    problems.push(...merged.problems);
-    return merged.node;
-  });
-  const byName = byNameOf([...mergeAll(linted.pieces).nodes, ...outsideNodes]);
-  for (const node of outsideNodes)
-    problems.push(
-      ...nodeProblems(schema, seen, node, byName, new Set(), graph),
-    );
-  for (const piece of linted.notes.pieces.filter(isTypeNote))
-    if (!folders.includes(dirname(join(realRoot, piece.path))))
+  for (const { piece, at } of typeNotes)
+    if (!folders.includes(dirname(at)))
       problems.push({
         path: piece.path,
         rule: "basis/type-note-folder",
@@ -989,18 +945,70 @@ async function typeNotesOf(
 }
 
 /**
- * A source of pieces beside the notes of a folder: a function that gives what it read, as the loader gives a folder.
- * It gives pieces, not notes: every note is the loader's, read from the folder that holds it. Each path is from the
- * folder linted, and a link is the name of the node it points at. The package that knows a thing's shape writes its
- * source: basis reads no code.
+ * A folder the lint reads, by its real path: the paths in it that are not notes, and the sources of pieces beside its
+ * notes. A folder of type notes that is no other place's folder is read alone, by its own notes only, whatever the
+ * place it is in leaves out, and may not be there.
  */
-export type Source = () => Loaded<SourcePiece> | Promise<Loaded<SourcePiece>>;
-
-/** A piece a source gives: never a body, as a note has. */
-type SourcePiece = Omit<Piece, "body" | "source"> & {
-  body?: never;
-  source?: never;
+type Place = {
+  folder: string;
+  skip?: (path: string) => boolean;
+  sources: readonly Source[];
+  typeNotes?: true;
 };
+
+/** Whether a path is a folder, or in it. */
+const within = (folder: string, path: string) =>
+  path === folder || path.startsWith(folder + sep);
+
+/** A folder of a schema, from its file URL, as its real path. */
+const folderOf = (url: URL) => realPathOf(resolve(fileURLToPath(url)));
+
+/**
+ * The places of a schema's lint: the folder linted, for the schema linted; the folder of notes of each schema it sees,
+ * with its skip and sources; and each folder of type notes that is no other place's folder. The folder linted, when a
+ * schema it sees names it as its notes, is that schema's place, with its skip and sources; a skip or sources given
+ * beside it are a second place for one fact, and refused.
+ */
+async function placesOf(
+  schema: Schema,
+  root: string,
+  { skip, sources }: LintOptions,
+): Promise<Place[]> {
+  const places: Place[] = [
+    { folder: root, ...(skip && { skip }), sources: sources ?? [] },
+  ];
+  const seen = schemasSeen(schema);
+  for (const owner of seen) {
+    if (!owner.notes) continue;
+    const folder = await folderOf(owner.notes);
+    const place: Place = {
+      folder,
+      ...(owner.skip && { skip: owner.skip }),
+      sources: owner.sources ?? [],
+    };
+    if (folder !== root) {
+      places.push(place);
+      continue;
+    }
+    if (skip !== undefined || sources !== undefined)
+      throw new Error(
+        `The schema ${owner.name} names this folder as its notes: give its skip and sources in its defineSchema.`,
+      );
+    places[0] = place;
+  }
+  for (const owner of seen) {
+    if (!owner.typeNotes) continue;
+    const folder = await folderOf(owner.typeNotes);
+    if (!places.some((place) => place.folder === folder))
+      places.push({
+        folder,
+        skip: (path) => path.includes("/"),
+        sources: [],
+        typeNotes: true,
+      });
+  }
+  return places;
+}
 
 /** What a folder's lint takes beside the folder: the paths that are not notes, and the sources of more pieces. */
 export type LintOptions = FolderOptions & { sources?: readonly Source[] };
@@ -1041,13 +1049,13 @@ const LoadedShape = z.strictObject({
 
 /**
  * What a source gives, or a throw that names the source: its function's name, or its place in the list. A source is
- * also at fault when it gives the path of a note the folder holds, or a piece of type type: a type note is a note, in
+ * also at fault when it gives the path of a note the lint reads, in any place, or a piece of type type: a type note is a note, in
  * the folder its schema declares.
  */
-async function read(
+async function readSource(
   source: Source,
   at: number,
-  notePaths: ReadonlySet<string>,
+  isNotePath: (path: string) => boolean,
 ): Promise<Loaded> {
   const id = source.name || `number ${at + 1}`;
   let loaded: unknown;
@@ -1066,7 +1074,7 @@ async function read(
     );
   const { pieces, problems, unread } = parsed.data;
   const taken = [...pieces, ...problems, ...unread].find(({ path }) =>
-    notePaths.has(path),
+    isNotePath(path),
   );
   if (taken)
     throw new Error(
@@ -1082,46 +1090,103 @@ async function read(
 }
 
 /**
- * A folder, loaded, with the pieces of each source, linted as one graph, and the type notes of each schema the lint
- * sees: the loader's and the sources' problems and the lint's, in path order, and the graph of the folder's notes and
- * the sources' pieces.
+ * A folder, and each place of the schema's lint, loaded, with the pieces of each source and the code piece of each type,
+ * linted as one graph: the schema, and each schema it imports. A folder another place holds is that place's, read once,
+ * so an imported schema's folder inside the folder linted is read as that schema's. Gives the loader's and the sources'
+ * problems and the lint's, in path order, each by its path from the folder linted, and the graph of every piece.
  */
 export async function lintFolder(
   schema: Schema,
   folder: string,
-  { sources = [], ...options }: LintOptions = {},
+  options: LintOptions = {},
 ): Promise<LintResult> {
-  const notes = await loadFolder(folder, options);
-  const notePaths = new Set(
-    [...notes.pieces, ...notes.problems, ...notes.unread].map((p) => p.path),
-  );
-  const place = await placeOf(folder);
-  const loaded: Loaded[] = [
-    notes,
-    ...(await Promise.all(
-      sources.map((source, at) => read(source, at, notePaths)),
-    )),
-  ];
-  // Each piece with the source that gave it, by its place in the list: two sources can share a function's name.
-  const pieces = loaded
-    .flatMap((l, at) =>
-      at === 0
-        ? l.pieces
-        : l.pieces.map((piece) => ({ ...piece, source: `${at}` })),
-    )
-    .sort(byPath);
-  const problems = loaded.flatMap((l) => l.problems);
-  // The loader's are notes.
-  const unread: Unread[] = [
-    ...notes.unread.map((u) => ({ ...u, note: true as const })),
-    ...loaded.slice(1).flatMap((l) => l.unread),
-  ];
-  const result = lint(schema, pieces, unread);
+  const { realRoot, from } = await placeOf(folder);
+  const places = await placesOf(schema, realRoot, options);
+  const pieces: Piece[] = [];
+  const problems: Problem[] = [];
+  const unread: (Unread & { at: string })[] = [];
+  const notes: Placed[] = [];
+  // Each path a place's loader read, or could not read, by its real path: no source gives a note's path.
+  const notePaths = new Set<string>();
+  const at = (place: Place, path: string) => join(place.folder, path);
+  const placed =
+    (place: Place) =>
+    <P extends { path: string }>(p: P): P => ({
+      ...p,
+      path: from(at(place, p.path)),
+    });
+  for (const place of places) {
+    const inner = places.filter(
+      (other) =>
+        other.folder !== place.folder && within(place.folder, other.folder),
+    );
+    // A folder another place reads is that place's: all in it, or, for a folder of type notes, its own notes.
+    const skip = (path: string) =>
+      (place.skip?.(path) ?? false) ||
+      inner.some((other) =>
+        other.typeNotes
+          ? dirname(at(place, path)) === other.folder && path.endsWith(".md")
+          : within(other.folder, at(place, path)),
+      );
+    let read: Loaded<Note>;
+    try {
+      read = await loadFolder(place.folder, { skip });
+    } catch (error) {
+      if (
+        !place.typeNotes ||
+        (error as NodeJS.ErrnoException).code !== "ENOENT"
+      )
+        throw error;
+      read = { pieces: [], problems: [], unread: [] };
+    }
+    for (const note of read.pieces) {
+      const piece = placed(place)(note);
+      pieces.push(piece);
+      notes.push({ piece, at: at(place, note.path) });
+    }
+    problems.push(...read.problems.map(placed(place)));
+    unread.push(
+      ...read.unread.map((u) => ({
+        ...placed(place)(u),
+        note: true as const,
+        at: at(place, u.path),
+      })),
+    );
+    for (const p of [...read.pieces, ...read.problems, ...read.unread])
+      notePaths.add(at(place, p.path));
+  }
+  let sourcesRead = 0;
+  for (const place of places) {
+    const first = sourcesRead;
+    sourcesRead += place.sources.length;
+    const loaded = await Promise.all(
+      place.sources.map((source, i) =>
+        readSource(source, first + i, (path) => notePaths.has(at(place, path))),
+      ),
+    );
+    // Each piece with the source that gave it, by its place in the lint: two sources can share a function's name.
+    loaded.forEach((l, i) => {
+      pieces.push(
+        ...l.pieces.map((piece) => ({
+          ...placed(place)(piece),
+          source: `${first + i + 1}`,
+        })),
+      );
+      problems.push(...l.problems.map(placed(place)));
+      unread.push(
+        ...l.unread.map((u) => ({
+          ...placed(place)(u),
+          at: at(place, u.path),
+        })),
+      );
+    });
+  }
+  const result = lint(schema, pieces.sort(byPath), unread);
   return {
     problems: [
       ...problems,
       ...result.problems,
-      ...(await typeNotesOf(schema, place, { notes, pieces }, result.graph)),
+      ...(await typeNoteProblems(schema, notes, unread, from)),
     ].sort(byPath),
     graph: result.graph,
   };

@@ -85,6 +85,38 @@ describe("basis lint", () => {
     );
   });
 
+  it("lints the notes of each schema its config's schema imports, from that schema's own folder", async () => {
+    const pkg = `import { defineSchema } from ${JSON.stringify(fileURLToPath(new URL("./index.ts", import.meta.url)))};\nimport things from ${JSON.stringify(things)};\nexport default defineSchema({ name: "pkg", description: "d", imports: [things], types: {}, notes: new URL("./", import.meta.url) });\n`;
+    const root = await folderOf({
+      "pkg/schema.ts": pkg,
+      "pkg/oven.md": oven,
+      "shop/basis.config.ts": `import { defineSchema } from ${JSON.stringify(fileURLToPath(new URL("./index.ts", import.meta.url)))};\nimport pkg from "../pkg/schema.ts";\nexport default { schema: defineSchema({ name: "shop", description: "d", imports: [pkg], types: {} }) };\n`,
+      "shop/slate.md": slate,
+    });
+    const { code, log } = await cli(["lint", "shop"], root);
+    expect(code).toBe(1);
+    expect(log).toEqual([
+      expect.stringMatching(
+        /^pkg\/oven\.md: \/description: Missing: .* \(basis\/fields\)$/,
+      ),
+    ]);
+  });
+
+  it("gives 2 when its config gives a skip or sources for a folder its schema names as its notes", async () => {
+    const index = JSON.stringify(
+      fileURLToPath(new URL("./index.ts", import.meta.url)),
+    );
+    const root = await folderOf({
+      "basis.config.ts": `import { defineSchema } from ${index};\nimport things from ${JSON.stringify(things)};\nconst pkg = defineSchema({ name: "pkg", description: "d", imports: [things], types: {}, notes: new URL("./", import.meta.url) });\nexport default { schema: pkg, skip: ["README.md"] };\n`,
+      "slate.md": slate,
+    });
+    const { code, error } = await cli(["lint"], root);
+    expect(code).toBe(2);
+    expect(error).toEqual([
+      `${root} cannot be checked: Error: The schema pkg names this folder as its notes: give its skip and sources in its defineSchema.`,
+    ]);
+  });
+
   it("checks the folder it is given, from the folder it runs in", async () => {
     const root = await folderOf({
       "notes/basis.config.ts": config(),

@@ -50,6 +50,21 @@ export type Problem = {
   fatal?: true;
 };
 
+/**
+ * A source of pieces beside the notes of a folder, which a schema or a folder's lint names: a function that gives what it read, as the loader gives a folder.
+ * It gives pieces, not notes: every note is the loader's, read from the folder that holds it. Each path is from the
+ * folder of the notes it is beside: its schema's folder of notes, or the folder linted. A link is the name of the node
+ * it points at. The package that knows a thing's shape writes its
+ * source: basis reads no code.
+ */
+export type Source = () => Loaded<SourcePiece> | Promise<Loaded<SourcePiece>>;
+
+/** A piece a source gives: never a body, as a note has. */
+type SourcePiece = Omit<Piece, "body" | "source"> & {
+  body?: never;
+  source?: never;
+};
+
 export type Read = { ok: true; note: Note } | { ok: false; problem: Problem };
 
 // The frontmatter: YAML between a first line of `---` and the next line of `---`.

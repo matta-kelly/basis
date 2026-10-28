@@ -7,7 +7,8 @@
 import { existsSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { lintFolder, type Source } from "./lint.ts";
+import { lintFolder } from "./lint.ts";
+import type { Source } from "./loader.ts";
 import type { AnySchema } from "./primitives.ts";
 
 /** What the config of a folder exports by default: the schema its nodes are checked against, what is not a note, and where more pieces come from. */

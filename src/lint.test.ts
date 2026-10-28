@@ -1537,52 +1537,6 @@ describe("the type notes of a folder", () => {
   }
   const basisTypes = fileURLToPath(new URL("../types", import.meta.url));
 
-  it("checks a type note that a source's piece shares a path with, in a folder skip names", async () => {
-    const root = await mkdtemp(join(tmpdir(), "basis-lint-"));
-    made.push(root);
-    await mkdir(join(root, "types"));
-    await writeFile(
-      join(root, "types/bun.md"),
-      "---\ntype: type\nextra: 1\n---\n",
-    );
-    const schema = defineSchema({
-      name: "buns",
-      description: "d",
-      imports: [things],
-      types: {
-        bun: defineType({
-          name: "bun",
-          description: "A soft bread.",
-          fields: {},
-        }),
-      },
-      typeNotes: pathToFileURL(`${root}/types/`),
-    });
-    const tray: Source = () => ({
-      pieces: [
-        {
-          path: "types/bun.md",
-          name: "tray",
-          fields: { type: "source", description: "d", role: "entry" },
-        },
-      ],
-      problems: [],
-      unread: [],
-    });
-    const { problems } = await lintFolder(schema, root, {
-      skip: (path) => path === "types",
-      sources: [tray],
-    });
-    expect(problems).toEqual([
-      {
-        path: "types/bun.md",
-        rule: "basis/fields",
-        field: "/extra",
-        message: "Not a field of its type: remove it, or add it to the type.",
-      },
-    ]);
-  });
-
   it("gives a note of another type in a schema's folder of type notes only the problem of its type's missing note", async () => {
     const { root, schema } = await folderWithBun({
       "bun.md": '---\ntype: bun\ndescription: "One bun."\n---\n',
@@ -1689,6 +1643,160 @@ const made: string[] = [];
 afterEach(async () => {
   for (const root of made.splice(0))
     await rm(root, { recursive: true, force: true });
+});
+
+describe("the lint of a schema and the schemas it imports, as one graph", () => {
+  // A folder of the given files, under a new folder.
+  async function filesIn(files: Record<string, string>) {
+    const base = await mkdtemp(join(tmpdir(), "basis-subgraph-"));
+    made.push(base);
+    for (const [path, text] of Object.entries(files)) {
+      await mkdir(join(base, path, ".."), { recursive: true });
+      await writeFile(join(base, path), text);
+    }
+    return base;
+  }
+  const slateNote =
+    '---\ntype: source\ndescription: "Where recipes are written."\nrole: entry\n---\n';
+  const loafNote =
+    '---\ntype: object\ndescription: "One bake."\nkey: loaf\nstates: [baked]\nlivesIn: ["[[slate]]"]\nrepresentedAs: ["[[till-item]]"]\n---\n';
+  const tills =
+    (heldIn: string): Source =>
+    () => ({
+      pieces: [
+        {
+          path: "code/till.ts",
+          name: "till",
+          fields: { type: "source", description: "d", role: "projection" },
+        },
+        {
+          path: "code/till.ts",
+          name: "till-item",
+          fields: { type: "external-object", description: "d", heldIn },
+        },
+      ],
+      problems: [],
+      unread: [],
+    });
+
+  it("lints the notes and the sources' pieces of each schema it imports, from its own folder, with the folder's", async () => {
+    const base = await filesIn({
+      "pkg/slate.md": slateNote.replace("role: entry", "role: bogus"),
+      "shop/loaf.md": loafNote,
+    });
+    const pkg = defineSchema({
+      name: "pkg",
+      description: "d",
+      imports: [things],
+      types: {},
+      notes: pathToFileURL(`${base}/pkg/`),
+      sources: [tills("nowhere")],
+    });
+    const shop = defineSchema({
+      name: "shop",
+      description: "d",
+      imports: [pkg],
+      types: {},
+    });
+    const { problems, graph } = await lintFolder(shop, join(base, "shop"));
+    expect(problems).toEqual([
+      {
+        path: "../pkg/code/till.ts",
+        rule: "basis/link",
+        field: "/heldIn",
+        message: "It points at nowhere, which is not a node.",
+      },
+      {
+        path: "../pkg/slate.md",
+        rule: "basis/fields",
+        field: "/role",
+        message: expect.stringMatching(/^Invalid option/),
+      },
+    ]);
+    expect(graph.get("loaf", object)?.livesIn).toEqual(["slate"]);
+  });
+
+  it("reads a folder of a schema it imports, inside the folder linted, once and as that schema's: by its skip, with its sources", async () => {
+    const base = await filesIn({
+      "loaf.md": loafNote,
+      "pkg/slate.md": slateNote,
+      "pkg/draft.md": "Not a note of the schema.\n",
+    });
+    const pkg = defineSchema({
+      name: "pkg",
+      description: "d",
+      imports: [things],
+      types: {},
+      notes: pathToFileURL(`${base}/pkg/`),
+      skip: (path) => path === "draft.md",
+      sources: [tills("till")],
+    });
+    const shop = defineSchema({
+      name: "shop",
+      description: "d",
+      imports: [pkg],
+      types: {},
+    });
+    const { problems, graph } = await lintFolder(shop, base);
+    expect(problems).toEqual([]);
+    expect(graph.all(source).map((n) => n.name)).toEqual(["till", "slate"]);
+  });
+
+  it("throws, naming the source, for a path of a note that a schema it imports reads", async () => {
+    const base = await filesIn({ "pkg/slate.md": slateNote });
+    const pkg = defineSchema({
+      name: "pkg",
+      description: "d",
+      imports: [things],
+      types: {},
+      notes: pathToFileURL(`${base}/pkg/`),
+    });
+    const onSlate: Source = () => ({
+      pieces: [
+        {
+          path: "pkg/slate.md",
+          name: "till",
+          fields: { type: "source", description: "d", role: "projection" },
+        },
+      ],
+      problems: [],
+      unread: [],
+    });
+    await expect(lintFolder(pkg, base, { sources: [onSlate] })).rejects.toThrow(
+      "The source onSlate gave the path pkg/slate.md, which is the path of a note of the folder.",
+    );
+  });
+
+  it("lints a schema at its own folder of notes once, by its skip, with its sources", async () => {
+    const base = await filesIn({
+      "slate.md": slateNote,
+      "draft.md": "Not a note of the schema.\n",
+    });
+    const pkg = defineSchema({
+      name: "pkg",
+      description: "d",
+      imports: [things],
+      types: {},
+      notes: pathToFileURL(`${base}/`),
+      skip: (path) => path === "draft.md",
+      sources: [tills("till")],
+    });
+    const { problems, graph } = await lintFolder(pkg, base);
+    expect(problems).toEqual([]);
+    expect(graph.all(source).map((n) => n.name)).toEqual(["till", "slate"]);
+  });
+
+  it("makes each type note a node of the graph, also one read from outside the folder linted", async () => {
+    const root = await filesIn({});
+    const { problems, graph } = await lintFolder(company, root);
+    expect(problems).toEqual([]);
+    expect(graph.get("agent", type)).toEqual({
+      name: "agent",
+      type: "type",
+      description: "One agent of a deployment.",
+      abstract: false,
+    });
+  });
 });
 
 describe("the lint of abstract types", () => {

@@ -33,6 +33,7 @@ export {
   type Note,
   type Problem,
   type Read,
+  type Source,
 } from "./loader.ts";
 export {
   coreRules,
@@ -41,7 +42,6 @@ export {
   pointer,
   type LintOptions,
   type LintResult,
-  type Source,
   type Unread,
 } from "./lint.ts";
 export { configNames, run, type Config, type Out } from "./cli.ts";

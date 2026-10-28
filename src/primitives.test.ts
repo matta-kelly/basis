@@ -1,4 +1,14 @@
-import { describe, expect, it } from "vitest";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { afterEach, describe, expect, it } from "vitest";
 import * as z from "zod";
 import {
   agent,
@@ -368,6 +378,101 @@ describe("a schema", () => {
       ).toThrow(
         'The folder of type notes of p is not a file URL: typeNotes: new URL("./types/", import.meta.url).',
       );
+  });
+
+  it("is refused with notes that are not a file URL, a skip that is not a function, or sources that are not a list of functions, made without TypeScript", () => {
+    const made = (parts: Record<string, unknown>) => () =>
+      defineSchema({ name: "p", description: "d", types: {}, ...parts });
+    expect(made({ notes: "./notes/" })).toThrow(
+      'The folder of notes of p is not a file URL: notes: new URL("./", import.meta.url).',
+    );
+    expect(made({ skip: ["README.md"] })).toThrow(
+      "The skip of p is not a function of a path.",
+    );
+    expect(made({ sources: [() => ({}), "code"] })).toThrow(
+      "The sources of p are not a list of functions.",
+    );
+  });
+
+  it("is refused when two schemas it sees declare one folder of notes", () => {
+    const notes = new URL("./notes/", import.meta.url);
+    const one = defineSchema({
+      name: "one",
+      description: "d",
+      types: {},
+      notes,
+    });
+    expect(() =>
+      defineSchema({
+        name: "two",
+        description: "d",
+        imports: [one],
+        types: {},
+        notes,
+      }),
+    ).toThrow(
+      `The schemas one and two both declare ${fileURLToPath(notes).replace(/\/$/, "")} as the folder of their notes: a folder has one owner.`,
+    );
+  });
+
+  // A folder, and a symbolic link to it: two paths of one folder. Removed after each test.
+  const made: string[] = [];
+  afterEach(() => {
+    for (const base of made.splice(0))
+      rmSync(base, { recursive: true, force: true });
+  });
+  const folderAndLink = () => {
+    const base = realpathSync(mkdtempSync(join(tmpdir(), "basis-folders-")));
+    made.push(base);
+    mkdirSync(join(base, "real"));
+    symlinkSync(join(base, "real"), join(base, "link"));
+    return {
+      real: join(base, "real"),
+      byReal: pathToFileURL(`${base}/real/`),
+      byLink: pathToFileURL(`${base}/link/`),
+    };
+  };
+
+  it("is refused when two schemas it sees declare one folder of notes through a symbolic link", () => {
+    const { real, byReal, byLink } = folderAndLink();
+    const one = defineSchema({
+      name: "one",
+      description: "d",
+      types: {},
+      notes: byReal,
+    });
+    expect(() =>
+      defineSchema({
+        name: "two",
+        description: "d",
+        imports: [one],
+        types: {},
+        notes: byLink,
+      }),
+    ).toThrow(
+      `The schemas one and two both declare ${real} as the folder of their notes: a folder has one owner.`,
+    );
+  });
+
+  it("is refused when two schemas it sees declare one folder of type notes through a symbolic link", () => {
+    const { real, byReal, byLink } = folderAndLink();
+    const one = defineSchema({
+      name: "one",
+      description: "d",
+      types: { source },
+      typeNotes: byReal,
+    });
+    expect(() =>
+      defineSchema({
+        name: "two",
+        description: "d",
+        imports: [one],
+        types: { object, "external-object": externalObject },
+        typeNotes: byLink,
+      }),
+    ).toThrow(
+      `The schemas one and two both declare ${real} as the folder of their type notes: a folder has one owner.`,
+    );
   });
 
   it("is refused with a name that is not a slug by a plain Error that names the schema, not a ZodError", () => {

@@ -6,9 +6,11 @@
  * that start from it, and nothing else.
  */
 
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as z from "zod";
+import type { Source } from "./loader.ts";
 
 // A name's schema, new each time: each link is made of schemas of its own. A slug as the open standards take one
 // (Agent Plugins, Agent Skills): lowercase letters and digits, with single hyphens between them.
@@ -596,6 +598,15 @@ export interface Schema<
    * None when it holds no type of its own. `lintFolder` reads it from disk.
    */
   typeNotes?: URL;
+  /**
+   * The folder of its notes, as a file URL: `new URL("./", import.meta.url)`. A folder's lint reads it, as it reads
+   * its own folder, for this schema and each schema that imports it: the lint of a schema is its imports' too.
+   */
+  notes?: URL;
+  /** The paths in its folder of notes that are not notes, as a folder's lint takes them. */
+  skip?: (path: string) => boolean;
+  /** The sources of its pieces beside its notes, such as its reader of its things in code. */
+  sources?: readonly Source[];
   /** Its rules: the checks of its own that the lint runs, beside basis's, on each schema that sees it. */
   rules?: readonly Rule[];
   /**
@@ -762,11 +773,15 @@ export function checked(schema: {
   types: Record<string, Type>;
   imports: readonly AnySchema[];
   typeNotes?: unknown;
+  notes?: unknown;
+  skip?: unknown;
+  sources?: unknown;
 }) {
   checkName(schema.name);
   if (!checkedWith.get(schema.types)?.has(schema.imports))
     checkSchema(schema.name, schema.types, schema.imports);
   checkTypeNotes(schema);
+  checkNotes(schema);
 }
 
 /** The types a schema holds as their owner: each one but an extension, whose owner is the schema of the type it extends. */
@@ -779,6 +794,9 @@ type SchemaParts = {
   types: Record<string, Type>;
   imports: readonly SchemaParts[];
   typeNotes?: unknown;
+  notes?: unknown;
+  skip?: unknown;
+  sources?: unknown;
   rules?: unknown;
 };
 
@@ -797,9 +815,20 @@ export function schemasSeen<S extends SchemaParts>(schema: S): S[] {
   return [...found] as S[];
 }
 
+/** A schema's folder, from its file URL, by its real path: through each symbolic link. One that is not there is kept. */
+function realFolderOf(url: URL): string {
+  const folder = resolve(fileURLToPath(url));
+  try {
+    return realpathSync(folder);
+  } catch {
+    return folder;
+  }
+}
+
 /**
  * What defineSchema checks of the folder of type notes: a file URL, there when the schema holds a type of its own, and
- * declared by no other schema it sees (one owner per folder, as per type name). A plain Error, as for the other checks.
+ * declared by no other schema it sees (one owner per folder, as per type name), by real path. A plain Error, as for the
+ * other checks.
  */
 function checkTypeNotes(schema: SchemaParts) {
   const { name, typeNotes } = schema;
@@ -819,11 +848,48 @@ function checkTypeNotes(schema: SchemaParts) {
   const owners = new Map<string, string>();
   for (const at of schemasSeen(schema)) {
     if (!(at.typeNotes instanceof URL)) continue;
-    const folder = resolve(fileURLToPath(at.typeNotes));
+    const folder = realFolderOf(at.typeNotes);
     const had = owners.get(folder);
     if (had !== undefined && had !== at.name)
       throw new Error(
         `The schemas ${had} and ${at.name} both declare ${folder} as the folder of their type notes: a folder has one owner.`,
+      );
+    owners.set(folder, at.name);
+  }
+}
+
+/**
+ * What defineSchema checks of a schema's notes, skip and sources: a file URL, a function and a list of functions, and
+ * a folder of notes declared by no other schema it sees (one owner per folder, as for type notes), by real path. A
+ * plain Error, as for the other checks.
+ */
+function checkNotes(schema: SchemaParts) {
+  const { name, notes, skip, sources } = schema;
+  if (
+    notes !== undefined &&
+    !(notes instanceof URL && notes.protocol === "file:")
+  )
+    throw new Error(
+      `The folder of notes of ${name} is not a file URL: notes: new URL("./", import.meta.url).`,
+    );
+  if (skip !== undefined && typeof skip !== "function")
+    throw new Error(`The skip of ${name} is not a function of a path.`);
+  if (
+    sources !== undefined &&
+    !(
+      Array.isArray(sources) &&
+      sources.every((source) => typeof source === "function")
+    )
+  )
+    throw new Error(`The sources of ${name} are not a list of functions.`);
+  const owners = new Map<string, string>();
+  for (const at of schemasSeen(schema)) {
+    if (!(at.notes instanceof URL)) continue;
+    const folder = realFolderOf(at.notes);
+    const had = owners.get(folder);
+    if (had !== undefined && had !== at.name)
+      throw new Error(
+        `The schemas ${had} and ${at.name} both declare ${folder} as the folder of their notes: a folder has one owner.`,
       );
     owners.set(folder, at.name);
   }
@@ -962,15 +1028,20 @@ export function defineSchema<
   types: T;
   imports?: I;
   typeNotes?: URL;
+  notes?: URL;
+  skip?: (path: string) => boolean;
+  sources?: readonly Source[];
   rules?: readonly Rule[];
 }): Schema<T, I | readonly []> {
   const imports = schema.imports ?? [];
   checkSchema(schema.name, schema.types, imports);
   checkTypeNotes({ ...schema, imports });
+  checkNotes({ ...schema, imports });
   checkRules({ ...schema, imports });
   return {
     ...schema,
     imports,
+    ...(schema.sources && { sources: Object.freeze([...schema.sources]) }),
     ...(schema.rules && { rules: Object.freeze([...schema.rules]) }),
     parse<This extends Schema, N extends keyof This["types"] & string>(
       this: This,
