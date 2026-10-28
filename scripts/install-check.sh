@@ -32,7 +32,7 @@ import { defineType, defineSchema, lintFolder } from "@mku1tra/basis";
 const source = defineType({ name: "source", description: "A place data lives.", fields: { role: z.enum(["entry", "record"]) } });
 const typeNotes = pathToFileURL(process.cwd() + "/types/");
 const schema = defineSchema({ name: "things", description: "Where data lives.", types: { source }, typeNotes });
-const problems = await lintFolder(schema, "notes");
+const { problems } = await lintFolder(schema, "notes");
 console.log(problems);
 if (problems.length !== 1 || !problems[0].path.endsWith("oven.md")) process.exit(1);
 '

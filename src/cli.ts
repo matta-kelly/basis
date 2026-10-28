@@ -129,10 +129,10 @@ export async function run(
   const { sources } = read.config;
   let problems;
   try {
-    problems = await lintFolder(read.config.schema, folder, {
+    ({ problems } = await lintFolder(read.config.schema, folder, {
       ...(skip && { skip }),
       ...(sources && { sources }),
-    });
+    }));
   } catch (error) {
     out.error(`${folder} cannot be checked: ${String(error)}`);
     return 2;

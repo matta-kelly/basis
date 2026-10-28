@@ -110,7 +110,8 @@ Code defines, markdown describes, and the lint checks that they agree.
 
 ## Lint
 
-- a linter checks definitions against rules without running anything. In: pieces, merged into nodes. Out: a list of problems. It changes nothing
+- a linter checks definitions against rules without running anything. In: pieces, merged into nodes. Out: a list of problems, and the graph it checked. It changes nothing
+	- the graph (`{ problems, graph }`, as zod's `safeParse` gives the data with its error) is the one a rule reads: each node that parsed, by its name (`get`) and by its type (`all`), with each value as its piece gives it. A program runs on it once the problems are none, so the lint and the program read one graph
 - its rules come in layers, each one on the one before
 	- shape: the source can read the thing: for a note, the file parses and the frontmatter is valid YAML
 	- merge: the pieces of one name are one node, and no two of them give one field (`basis/merge`)
@@ -135,7 +136,7 @@ Code defines, markdown describes, and the lint checks that they agree.
 - a type is not a check: it says what a valid thing is, and the checks apply it
 	- is it the right shape: the type answers. The lint asks it of every node, ahead of time. A program asks it of one input, as the input arrives (parse at the boundary), with the same zod
 	- does it do the right thing: no type can say. A test runs code, and an eval runs an agent and grades the end state
-- parse, don't validate (Alexis King): zod turns raw fields into a typed value. After the lint passes, code downstream trusts the shape
+- parse, don't validate (Alexis King): zod turns raw fields into a typed value. After the lint passes, code downstream trusts the shape, and reads it from the graph the lint gives
 - one linter, not one per subgraph: separate linters drift, and none can check an edge that crosses subgraphs. A subgraph brings its rules to it, as it brings its types
 - front ends call the core (`lint`, `lintFolder`)
 	- the CLI, `basis lint [folder]`, for a person, a hook and CI. It reads `basis.config.ts` (or `.js`) at the root of the folder: the schema, the paths to skip, and the sources of pieces beside the folder's notes. It gives each problem by its path from where it runs, and exits 0 when every node fits, 1 when one does not, and 2 when it cannot check. A `.ts` config needs Node 22.18 or later, which strips types
@@ -161,5 +162,5 @@ Code defines, markdown describes, and the lint checks that they agree.
 	- what makes basis more than a zod wrapper: where schemas become one graph
 	- prior art: NixOS module merging
 2. loader: basis's own source. A folder in, notes out, each a piece of a node (path, name, fields) with its body. A `skip` option leaves out the paths that are not notes, such as a README or code
-3. lint: a schema and the pieces in, problems out: the pieces merged into nodes, then the rule layers, the rules of each schema it sees last. A folder's lint (`lintFolder`) reads the folder's notes and the pieces of each source it is given, and checks the type notes against the types
+3. lint: a schema and the pieces in, problems and the graph out: the pieces merged into nodes, then the rule layers, the rules of each schema it sees last. A folder's lint (`lintFolder`) reads the folder's notes and the pieces of each source it is given, and checks the type notes against the types
 4. cli: `basis lint [folder]`, the lint run on a folder with the schema, skip and sources of its config. The one command a person, a hook and a pipeline run

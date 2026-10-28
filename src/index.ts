@@ -40,6 +40,7 @@ export {
   lintFolder,
   pointer,
   type LintOptions,
+  type LintResult,
   type Source,
   type Unread,
 } from "./lint.ts";

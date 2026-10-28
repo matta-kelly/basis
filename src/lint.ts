@@ -770,25 +770,23 @@ function byNameOf(nodes: readonly Node[]) {
 export type Unread = Loaded["unread"][number] & { note?: true };
 
 /**
- * What is wrong with the pieces, by the schema, in path order, from every source as one graph: the pieces of one name
- * are merged into one node first. `unread` holds the things a source found and could not read: a link to one is not a
- * problem. A note that could not be read and a node with a note of its name are two notes of one name, a duplicate;
- * any other thing that could not be read may be a piece of the node of its name, so it is not.
+ * What a lint gives: what is wrong, in path order, and the graph it checked, which a rule reads: each node that parsed,
+ * by its name or by its type, with each value as its piece gives it. A program runs on the graph once the problems
+ * are none.
+ */
+export type LintResult = { problems: Problem[]; graph: Graph };
+
+/**
+ * What is wrong with the pieces, by the schema, in path order, from every source as one graph, and the graph: the
+ * pieces of one name are merged into one node first. `unread` holds the things a source found and could not read: a
+ * link to one is not a problem. A note that could not be read and a node with a note of its name are two notes of one
+ * name, a duplicate; any other thing that could not be read may be a piece of the node of its name, so it is not.
  */
 export function lint(
   schema: Schema,
   pieces: readonly Piece[],
   unread: readonly Unread[] = [],
-): Problem[] {
-  return linted(schema, pieces, unread).problems;
-}
-
-/** The lint, with the graph of the nodes linted: a folder's lint gives it to the links of type notes outside the folder. */
-function linted(
-  schema: Schema,
-  pieces: readonly Piece[],
-  unread: readonly Unread[],
-): { problems: Problem[]; graph: Graph } {
+): LintResult {
   const unreadNotes = new Map<string, string[]>();
   for (const { path, name, note } of unread)
     if (note) unreadNotes.set(name, [...(unreadNotes.get(name) ?? []), path]);
@@ -1086,13 +1084,14 @@ async function read(
 
 /**
  * A folder, loaded, with the pieces of each source, linted as one graph, and the type notes of each schema the lint
- * sees: the loader's and the sources' problems and the lint's, in path order.
+ * sees: the loader's and the sources' problems and the lint's, in path order, and the graph of the folder's notes and
+ * the sources' pieces.
  */
 export async function lintFolder(
   schema: Schema,
   folder: string,
   { sources = [], ...options }: LintOptions = {},
-): Promise<Problem[]> {
+): Promise<LintResult> {
   const notes = await loadFolder(folder, options);
   const notePaths = new Set(
     [...notes.pieces, ...notes.problems, ...notes.unread].map((p) => p.path),
@@ -1117,10 +1116,18 @@ export async function lintFolder(
     ...notes.unread.map((u) => ({ ...u, note: true as const })),
     ...loaded.slice(1).flatMap((l) => l.unread),
   ];
-  const result = linted(schema, pieces, unread);
-  return [
-    ...problems,
-    ...result.problems,
-    ...(await typeNotesOf(schema, folder, { pieces, problems }, result.graph)),
-  ].sort(byPath);
+  const result = lint(schema, pieces, unread);
+  return {
+    problems: [
+      ...problems,
+      ...result.problems,
+      ...(await typeNotesOf(
+        schema,
+        folder,
+        { pieces, problems },
+        result.graph,
+      )),
+    ].sort(byPath),
+    graph: result.graph,
+  };
 }

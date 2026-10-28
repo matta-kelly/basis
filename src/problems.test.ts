@@ -118,7 +118,7 @@ async function unreadable(): Promise<Problem[]> {
     await mkdir(join(root, "closed"));
     await chmod(join(root, "closed"), 0o000);
     await symlink("shut.md", join(root, "link.md"));
-    return await lintFolder(things, root);
+    return (await lintFolder(things, root)).problems;
   } finally {
     await chmod(join(root, "shut.md"), 0o644);
     await chmod(join(root, "closed"), 0o755);
@@ -130,10 +130,10 @@ async function unreadable(): Promise<Problem[]> {
 async function everyProblem(): Promise<Problem[]> {
   return [
     ...(await unreadable()),
-    ...lint(shop, [...notes, bareInCode]),
-    ...(await lintFolder(kitchen, fixture("types"))),
-    ...(await lintFolder(things, fixture("loader"))),
-    ...(await lintFolder(things, fixture("lint"))),
+    ...lint(shop, [...notes, bareInCode]).problems,
+    ...(await lintFolder(kitchen, fixture("types"))).problems,
+    ...(await lintFolder(things, fixture("loader"))).problems,
+    ...(await lintFolder(things, fixture("lint"))).problems,
   ];
 }
 
@@ -181,7 +181,7 @@ describe("a problem", () => {
 
   it("names the field it is in, and its message does not say it again", () => {
     const at = (path: string) =>
-      lint(shop, notes).filter((problem) => problem.path === path);
+      lint(shop, notes).problems.filter((problem) => problem.path === path);
     expect(at("short.md")).toEqual([
       {
         path: "short.md",
@@ -241,7 +241,7 @@ describe("a problem", () => {
 
   it("names no field when the problem is the whole note, and the field of a key of one field", () => {
     const at = (path: string) =>
-      lint(shop, notes).filter((problem) => problem.path === path);
+      lint(shop, notes).problems.filter((problem) => problem.path === path);
     expect(at("Loaf.md")).toEqual([
       {
         path: "Loaf.md",
@@ -270,7 +270,7 @@ describe("a problem", () => {
 
   it("names a field as a JSON Pointer, with ~ and / in a key escaped, and says a missing field is missing", () => {
     const at = (path: string) =>
-      lint(shop, notes).filter((problem) => problem.path === path);
+      lint(shop, notes).problems.filter((problem) => problem.path === path);
     expect(at("slashed.md")).toEqual([
       {
         path: "slashed.md",
@@ -290,9 +290,9 @@ describe("a problem", () => {
   });
 
   it("has no rule and no field when its note cannot be read", async () => {
-    const unread = (await lintFolder(things, fixture("loader"))).filter(
-      (problem) => problem.rule === undefined,
-    );
+    const unread = (
+      await lintFolder(things, fixture("loader"))
+    ).problems.filter((problem) => problem.rule === undefined);
     expect(unread.length).toBeGreaterThan(0);
     for (const problem of unread) expect(problem.field).toBeUndefined();
   });
@@ -417,7 +417,7 @@ describe("a rule's report", () => {
       lint(
         reporting("plain", () => [{ message: "Wrong." }]),
         [ledger, note("loaf.md", loaf)],
-      ),
+      ).problems,
     ).toEqual([{ path: "loaf.md", rule: "plain/report", message: "Wrong." }]);
   });
 
@@ -431,7 +431,7 @@ describe("a rule's report", () => {
       ],
       types: {},
     });
-    expect(lint(both, [ledger, note("loaf.md", loaf)])).toEqual([
+    expect(lint(both, [ledger, note("loaf.md", loaf)]).problems).toEqual([
       { path: "loaf.md", rule: "left/report", message: "Left." },
       { path: "loaf.md", rule: "right/report", message: "Right." },
     ]);
@@ -463,7 +463,7 @@ describe("a rule's report", () => {
       lint(
         reporting("deep", () => [{ field: "/states/0", message: "Odd." }]),
         [ledger, note("loaf.md", loaf)],
-      ),
+      ).problems,
     ).toEqual([
       {
         path: "loaf.md",

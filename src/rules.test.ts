@@ -181,7 +181,7 @@ describe("a schema with rules", () => {
       ...loaf.fields,
       livesIn: ["[[till]]"],
     });
-    expect(lint(again, [till, lost]).map((p) => p.rule)).toEqual([
+    expect(lint(again, [till, lost]).problems.map((p) => p.rule)).toEqual([
       "ruled/in-record",
       "again/in-record",
     ]);
@@ -207,7 +207,7 @@ describe("a schema with rules", () => {
       types: {},
     });
     const lost = { ...loaf.fields, livesIn: ["[[till]]"] };
-    expect(lint(both, [till, note("loaf.md", lost)])).toEqual([
+    expect(lint(both, [till, note("loaf.md", lost)]).problems).toEqual([
       {
         path: "loaf.md",
         rule: "ruled/in-record",
@@ -275,7 +275,7 @@ describe("a schema with rules", () => {
 
 describe("the lint of rules", () => {
   it("gives no problem when each rule holds", () => {
-    expect(lint(ruled, [ledger, till, loaf])).toEqual([]);
+    expect(lint(ruled, [ledger, till, loaf]).problems).toEqual([]);
   });
 
   it("gives each report of a rule as a problem of its note, with the rule's id <schema>/<rule>", () => {
@@ -284,7 +284,7 @@ describe("the lint of rules", () => {
       livesIn: ["[[till]]"],
       derived: ["burnt", "stale"],
     });
-    expect(lint(ruled, [ledger, till, wrong])).toEqual([
+    expect(lint(ruled, [ledger, till, wrong]).problems).toEqual([
       {
         path: "loaf.md",
         rule: "ruled/derived-states",
@@ -317,7 +317,7 @@ describe("the lint of rules", () => {
       ...loaf.fields,
       livesIn: ["[[till]]"],
     });
-    expect(lint(top, [till, lost])).toMatchObject([
+    expect(lint(top, [till, lost]).problems).toMatchObject([
       { path: "loaf.md", rule: "ruled/in-record" },
     ]);
   });
@@ -328,7 +328,7 @@ describe("the lint of rules", () => {
       livesIn: ["[[till]]"],
       states: [],
     });
-    const problems = lint(ruled, [till, broken]);
+    const problems = lint(ruled, [till, broken]).problems;
     expect(problems).toHaveLength(1);
     expect(problems[0]).toMatchObject({
       rule: "basis/fields",
@@ -459,7 +459,7 @@ describe("the lint of rules", () => {
       rules: [owned],
     });
     expect(
-      lint(shed, [note("k.md", { type: "knife", description: "d" })]),
+      lint(shed, [note("k.md", { type: "knife", description: "d" })]).problems,
     ).toEqual([
       { path: "k.md", rule: "shed/owned", message: "It has no owner." },
     ]);
@@ -481,7 +481,7 @@ describe("the lint of rules", () => {
       livesIn: ["[[till]]"],
       colour: "brown",
     });
-    expect(lint(wider, [till, lost])).toMatchObject([
+    expect(lint(wider, [till, lost]).problems).toMatchObject([
       { path: "loaf.md", rule: "ruled/in-record" },
     ]);
   });
@@ -555,7 +555,7 @@ describe("the lint of rules", () => {
         ledger,
         note("brown.md", { ...loaf.fields, key: "b", colour: "brown" }),
         note("roll.md", { ...loaf.fields, type: "bun", key: "r" }),
-      ]),
+      ]).problems,
     ).toEqual([
       { path: "brown.md", rule: "ext/coloured", message: "It is brown." },
     ]);
@@ -650,7 +650,7 @@ describe("the lint of rules", () => {
           fields: { type: "op", description: "d", run, input, tags },
         },
       ],
-    );
+    ).problems;
     expect(problems).toEqual([]);
     expect(got?.run).toBe(run);
     expect(got?.input).toBe(input);
@@ -782,9 +782,11 @@ describe("the lint of rules", () => {
         types: {},
         rules: [inRecord],
       });
-      const problems = await lintFolder(schema, folder, {
-        skip: (path) => path === "types",
-      });
+      const problems = (
+        await lintFolder(schema, folder, {
+          skip: (path) => path === "types",
+        })
+      ).problems;
       expect(problems.filter((p) => p.path === "loaf.md")).toEqual([
         {
           path: "loaf.md",
