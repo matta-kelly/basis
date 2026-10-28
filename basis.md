@@ -198,12 +198,12 @@ An invariant is a property true in every state. One with a rule is checked; one 
 ### Conformance
 
 - conformance: the verification of a graph's code and notes against its specification ([[#Specification]]). It is the lint, over the composed graph, from its root
-- a linter checks definitions against rules without running anything. In: pieces, merged into nodes. Out: a list of problems, and the graph it checked. It changes nothing
-	- the graph (`{ problems, graph }`, as zod's `safeParse` gives the data with its error) is the one a rule reads: each node that parsed, by its name (`get`) and by its type (`all`), with each value as its piece gives it. A program runs on it once the problems are none, so the lint and the program read one graph
-- one graph, one linter: every node, from every source, goes into one graph, and is checked against its type, each link against the type it points at, and the rules of each schema. A node is of a type the schema sees, whatever its source: the world stays closed
-	- one linter, not one per subgraph: separate linters drift, and none can check an edge that crosses subgraphs. A subgraph brings its rules to it, as it brings its types
-- parse, don't validate (Alexis King): zod turns raw fields into a typed value. After the lint passes, code downstream trusts the shape, and reads it from the graph the lint gives
-	- closed by design: code runs with the basis types themselves
+	- a linter checks definitions against rules without running anything. In: pieces, merged into nodes. Out: a list of problems, and the graph it checked. It changes nothing
+		- the graph (`{ problems, graph }`, as zod's `safeParse` gives the data with its error) is the one a rule reads: each node that parsed, by its name (`get`) and by its type (`all`), with each value as its piece gives it. A program runs on it once the problems are none, so the lint and the program read one graph
+	- one graph, one linter: every node, from every source, goes into one graph, and is checked against its type, each link against the type it points at, and the rules of each schema. A node is of a type the schema sees, whatever its source: the world stays closed
+		- one linter, not one per subgraph: separate linters drift, and none can check an edge that crosses subgraphs. A subgraph brings its rules to it, as it brings its types
+	- parse, don't validate (Alexis King): zod turns raw fields into a typed value. After the lint passes, code downstream trusts the shape, and reads it from the graph the lint gives
+		- closed by design: code runs with the basis types themselves
 - its rules come in layers, each one on the one before
 	- shape: the source can read the thing: for a note, the file parses and the frontmatter is valid YAML
 	- merge: the pieces of one name are one node, and no two of them give one field (`basis/merge`)
@@ -225,11 +225,11 @@ An invariant is a property true in every state. One with a rule is checked; one 
 	- `field`: where in the node, as a JSON Pointer (RFC 6901), as SARIF and JSON Schema give a place in a JSON document: `/states/0`, with `~1` for a `/` in a key and `~0` for a `~`. None when the problem is the whole node. A key of one field names that field
 	- `message`: what is wrong, and the fix. It does not say the field again: a field the node does not have is "Missing:", with what its type needs there
 	- the CLI prints a problem as `path: field: message (rule)`, as ESLint's compact format, so an editor can open the path
-- each rule has a severity, and a schema sets it per rule: error, warning or off. Not built: every problem is an error
-	- error: the note is wrong. The check fails, and so does CI
-	- warning: the note is valid but maybe not complete ("fabric has no outside copy yet"). It is reported, and the check passes
-	- the schema only says valid or not. Severity lives in the lint, on top of it
-	- prior art: ESLint (`off`, `warn`, `error`), SHACL (`Violation`, `Warning`, `Info`)
+	- each rule has a severity, and a schema sets it per rule: error, warning or off. Not built: every problem is an error
+		- error: the note is wrong. The check fails, and so does CI
+		- warning: the note is valid but maybe not complete ("fabric has no outside copy yet"). It is reported, and the check passes
+		- the schema only says valid or not. Severity lives in the lint, on top of it
+		- prior art: ESLint (`off`, `warn`, `error`), SHACL (`Violation`, `Warning`, `Info`)
 - front ends call the core (`lint`, `lintFolder`)
 	- the CLI, `basis lint [folder]`, for a person, a hook and CI. It reads `basis.config.ts` (or `.js`) at the root of the folder: the schema, the paths to skip, and the sources of pieces beside the folder's notes. The schema brings its own notes and sources, and its imports', so a config that names only its schema lints the whole subgraph. The config's skip and sources are for a folder that is no schema's notes: when a schema the lint sees names the folder as its notes, a skip or sources in the config are refused (exit 2), as its skip and sources are its `defineSchema`'s. It gives each problem by its path from where it runs, and exits 0 when every node fits, 1 when one does not, and 2 when it cannot check. A `.ts` config needs Node 22.18 or later, which strips types
 	- not built: an Obsidian plugin on save
