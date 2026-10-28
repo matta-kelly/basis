@@ -1789,6 +1789,54 @@ describe("the lint of a schema and the schemas it imports, as one graph", () => 
       abstract: false,
     });
   });
+
+  describe("a skip", () => {
+    // A schema whose notes are the folder, and whose skip leaves out drafts/ and old.md.
+    const skipping = (base: string) =>
+      defineSchema({
+        name: "pkg",
+        description: "d",
+        imports: [things],
+        types: {},
+        notes: pathToFileURL(`${base}/`),
+        skip: (path) => path === "drafts" || path === "old.md",
+      });
+    const hidden =
+      "The skip leaves out this file, and its frontmatter has a type: it is a note the lint does not see. Take it out of the skip, or take the type out of its frontmatter.";
+
+    it("that names a .md file whose frontmatter has a type is a problem on the file", async () => {
+      const base = await filesIn({
+        "slate.md": slateNote,
+        "old.md": slateNote,
+        "drafts/bench.md": slateNote,
+      });
+      const { problems } = await lintFolder(skipping(base), base);
+      expect(problems).toEqual([
+        { path: "drafts/bench.md", rule: "basis/skip", message: hidden },
+        { path: "old.md", rule: "basis/skip", message: hidden },
+      ]);
+    });
+
+    it("that names a .md file with no frontmatter, or none that parses, or none with a type, is no problem", async () => {
+      const base = await filesIn({
+        "slate.md": slateNote,
+        "old.md": "No frontmatter.\n",
+        "drafts/broken.md": "---\ntype: [source\n---\n",
+        "drafts/untyped.md": "---\ntitle: A draft\n---\n",
+      });
+      const { problems } = await lintFolder(skipping(base), base);
+      expect(problems).toEqual([]);
+    });
+
+    it("that names a file that is not .md does not read it", async () => {
+      const base = await filesIn({
+        "slate.md": slateNote,
+        "drafts/bench.txt": slateNote,
+      });
+      const { problems } = await lintFolder(skipping(base), base);
+      expect(problems).toEqual([]);
+    });
+  });
 });
 
 describe("the one-definition rule", () => {

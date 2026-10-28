@@ -129,7 +129,7 @@ async function unreadable(): Promise<Problem[]> {
   }
 }
 
-/** Every problem the fixtures give: the in-memory lint, type notes, notes that cannot be read, and a folder. */
+/** Every problem the fixtures give: the in-memory lint, type notes, notes that cannot be read, a folder, and a skip. */
 async function everyProblem(): Promise<Problem[]> {
   return [
     ...(await unreadable()),
@@ -138,6 +138,12 @@ async function everyProblem(): Promise<Problem[]> {
     ...(await lintFolder(things, fixture("loader"))).problems,
     ...(await lintFolder(things, fixture("lint"))).problems,
     ...(await lintFolder(exporting, fixture("lint"))).problems,
+    // A skip that names a note.
+    ...(
+      await lintFolder(things, fixture("lint"), {
+        skip: (path) => path === "bun.md",
+      })
+    ).problems,
   ];
 }
 
@@ -406,6 +412,7 @@ describe("basis's rules", () => {
       "basis/type-note-folder",
       "basis/one-definition",
       "basis/definition-piece",
+      "basis/skip",
     ]);
     for (const rule of coreRules) expect(rule.description).not.toBe("");
     expect(Object.isFrozen(coreRules)).toBe(true);
