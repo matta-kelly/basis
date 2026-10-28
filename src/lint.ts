@@ -30,6 +30,7 @@ import {
   linksOf,
   Name,
   ownTypesOf,
+  partsOf,
   rulesSeen,
   schemasSeen,
   seesType,
@@ -93,6 +94,11 @@ export const coreRules = Object.freeze([
     id: "basis/type-note-folder",
     description:
       "Each type note sits in the folder of type notes of a schema the lint sees.",
+  },
+  {
+    id: "basis/one-definition",
+    description:
+      "Each zod object a schema's exports give is part of a type the schema sees, or a bridge it names.",
   },
 ] as const);
 
@@ -1090,6 +1096,70 @@ async function readSource(
 }
 
 /**
+ * What is wrong with the exports of each schema the lint sees that gives them: each zod object exported is part of a
+ * type the schema sees, at any depth of its zod schema or of the type it extends, or a bridge the schema names; and
+ * each bridge is an export, a zod object, and no part of a type. A problem is on the folder of the schema's notes, or
+ * of its type notes, or the folder linted. Exports that throw, or that are no object, are
+ * a fault of the schema: the lint throws, naming it.
+ */
+async function oneDefinitionProblems(
+  schema: Schema,
+  from: (path: string) => string,
+): Promise<Problem[]> {
+  const problems: Problem[] = [];
+  for (const owner of schemasSeen(schema)) {
+    if (!owner.exports) continue;
+    let exported: unknown;
+    try {
+      exported = await owner.exports();
+    } catch (error) {
+      throw new Error(
+        `The exports of ${owner.name} threw: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
+    if (typeof exported !== "object" || exported === null)
+      throw new Error(
+        `The exports of ${owner.name} gave something other than an object of its exports.`,
+      );
+    const defined = new Set<object>();
+    for (const { type } of seenTypes<Schema>(owner).values())
+      for (let at: Type | undefined = type; at; at = at.extends)
+        for (const part of partsOf(at.schema)) defined.add(part);
+    const bridges = owner.bridges ?? [];
+    const home = owner.notes ?? owner.typeNotes;
+    const path = home ? from(await folderOf(home)) : ".";
+    const problem = (message: string) =>
+      problems.push({ path, rule: "basis/one-definition", message });
+    // Any zod object, of zod or of zod/mini: both are of zod's core class.
+    const isShape = (value: unknown) => value instanceof z.core.$ZodObject;
+    for (const [name, value] of Object.entries(exported))
+      if (isShape(value) && !defined.has(value) && !bridges.includes(name))
+        problem(
+          `The export ${name} of ${owner.name} is a zod object that is no part of a type the schema sees: define it once, with defineType, and export the type. If it meets an outside standard, name it in the schema's bridges.`,
+        );
+    // A bridge that is no longer one is stale: a name that would excuse a shape it does not name.
+    for (const name of bridges) {
+      const value: unknown = Object.hasOwn(exported, name)
+        ? (exported as Record<string, unknown>)[name]
+        : undefined;
+      const stale = !Object.hasOwn(exported, name)
+        ? "is no export of it"
+        : !isShape(value)
+          ? "is no zod object"
+          : defined.has(value as object)
+            ? "is part of a type the schema sees"
+            : undefined;
+      if (stale)
+        problem(
+          `The bridge ${name} of ${owner.name} ${stale}: remove it from bridges.`,
+        );
+    }
+  }
+  return problems;
+}
+
+/**
  * A folder, and each place of the schema's lint, loaded, with the pieces of each source and the code piece of each type,
  * linted as one graph: the schema, and each schema it imports. A folder another place holds is that place's, read once,
  * so an imported schema's folder inside the folder linted is read as that schema's. Gives the loader's and the sources'
@@ -1187,6 +1257,7 @@ export async function lintFolder(
       ...problems,
       ...result.problems,
       ...(await typeNoteProblems(schema, notes, unread, from)),
+      ...(await oneDefinitionProblems(schema, from)),
     ].sort(byPath),
     graph: result.graph,
   };

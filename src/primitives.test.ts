@@ -394,6 +394,17 @@ describe("a schema", () => {
     );
   });
 
+  it("is refused with exports that are not a function, or bridges that are not a list of export names, made without TypeScript", () => {
+    const made = (parts: Record<string, unknown>) => () =>
+      defineSchema({ name: "p", description: "d", types: {}, ...parts });
+    expect(made({ exports: { Order: 1 } })).toThrow(
+      'The exports of p are not a function that gives them: exports: () => import("./index.ts").',
+    );
+    expect(made({ bridges: "Card" })).toThrow(
+      "The bridges of p are not a list of the names of its exports.",
+    );
+  });
+
   it("is refused when two schemas it sees declare one folder of notes", () => {
     const notes = new URL("./notes/", import.meta.url);
     const one = defineSchema({

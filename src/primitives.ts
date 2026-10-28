@@ -52,7 +52,7 @@ export const Wikilink = wikilinkOf();
  * objects, and the schema a lazy schema returns. A method chained on a schema wraps it, or makes a clone that keeps its def
  * or the schemas inside it.
  */
-function partsOf(schema: z.ZodType): object[] {
+export function partsOf(schema: z.ZodType): object[] {
   const found = new Set<object>();
   // A lazy is opened one level: a schema that makes itself again through a function would not end.
   const walk = (value: unknown, inLazy = false) => {
@@ -607,6 +607,13 @@ export interface Schema<
   skip?: (path: string) => boolean;
   /** The sources of its pieces beside its notes, such as its reader of its things in code. */
   sources?: readonly Source[];
+  /**
+   * Its package's exports, as a function that gives the module's object of them: `() => import("./index.ts")`. A
+   * folder's lint calls it, and each zod object exported is part of a type the schema sees, or a bridge.
+   */
+  exports?: () => unknown;
+  /** The names of its exports that are bridges: a shape an outside standard asks for, which no type defines. */
+  bridges?: readonly string[];
   /** Its rules: the checks of its own that the lint runs, beside basis's, on each schema that sees it. */
   rules?: readonly Rule[];
   /**
@@ -776,6 +783,8 @@ export function checked(schema: {
   notes?: unknown;
   skip?: unknown;
   sources?: unknown;
+  exports?: unknown;
+  bridges?: unknown;
 }) {
   checkName(schema.name);
   if (!checkedWith.get(schema.types)?.has(schema.imports))
@@ -797,6 +806,8 @@ type SchemaParts = {
   notes?: unknown;
   skip?: unknown;
   sources?: unknown;
+  exports?: unknown;
+  bridges?: unknown;
   rules?: unknown;
 };
 
@@ -859,9 +870,9 @@ function checkTypeNotes(schema: SchemaParts) {
 }
 
 /**
- * What defineSchema checks of a schema's notes, skip and sources: a file URL, a function and a list of functions, and
- * a folder of notes declared by no other schema it sees (one owner per folder, as for type notes), by real path. A
- * plain Error, as for the other checks.
+ * What defineSchema checks of a schema's notes, skip, sources, exports and bridges: a file URL, a function, a list of
+ * functions, a function and a list of names, and a folder of notes declared by no other schema it sees (one owner per
+ * folder, as for type notes), by real path. A plain Error, as for the other checks.
  */
 function checkNotes(schema: SchemaParts) {
   const { name, notes, skip, sources } = schema;
@@ -882,6 +893,21 @@ function checkNotes(schema: SchemaParts) {
     )
   )
     throw new Error(`The sources of ${name} are not a list of functions.`);
+  if (schema.exports !== undefined && typeof schema.exports !== "function")
+    throw new Error(
+      `The exports of ${name} are not a function that gives them: exports: () => import("./index.ts").`,
+    );
+  const { bridges } = schema;
+  if (
+    bridges !== undefined &&
+    !(
+      Array.isArray(bridges) &&
+      bridges.every((bridge) => typeof bridge === "string")
+    )
+  )
+    throw new Error(
+      `The bridges of ${name} are not a list of the names of its exports.`,
+    );
   const owners = new Map<string, string>();
   for (const at of schemasSeen(schema)) {
     if (!(at.notes instanceof URL)) continue;
@@ -1031,6 +1057,8 @@ export function defineSchema<
   notes?: URL;
   skip?: (path: string) => boolean;
   sources?: readonly Source[];
+  exports?: () => unknown;
+  bridges?: readonly string[];
   rules?: readonly Rule[];
 }): Schema<T, I | readonly []> {
   const imports = schema.imports ?? [];
@@ -1042,6 +1070,7 @@ export function defineSchema<
     ...schema,
     imports,
     ...(schema.sources && { sources: Object.freeze([...schema.sources]) }),
+    ...(schema.bridges && { bridges: Object.freeze([...schema.bridges]) }),
     ...(schema.rules && { rules: Object.freeze([...schema.rules]) }),
     parse<This extends Schema, N extends keyof This["types"] & string>(
       this: This,

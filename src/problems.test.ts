@@ -134,8 +134,18 @@ async function everyProblem(): Promise<Problem[]> {
     ...(await lintFolder(kitchen, fixture("types"))).problems,
     ...(await lintFolder(things, fixture("loader"))).problems,
     ...(await lintFolder(things, fixture("lint"))).problems,
+    ...(await lintFolder(exporting, fixture("lint"))).problems,
   ];
 }
+
+// A schema whose exports give a zod object that no type defines.
+const exporting = defineSchema({
+  name: "exporting",
+  description: "d",
+  imports: [things],
+  types: {},
+  exports: () => ({ Stray: z.object({ name: z.string() }) }),
+});
 
 const coreIds = coreRules.map((rule) => rule.id);
 
@@ -388,6 +398,7 @@ describe("basis's rules", () => {
       "basis/type-note",
       "basis/type-note-type",
       "basis/type-note-folder",
+      "basis/one-definition",
     ]);
     for (const rule of coreRules) expect(rule.description).not.toBe("");
     expect(Object.isFrozen(coreRules)).toBe(true);

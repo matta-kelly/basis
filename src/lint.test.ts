@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import * as fc from "fast-check";
 import { afterEach, describe, expect, it } from "vitest";
 import * as z from "zod";
+import * as zm from "zod/mini";
 import kitchen from "../fixtures/kitchen.ts";
 import { company, core } from "../fixtures/layers.ts";
 import { typeNotes } from "../fixtures/types.ts";
@@ -1796,6 +1797,125 @@ describe("the lint of a schema and the schemas it imports, as one graph", () => 
       description: "One agent of a deployment.",
       abstract: false,
     });
+  });
+});
+
+describe("the one-definition rule", () => {
+  // A package's types: an order, whose lines are a list of a line's shape.
+  const Line = z.strictObject({ sku: z.string(), qty: z.number() });
+  const order = defineType({
+    name: "order",
+    description: "An order.",
+    fields: { lines: z.array(Line) },
+  });
+  const shop = (exports: Record<string, unknown>, bridges?: string[]) =>
+    defineSchema({
+      name: "shop",
+      description: "d",
+      types: { order },
+      typeNotes: pathToFileURL(`${tmpdir()}/basis-no-type-notes/`),
+      exports: () => exports,
+      ...(bridges && { bridges }),
+    });
+  const ofRule = (problems: { rule?: string; message: string }[]) =>
+    problems.filter((p) => p.rule === "basis/one-definition");
+
+  it("gives a problem for each zod object a schema's exports give that is no part of a type it sees, nor a bridge", async () => {
+    const root = await mkdtemp(join(tmpdir(), "basis-one-"));
+    made.push(root);
+    const Order = z.object({ lines: z.array(Line) });
+    const { problems } = await lintFolder(shop({ order, Order }), root);
+    // The schema has no folder of notes: the problem is on its folder of type notes.
+    expect(ofRule(problems)).toEqual([
+      {
+        path: "../basis-no-type-notes",
+        rule: "basis/one-definition",
+        message:
+          "The export Order of shop is a zod object that is no part of a type the schema sees: define it once, with defineType, and export the type. If it meets an outside standard, name it in the schema's bridges.",
+      },
+    ]);
+  });
+
+  it("gives a problem for a zod object of zod/mini that a schema's exports give, as for one of zod", async () => {
+    const root = await mkdtemp(join(tmpdir(), "basis-one-"));
+    made.push(root);
+    const Stray = zm.object({ sku: zm.string() });
+    const { problems } = await lintFolder(shop({ order, Stray }), root);
+    expect(ofRule(problems).map((p) => p.message)).toEqual([
+      "The export Stray of shop is a zod object that is no part of a type the schema sees: define it once, with defineType, and export the type. If it meets an outside standard, name it in the schema's bridges.",
+    ]);
+  });
+
+  it("gives a problem for each bridge that is no export, no zod object, or part of a type it sees", async () => {
+    const root = await mkdtemp(join(tmpdir(), "basis-one-"));
+    made.push(root);
+    const { problems } = await lintFolder(
+      shop({ order, Line, version: "1" }, ["Card", "version", "Line"]),
+      root,
+    );
+    expect(ofRule(problems).map((p) => p.message)).toEqual([
+      "The bridge Card of shop is no export of it: remove it from bridges.",
+      "The bridge version of shop is no zod object: remove it from bridges.",
+      "The bridge Line of shop is part of a type the schema sees: remove it from bridges.",
+    ]);
+  });
+
+  it("gives no problem for an exported type, its schema, a schema inside one of its fields, a bridge, or a value that is no zod object", async () => {
+    const root = await mkdtemp(join(tmpdir(), "basis-one-"));
+    made.push(root);
+    const Card = z.object({ name: z.string() });
+    const { problems } = await lintFolder(
+      shop({ order, OrderSchema: order.schema, Line, Card, version: "1" }, [
+        "Card",
+      ]),
+      root,
+    );
+    expect(ofRule(problems)).toEqual([]);
+  });
+
+  it("gives no problem for the schema of a type that a type it sees extends", async () => {
+    const root = await mkdtemp(join(tmpdir(), "basis-one-"));
+    made.push(root);
+    const base = defineSchema({
+      name: "base",
+      description: "d",
+      types: { order },
+      typeNotes: pathToFileURL(`${tmpdir()}/basis-no-type-notes/`),
+    });
+    const extended = defineSchema({
+      name: "extended",
+      description: "d",
+      imports: [base],
+      types: { order: extendType(order, { fields: { note: z.string() } }) },
+      exports: () => ({ OrderSchema: order.schema }),
+    });
+    const { problems } = await lintFolder(extended, root);
+    expect(ofRule(problems)).toEqual([]);
+  });
+
+  it("throws, naming the schema, when its exports throw or give something other than an object", async () => {
+    const root = await mkdtemp(join(tmpdir(), "basis-one-"));
+    made.push(root);
+    const throwing = defineSchema({
+      name: "shop",
+      description: "d",
+      types: {},
+      exports: () => {
+        throw new Error("no module");
+      },
+    });
+    await expect(lintFolder(throwing, root)).rejects.toThrow(
+      "The exports of shop threw: no module",
+    );
+    const empty = defineSchema({
+      name: "shop",
+      description: "d",
+      types: {},
+      exports: () => "index" as never,
+    });
+    await expect(lintFolder(empty, root)).rejects.toThrow(
+      "The exports of shop gave something other than an object of its exports.",
+    );
   });
 });
 
