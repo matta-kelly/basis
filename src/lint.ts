@@ -1107,55 +1107,84 @@ async function readSource(
   return loaded as Loaded<SourcePiece>;
 }
 
+/** A schema's exports, read once in a lint: its own, as name and value, and where a problem of them is. */
+interface Exported {
+  owner: Schema;
+  entries: [string, unknown][];
+  path: string;
+}
+
 /**
- * What is wrong with the exports of each schema the lint sees that gives them: each zod object exported is part of a
- * type the schema sees, at any depth of its zod schema or of the type it extends, or a bridge the schema names; and
- * each bridge is an export, a zod object, and no part of a type. A problem is on the folder of the schema's notes, or
- * of its type notes, or the folder linted. Exports that throw, or that are no object, are
- * a fault of the schema: the lint throws, naming it.
+ * The exports of each schema the lint sees that gives them, read once for every rule of the exports. A problem of them
+ * is on the folder of the schema's notes, or of its type notes, or the folder linted. Exports that throw, or that are
+ * no object, are a fault of the schema: throws, naming it.
  */
-async function oneDefinitionProblems(
+async function exportsSeen(
   schema: Schema,
   from: (path: string) => string,
-): Promise<Problem[]> {
-  const problems: Problem[] = [];
+): Promise<Exported[]> {
+  const read: Exported[] = [];
   for (const owner of schemasSeen(schema)) {
-    if (!owner.exports) continue;
-    let exported: unknown;
-    try {
-      exported = await owner.exports();
-    } catch (error) {
-      throw new Error(
-        `The exports of ${owner.name} threw: ${error instanceof Error ? error.message : String(error)}`,
-        { cause: error },
-      );
-    }
+    const { exports } = owner;
+    if (!exports) continue;
+    const exported = await readingExports(owner, exports);
     if (typeof exported !== "object" || exported === null)
       throw new Error(
         `The exports of ${owner.name} gave something other than an object of its exports.`,
       );
+    const entries = Object.entries(exported);
+    const home = owner.notes ?? owner.typeNotes;
+    read.push({
+      owner,
+      entries,
+      path: home ? from(await folderOf(home)) : ".",
+    });
+  }
+  return read;
+}
+
+/** What a read of a schema's exports gives, or a throw that names the schema, with the error it threw. */
+async function readingExports<T>(
+  owner: Schema,
+  read: () => T | Promise<T>,
+): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    throw new Error(
+      `The exports of ${owner.name} threw: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+}
+
+/**
+ * What is wrong with the exports of each schema that gives them: each zod object exported is part of a type the
+ * schema sees, at any depth of its zod schema or of the type it extends, or a bridge the schema names; and each bridge
+ * is an export, a zod object, and no part of a type.
+ */
+function oneDefinitionProblems(exported: readonly Exported[]): Problem[] {
+  const problems: Problem[] = [];
+  for (const { owner, entries, path } of exported) {
     const defined = new Set<object>();
     for (const { type } of seenTypes<Schema>(owner).values())
       for (let at: Type | undefined = type; at; at = at.extends)
         for (const part of partsOf(at.schema)) defined.add(part);
     const bridges = owner.bridges ?? [];
-    const home = owner.notes ?? owner.typeNotes;
-    const path = home ? from(await folderOf(home)) : ".";
     const problem = (message: string) =>
       problems.push({ path, rule: "basis/one-definition", message });
     // Any zod object, of zod or of zod/mini: both are of zod's core class.
     const isShape = (value: unknown) => value instanceof z.core.$ZodObject;
-    for (const [name, value] of Object.entries(exported))
+    for (const [name, value] of entries)
       if (isShape(value) && !defined.has(value) && !bridges.includes(name))
         problem(
           `The export ${name} of ${owner.name} is a zod object that is no part of a type the schema sees: define it once, with defineType, and export the type. If it meets an outside standard, name it in the schema's bridges.`,
         );
     // A bridge that is no longer one is stale: a name that would excuse a shape it does not name.
+    const byName = new Map(entries);
     for (const name of bridges) {
-      const value: unknown = Object.hasOwn(exported, name)
-        ? (exported as Record<string, unknown>)[name]
-        : undefined;
-      const stale = !Object.hasOwn(exported, name)
+      const value = byName.get(name);
+      const stale = !byName.has(name)
         ? "is no export of it"
         : !isShape(value)
           ? "is no zod object"
@@ -1269,7 +1298,7 @@ export async function lintFolder(
       ...problems,
       ...result.problems,
       ...(await typeNoteProblems(schema, notes, unread, from)),
-      ...(await oneDefinitionProblems(schema, from)),
+      ...oneDefinitionProblems(await exportsSeen(schema, from)),
     ].sort(byPath),
     graph: result.graph,
   };
