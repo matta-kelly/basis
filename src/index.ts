@@ -24,6 +24,7 @@ export type {
   Schema,
   Type,
 } from "./primitives.ts";
+export { markDefinition, type Definition } from "./definition.ts";
 export {
   loadFolder,
   readNote,

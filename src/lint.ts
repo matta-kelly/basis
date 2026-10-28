@@ -11,6 +11,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
 import * as z from "zod";
+import { definitionOf } from "./definition.ts";
 import {
   byPath,
   type FolderOptions,
@@ -100,6 +101,11 @@ export const coreRules = Object.freeze([
     id: "basis/one-definition",
     description:
       "Each zod object a schema's exports give is part of a type the schema sees, or a bridge it names.",
+  },
+  {
+    id: "basis/definition-piece",
+    description:
+      "Each definition a schema's exports give is a piece a source gives, of its name and type.",
   },
 ] as const);
 
@@ -1132,7 +1138,7 @@ async function exportsSeen(
       throw new Error(
         `The exports of ${owner.name} gave something other than an object of its exports.`,
       );
-    const entries = Object.entries(exported);
+    const entries = await readingExports(owner, () => Object.entries(exported));
     const home = owner.notes ?? owner.typeNotes;
     read.push({
       owner,
@@ -1196,6 +1202,49 @@ function oneDefinitionProblems(exported: readonly Exported[]): Problem[] {
           `The bridge ${name} of ${owner.name} ${stale}: remove it from bridges.`,
         );
     }
+  }
+  return problems;
+}
+
+/**
+ * What is wrong with the exports of each schema that gives them: each definition in them, at the top or inside a list
+ * or an object of no class, at any depth, is a piece that a source gives, of its name and type. A note is no source's
+ * piece: a definition is code. A value that throws as it is read is a fault of the schema: throws, naming it.
+ */
+async function definitionPieceProblems(
+  exported: readonly Exported[],
+  pieces: readonly Piece[],
+): Promise<Problem[]> {
+  const given = new Set(
+    pieces
+      .filter((piece) => !isNote(piece))
+      .map((piece) => `${String(piece.fields.type)}\0${piece.name}`),
+  );
+  const problems: Problem[] = [];
+  for (const { owner, entries, path } of exported) {
+    // Each object or function once: a value that holds itself, or is held twice, is read once.
+    const seen = new Set<unknown>();
+    const visit = (name: string, at: PropertyKey[], value: unknown): void => {
+      const isObject =
+        (typeof value === "object" && value !== null) ||
+        typeof value === "function";
+      if (!isObject || seen.has(value)) return;
+      seen.add(value);
+      const definition = definitionOf(value);
+      if (definition && !given.has(`${definition.type}\0${definition.name}`))
+        problems.push({
+          path,
+          rule: "basis/definition-piece",
+          message: `The export ${name} of ${owner.name}${at.length ? `, at ${pointer(at)},` : ""} is the definition of the ${definition.type} ${definition.name}, and no source gives a piece of it: a source of the package gives a piece of each definition it exports.`,
+        });
+      // Only plain data holds definitions: a live value, such as a function, a zod schema or a Map, is not read into.
+      if (isPlain(value))
+        for (const [key, item] of Object.entries(value))
+          visit(name, [...at, Array.isArray(value) ? Number(key) : key], item);
+    };
+    await readingExports(owner, () => {
+      for (const [name, value] of entries) visit(name, [], value);
+    });
   }
   return problems;
 }
@@ -1293,12 +1342,14 @@ export async function lintFolder(
     });
   }
   const result = lint(schema, pieces.sort(byPath), unread);
+  const exported = await exportsSeen(schema, from);
   return {
     problems: [
       ...problems,
       ...result.problems,
       ...(await typeNoteProblems(schema, notes, unread, from)),
-      ...oneDefinitionProblems(await exportsSeen(schema, from)),
+      ...oneDefinitionProblems(exported),
+      ...(await definitionPieceProblems(exported, pieces)),
     ].sort(byPath),
     graph: result.graph,
   };
