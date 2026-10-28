@@ -24,6 +24,7 @@ import {
   defineType,
   lint,
   lintFolder,
+  markDefinition,
   type Note,
   type Problem,
 } from "./index.ts";
@@ -140,13 +141,16 @@ async function everyProblem(): Promise<Problem[]> {
   ];
 }
 
-// A schema whose exports give a zod object that no type defines.
+// A schema whose exports give a zod object that no type defines, and a definition that no source gives.
 const exporting = defineSchema({
   name: "exporting",
   description: "d",
   imports: [things],
   types: {},
-  exports: () => ({ Stray: z.object({ name: z.string() }) }),
+  exports: () => ({
+    Stray: z.object({ name: z.string() }),
+    ghost: markDefinition({}, { name: "ghost", type: "object" }),
+  }),
 });
 
 const coreIds = coreRules.map((rule) => rule.id);
@@ -401,6 +405,7 @@ describe("basis's rules", () => {
       "basis/type-note-type",
       "basis/type-note-folder",
       "basis/one-definition",
+      "basis/definition-piece",
     ]);
     for (const rule of coreRules) expect(rule.description).not.toBe("");
     expect(Object.isFrozen(coreRules)).toBe(true);
