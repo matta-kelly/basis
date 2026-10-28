@@ -17,7 +17,7 @@ A repo that builds on basis installs `@mku1tra/basis` from npm by version, as qu
 
 Set the version in the package's `package.json`, commit, and push its tag: `v<version>` for basis, `it-v<version>` for it. `.github/workflows/publish.yml` runs the check set and publishes that package on npm by trusted publishing (no token, with provenance). A ruleset lets only an admin of the repo make a version tag, of either prefix (`v*` and `it-v*`). A version npm has is not published again. A published version cannot change: npm unpublishes only within 72 hours.
 
-it's peer range on basis is one minor (`^0.22.0`). Each new minor of basis needs it's range moved to it, and a new release of it.
+it's peer range on basis is one minor (`^0.23.0`). Each new minor of basis needs it's range moved to it, and a new release of it.
 
 ## Lint a folder
 
@@ -27,6 +27,6 @@ it's peer range on basis is one minor (`^0.22.0`). Each new minor of basis needs
 
 Node runs in a dev container, never on the host. `just check` makes the container if there is none, then runs the check set: types, lint, format, tests, it's notes against its schema, and the packages, each installed from its tarball in an empty project and run in plain Node. The pipeline runs the same file, `scripts/check.sh`.
 
-it is a workspace of the repo. It depends on basis by version (`^0.22.0`, a peer), and in the repo its dev dependency `file:..` links the root, so its check runs on basis as it is.
+it is a workspace of the repo. It depends on basis by version (`^0.23.0`, a peer), and in the repo its dev dependency `file:..` links the root, so its check runs on basis as it is.
 
 `just run <command>` runs any other command in the container, such as `just run npm install zod`.

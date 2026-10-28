@@ -20,6 +20,7 @@ import {
   type Piece,
   type Problem,
   type Source,
+  type SourcePiece,
 } from "./loader.ts";
 import {
   checked,
@@ -132,8 +133,8 @@ const valueAt = (fields: unknown, path: readonly PropertyKey[]): unknown =>
     fields,
   );
 
-/** Whether a piece is a note: it has a body. Its name is its file name, and it writes each link "[[name]]". */
-const isNote = (piece: Piece) => typeof piece.body === "string";
+/** Whether a piece is a note: its source is the notes. Its name is its file name, and it writes each link "[[name]]". */
+const isNote = (piece: Piece) => piece.source === "notes";
 
 /**
  * One node: the pieces of one name, merged. Its fields are those of every piece, each as its piece writes it, with the
@@ -227,7 +228,7 @@ function mergeOne(pieces: readonly Piece[]): {
             .filter((other) => other !== piece)
             .map((other) =>
               other.path === piece.path
-                ? `${other.path} (source ${other.source ?? "notes"})`
+                ? `${other.path} (source ${other.source})`
                 : other.path,
             )
             .join(
@@ -259,13 +260,7 @@ function mergeAll(pieces: readonly Piece[]): {
     .sort()
     .map((name) => byName.get(name) ?? [])) {
     // A source gives each name once, as a folder holds one note of a name: two of one source are two things.
-    const sources = same.flatMap((piece) =>
-      isNote(piece)
-        ? ["notes"]
-        : piece.source === undefined
-          ? []
-          : [piece.source],
-    );
+    const sources = same.map((piece) => piece.source);
     const apart =
       new Set(sources).size < sources.length ||
       new Set(same.map((piece) => piece.fields.type)).size > 1;
@@ -769,8 +764,8 @@ function byNameOf(nodes: readonly Node[]) {
   return byName;
 }
 
-/** A thing a source found and could not read. One that is a note, as the loader's are, says so. */
-export type Unread = Loaded["unread"][number] & { note?: true };
+/** A thing a source found and could not read, with that source: the loader's is `notes`. */
+export type Unread = Loaded["unread"][number] & { source: string };
 
 /**
  * What a lint gives: what is wrong, in path order, and the graph it checked, which a rule reads: each node that parsed,
@@ -784,15 +779,29 @@ export type LintResult = { problems: Problem[]; graph: Graph };
  * pieces of one name are merged into one node first. `unread` holds the things a source found and could not read: a
  * link to one is not a problem. A note that could not be read and a node with a note of its name are two notes of one
  * name, a duplicate; any other thing that could not be read may be a piece of the node of its name, so it is not.
+ * Each piece and each thing not read names its source, a note's `notes`: one that names none is the caller's fault,
+ * and the lint throws, naming its path.
  */
 export function lint(
   schema: Schema,
   pieces: readonly Piece[],
   unread: readonly Unread[] = [],
 ): LintResult {
+  // A piece with no source is the caller's fault: the merge tells two things from one by their sources.
+  for (const piece of pieces)
+    if (typeof piece.source !== "string")
+      throw new Error(
+        `The piece at ${piece.path} names no source: each piece names the source that gave it, and a note's is notes.`,
+      );
+  for (const thing of unread)
+    if (typeof thing.source !== "string")
+      throw new Error(
+        `The thing at ${thing.path}, not read, names no source: each names the source that found it, and a note's is notes.`,
+      );
   const unreadNotes = new Map<string, string[]>();
-  for (const { path, name, note } of unread)
-    if (note) unreadNotes.set(name, [...(unreadNotes.get(name) ?? []), path]);
+  for (const { path, name, source } of unread)
+    if (source === "notes")
+      unreadNotes.set(name, [...(unreadNotes.get(name) ?? []), path]);
   const unreadNames = new Set(unread.map(({ name }) => name));
   // The schema's own check once: a node of an imported type is parsed by its own schema, not by this one.
   checked(schema);
@@ -1062,7 +1071,7 @@ async function readSource(
   source: Source,
   at: number,
   isNotePath: (path: string) => boolean,
-): Promise<Loaded> {
+): Promise<Loaded<SourcePiece>> {
   const id = source.name || `number ${at + 1}`;
   let loaded: unknown;
   try {
@@ -1092,7 +1101,7 @@ async function readSource(
       `The source ${id} gave ${typePiece.name}, of type type: a type note is a note, in the folder its schema declares.`,
     );
   // Its own pieces, not the parse's copies: the lint changes nothing it is given.
-  return loaded as Loaded;
+  return loaded as Loaded<SourcePiece>;
 }
 
 /**
@@ -1218,7 +1227,7 @@ export async function lintFolder(
     unread.push(
       ...read.unread.map((u) => ({
         ...placed(place)(u),
-        note: true as const,
+        source: "notes",
         at: at(place, u.path),
       })),
     );
@@ -1246,6 +1255,7 @@ export async function lintFolder(
       unread.push(
         ...l.unread.map((u) => ({
           ...placed(place)(u),
+          source: `${first + i + 1}`,
           at: at(place, u.path),
         })),
       );

@@ -9,7 +9,7 @@ import { parseDocument } from "yaml";
 
 /**
  * One piece of a node, as the lint takes it from a source: where it is, the name of its node, the fields it gives, as
- * read, and a note's body. The lint merges the pieces of one name into one node.
+ * read, the source that gave it, and a note's body. The lint merges the pieces of one name into one node.
  */
 export type Piece = {
   /** From the folder its source reads, with `/` between parts: for a lint, the folder linted. */
@@ -18,20 +18,26 @@ export type Piece = {
   name: string;
   /** Its fields, as read. The lint parses them by its type. */
   fields: Record<string, unknown>;
-  /** Its body, if it is a note: a note writes each link "[[name]]". */
+  /** A note's body: its prose. */
   body?: string;
-  /** The source that gave it, when the lint knows it: one source gives each name once. The loader's are notes. */
-  source?: string;
+  /**
+   * The source that gave it: one source gives each name once. A note's is `notes`, and a note writes each link
+   * "[[name]]".
+   */
+  source: string;
 };
 
-/** One note: a piece whose name is its file name, without `.md`, and whose fields are its frontmatter, with its body. */
-export type Note = Piece & { body: string };
+/**
+ * One note: a piece of the source `notes`, whose name is its file name, without `.md`, and whose fields are its
+ * frontmatter, with its body.
+ */
+export type Note = Piece & { body: string; source: "notes" };
 
 /**
  * What a source gives: the pieces it read, in path order, a problem for each thing it could not read, and each thing
  * it found and could not read, by its path and name. A link to one of those is not a problem: it has its own.
  */
-export type Loaded<N extends Piece = Piece> = {
+export type Loaded<N extends Omit<Piece, "source"> = Piece> = {
   pieces: readonly N[];
   problems: readonly Problem[];
   unread: readonly { path: string; name: string }[];
@@ -59,8 +65,8 @@ export type Problem = {
  */
 export type Source = () => Loaded<SourcePiece> | Promise<Loaded<SourcePiece>>;
 
-/** A piece a source gives: never a body, as a note has. */
-type SourcePiece = Omit<Piece, "body" | "source"> & {
+/** A piece a source gives: never a body, as a note has, and no source: the folder's lint names the source of each. */
+export type SourcePiece = Omit<Piece, "body" | "source"> & {
   body?: never;
   source?: never;
 };
@@ -88,7 +94,10 @@ export function readNote(path: string, file: string): Read {
   if (!block) {
     if (openingLine.test(text))
       return problem("The frontmatter has no closing line of ---.");
-    return { ok: true, note: { path, name, fields: {}, body: text } };
+    return {
+      ok: true,
+      note: { path, name, fields: {}, body: text, source: "notes" },
+    };
   }
   const yaml = parseDocument(block[1] ?? "");
   const error = yaml.errors[0];
@@ -110,6 +119,7 @@ export function readNote(path: string, file: string): Read {
       name,
       fields: frontmatter,
       body: text.slice(block[0].length),
+      source: "notes",
     },
   };
 }
