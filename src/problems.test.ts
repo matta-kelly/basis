@@ -33,6 +33,7 @@ const note = (path: string, fields: Record<string, unknown>): Note => ({
   name: path.replace(/^.*\//, "").replace(/\.md$/, ""),
   fields,
   body: "",
+  source: "notes",
 });
 
 const fixture = (path: string) =>
@@ -106,6 +107,7 @@ const notes = [
 const bareInCode = {
   path: "code/bare.ts",
   name: "bare",
+  source: "1",
   fields: { type: "source", role: "record" },
 };
 

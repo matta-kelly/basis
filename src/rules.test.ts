@@ -23,6 +23,7 @@ const note = (path: string, fields: Record<string, unknown>): Note => ({
   name: basename(path, ".md"),
   fields,
   body: "",
+  source: "notes",
 });
 
 // A rule in one note: each derived state is one of its states.
@@ -647,6 +648,7 @@ describe("the lint of rules", () => {
         {
           path: "code/search.ts",
           name: "search",
+          source: "1",
           fields: { type: "op", description: "d", run, input, tags },
         },
       ],

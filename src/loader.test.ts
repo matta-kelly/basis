@@ -48,7 +48,7 @@ const aliasBomb = [
 ].join("\n");
 
 describe("a note", () => {
-  it("is read into its name, from the file name, its frontmatter as its fields, and its body", () => {
+  it("is read into its name, from the file name, its frontmatter as its fields, its body, and its source: the notes", () => {
     const text =
       '---\ntype: source\ndescription: "Where data lives."\nrole: entry\n---\nThe body.\n';
     expect(readNote("sources/slate.md", text)).toEqual({
@@ -62,6 +62,7 @@ describe("a note", () => {
           role: "entry",
         },
         body: "The body.\n",
+        source: "notes",
       },
     });
   });
@@ -81,6 +82,7 @@ describe("a note", () => {
         name: "a",
         fields: { type: "x" },
         body: "The body.\r\n",
+        source: "notes",
       },
     });
   });
@@ -181,6 +183,7 @@ describe("a folder", () => {
         states: ["drafted", "complete", "synced", "stale"],
       },
       body: "One bake of one dough.\n",
+      source: "notes",
     });
   });
 

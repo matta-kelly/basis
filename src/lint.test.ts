@@ -38,6 +38,7 @@ import {
   type Piece,
   type Note,
   type Source,
+  type Unread,
 } from "./index.ts";
 
 const note = (path: string, fields: Record<string, unknown>): Note => ({
@@ -45,6 +46,7 @@ const note = (path: string, fields: Record<string, unknown>): Note => ({
   name: basename(path, ".md"),
   fields,
   body: "",
+  source: "notes",
 });
 
 const slate = note("slate.md", {
@@ -249,7 +251,7 @@ describe("the lint", () => {
       lint(
         things,
         [...withNote(linking), oven],
-        [{ path: "a/oven.md", name: "oven", note: true }],
+        [{ path: "a/oven.md", name: "oven", source: "notes" }],
       ).problems,
     ).toEqual([
       {
@@ -1317,17 +1319,6 @@ describe("the sources of a folder", () => {
     ).toEqual(["code/low.ts", "top.md"]);
   });
 
-  it("reads a node as a note only when its body is a string", () => {
-    // An undefined body, as JavaScript can give one: its type has none.
-    const item = { ...tillItem, body: undefined } as unknown as Piece;
-    expect(lint(things, [till, item]).problems).toEqual([]);
-    expect(
-      lint(things, [till, { ...tillItem, body: "" }]).problems.map(
-        (p) => p.message,
-      ),
-    ).toEqual(['Not a wikilink, "[[name]]".']);
-  });
-
   it("throws, naming the source, for a piece with a body: a note is the loader's, from the folder that holds it", async () => {
     const root = await folderWithSlate();
     const typed: Source = () => ({
@@ -2059,6 +2050,7 @@ describe("the merge of pieces into a node", () => {
   const inCode: Piece = {
     path: "code/warehouse.ts",
     name: "find-fabric",
+    source: "1",
     fields: {
       type: "capability",
       description: "List or look up fabrics.",
@@ -2197,6 +2189,7 @@ describe("the merge of pieces into a node", () => {
     const second: Piece = {
       path: "code/z-more.ts",
       name: "find-fabric",
+      source: "2",
       fields: { type: "capability", heldBy: "landl-db" },
     };
     const noTitle = Object.fromEntries(
@@ -2287,6 +2280,7 @@ describe("the merge of pieces into a node", () => {
     const fromLandl: Piece = {
       path: "landl/fabric.ts",
       name: "find-fabric",
+      source: "2",
       fields: { type: "capability", heldBy: "landl-db" },
     };
     expect(lint(fabric, [db, inCode, fromLandl]).problems).toEqual([]);
@@ -2305,6 +2299,7 @@ describe("the merge of pieces into a node", () => {
     const anApp: Piece = {
       path: "code/apps.ts",
       name: "find-fabric",
+      source: "2",
       fields: { type: "app", description: "An app." },
     };
     expect(
@@ -2333,24 +2328,111 @@ describe("the merge of pieces into a node", () => {
   });
 
   it("counts a note it could not read as a second note of a name, and another thing it could not read as no duplicate", () => {
-    const unread = (note?: true) => [
-      { path: "find-fabric.md", name: "find-fabric", ...(note && { note }) },
+    const unread = (source: string) => [
+      { path: "find-fabric.md", name: "find-fabric", source },
     ];
     // A source's piece, and a note that could not be read: the note may be its other piece.
     const names = (problems: readonly { rule?: string }[]) =>
       problems.filter((p) => p.rule === "basis/unique-name");
-    expect(names(lint(fabric, [db, inCode], unread(true)).problems)).toEqual(
+    expect(names(lint(fabric, [db, inCode], unread("notes")).problems)).toEqual(
       [],
     );
     // A note, and a note that could not be read: two notes of one name.
     const other = { ...asNote, path: "other/find-fabric.md" };
     expect(
-      lint(fabric, [db, inCode, other], unread(true)).problems.map(
+      lint(fabric, [db, inCode, other], unread("notes")).problems.map(
         (p) => p.rule,
       ),
     ).toEqual(["basis/unique-name"]);
     // A note, and a thing a source could not read: it may be the code's piece.
-    expect(lint(fabric, [db, inCode, asNote], unread()).problems).toEqual([]);
+    expect(lint(fabric, [db, inCode, asNote], unread("1")).problems).toEqual(
+      [],
+    );
+  });
+
+  it("throws, naming its path, when a piece names no source", () => {
+    const untagged = {
+      path: "code/warehouse.ts",
+      name: "find-fabric",
+      fields: inCode.fields,
+    };
+    expect(() => lint(fabric, [db, untagged as Piece, asNote])).toThrow(
+      "The piece at code/warehouse.ts names no source: each piece names the source that gave it, and a note's is notes.",
+    );
+  });
+
+  it("throws, naming its path, when a thing it could not read names no source", () => {
+    const untagged = { path: "find-fabric.md", name: "find-fabric" };
+    expect(() => lint(fabric, [db, inCode], [untagged as Unread])).toThrow(
+      "The thing at find-fabric.md, not read, names no source: each names the source that found it, and a note's is notes.",
+    );
+  });
+
+  it("reads a piece as a note by its source, not by its body", () => {
+    const noteWithNoBody: Piece = {
+      path: "find-fabric.md",
+      name: "find-fabric",
+      source: "notes",
+      fields: { type: "capability", heldBy: "[[landl-db]]" },
+    };
+    const codeWithBody: Piece = { ...inCode, body: "Prose." };
+    expect(lint(fabric, [db, codeWithBody, noteWithNoBody]).problems).toEqual(
+      [],
+    );
+  });
+
+  it("gives the problems lintFolder gives for the pieces and unread things it reads, each with the source that gave it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "basis-same-"));
+    made.push(root);
+    await mkdir(join(root, "types"));
+    await mkdir(join(root, "a"));
+    for (const [path, text] of Object.entries({
+      "types/app.md": "---\ntype: type\n---\nSoftware data lives in.\n",
+      "types/capability.md": "---\ntype: type\n---\nAn outcome.\n",
+      "landl-db.md": '---\ntype: app\ndescription: "The record."\n---\n',
+      "find-fabric.md": "---\ntype: capability\nheldBy: '[[landl-db]]'\n---\n",
+      "a/find-fabric.md": "---\ntype: [unclosed\n---\n",
+    }))
+      await writeFile(join(root, path), text);
+    const schema = defineSchema({
+      ...fabric,
+      typeNotes: pathToFileURL(join(root, "types/")),
+    });
+    const given: Source = () => ({
+      pieces: [
+        { path: inCode.path, name: inCode.name, fields: inCode.fields },
+        {
+          path: "code/other.ts",
+          name: "find-company",
+          fields: {
+            type: "capability",
+            description: "Look up a company.",
+            title: "Find a company",
+            heldBy: "landl-db",
+            touches: ["landl-db"],
+          },
+        },
+      ],
+      problems: [
+        { path: "code/broken.ts", message: "Cannot be read.", fatal: true },
+      ],
+      unread: [{ path: "code/broken.ts", name: "find-company" }],
+    });
+    // The pieces and unread things lintFolder reads: the loader's notes and the source's, each with its source.
+    const notes = await loadFolder(root);
+    const fromSource = await given();
+    const pieces: Piece[] = [
+      ...notes.pieces,
+      ...fromSource.pieces.map((piece) => ({ ...piece, source: "1" })),
+    ];
+    const unread = [
+      ...notes.unread.map((u) => ({ ...u, source: "notes" })),
+      ...fromSource.unread.map((u) => ({ ...u, source: "1" })),
+    ];
+    const folderLint = await lintFolder(schema, root, { sources: [given] });
+    expect(lint(schema, pieces, unread).problems).toEqual(
+      folderLint.problems.filter((p) => !p.fatal),
+    );
   });
 
   it("gives the same problems, in the same order, whatever the order of the pieces", () => {
@@ -2383,6 +2465,7 @@ describe("the merge of pieces into a node", () => {
       path: p.note ? `${p.at}/${p.name}.md` : `code/${p.at}.ts`,
       name: p.name,
       fields: { ...p.fields, type: p.type },
+      source: p.note ? "notes" : p.at,
       ...(p.note && { body: "" }),
     });
     fc.assert(
@@ -2463,7 +2546,7 @@ describe("the merge of pieces into a node", () => {
     lint(
       reads,
       [db, inCode, asNote],
-      [{ path: "code/other.ts", name: "find-fabric" }],
+      [{ path: "code/other.ts", name: "find-fabric", source: "2" }],
     );
     expect(got).toMatchObject({ title: "Find a fabric" });
   });
@@ -2478,6 +2561,7 @@ describe("the merge of pieces into a node", () => {
         const pieces: Piece[] = all.map((fields, i) => ({
           path: `code/${i}.ts`,
           name: "find-fabric",
+          source: String(i),
           fields: { ...fields, type: "capability" },
         }));
         const expected = all.flatMap((fields, i) =>
