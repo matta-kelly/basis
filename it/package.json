@@ -1,0 +1,42 @@
+{
+  "name": "@mku1tra/it",
+  "version": "0.1.0",
+  "description": "The kinds of notes Matt keeps, as types on basis: ideas and things, each with a type note that says when to use it.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/matta-kelly/basis.git",
+    "directory": "it"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/schema.d.ts",
+      "default": "./dist/schema.js"
+    }
+  },
+  "files": [
+    "dist",
+    "it.md",
+    "README.md",
+    "templater",
+    "types"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "prepack": "npm run build --prefix .. && npm run build && cp ../LICENSE LICENSE"
+  },
+  "devDependencies": {
+    "@mku1tra/basis": "file:.."
+  },
+  "peerDependencies": {
+    "@mku1tra/basis": "^0.22.0",
+    "zod": "^4.6.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

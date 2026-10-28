@@ -3,13 +3,16 @@
 # no TypeScript, and basis in node_modules, where Node does not strip types.
 # The project has its own zod, at a version other than the one basis is developed with. basis uses
 # the project's zod: one copy is installed, and a property made with it is a property to basis.
+# Then a project installs it with basis, each as npm packs it, and lints a note with it's schema.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+repo=$PWD
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 npm pack --silent --pack-destination "$tmp" >/dev/null
+(cd it && npm pack --silent --pack-destination "$tmp" >/dev/null)
 mkdir "$tmp/project" "$tmp/project/notes"
 cd "$tmp/project"
 echo '{ "name": "project", "private": true, "type": "module" }' >package.json
@@ -61,3 +64,45 @@ case "$out" in *"oven.md: /description: Missing: "*"(basis/fields)") ;; *) echo 
 case "$out" in *README.md*) echo "basis lint read a skipped path" >&2; exit 1 ;; esac
 if [ "$code" -ne 1 ]; then echo "basis lint gave $code for a note that does not fit, not 1" >&2; exit 1; fi
 npx --no-install basis lint typed
+
+# it, from its tarball, on basis from its own. it's schema reads its notes and type notes in node_modules, and they fit.
+mkdir "$tmp/notes-of-it" "$tmp/notes-of-it/notes"
+cd "$tmp/notes-of-it"
+echo '{ "name": "notes-of-it", "private": true, "type": "module" }' >package.json
+npm install --silent --no-audit --no-fund zod@4.6.6 "$tmp"/mku1tra-basis-*.tgz "$tmp"/mku1tra-it-*.tgz
+for copy in node_modules/@mku1tra/it/node_modules/@mku1tra/basis node_modules/@mku1tra/it/node_modules/zod; do
+  if [ -e "$copy" ]; then
+    echo "it has a copy of its own, beside the project's: $copy" >&2
+    exit 1
+  fi
+done
+if [ -e node_modules/@mku1tra/it/src ] || [ -e node_modules/@mku1tra/it/basis.config.ts ]; then
+  echo "it's package holds its source or its config" >&2
+  exit 1
+fi
+if [ -e node_modules/@mku1tra/basis/it ]; then
+  echo "basis's package holds it" >&2
+  exit 1
+fi
+
+printf -- '---\ntype: doc\ndescription: "How bread is baked."\nstatus: active\n---\n' >notes/bread.md
+printf -- '---\ntype: doc\ndescription: "How cake is baked."\nstatus: running\n---\n' >notes/cake.md
+printf 'import it from "@mku1tra/it";\nexport default { schema: it };\n' >notes/basis.config.js
+
+node --input-type=module -e '
+import { lintFolder } from "@mku1tra/basis";
+import it from "@mku1tra/it";
+const { problems } = await lintFolder(it, "notes");
+console.log(problems);
+if (problems.length !== 1 || !problems[0].path.endsWith("cake.md") || problems[0].field !== "/status") process.exit(1);
+'
+
+set +e
+out=$(npx --no-install basis lint notes)
+code=$?
+set -e
+echo "$out"
+case "$out" in *"cake.md: /status: "*"(basis/fields)") ;; *) echo "basis lint did not name cake.md" >&2; exit 1 ;; esac
+case "$out" in *bread.md* | *node_modules*) echo "basis lint failed a note that fits" >&2; exit 1 ;; esac
+if [ "$code" -ne 1 ]; then echo "basis lint gave $code for a note that does not fit, not 1" >&2; exit 1; fi
+cd "$repo"

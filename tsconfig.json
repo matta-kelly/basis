@@ -10,7 +10,14 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": ["node"],
+    "customConditions": ["@mku1tra/source"]
   },
-  "include": ["src", "fixtures", "eslint.config.ts"]
+  "include": [
+    "src",
+    "fixtures",
+    "it/src",
+    "it/basis.config.ts",
+    "eslint.config.ts"
+  ]
 }

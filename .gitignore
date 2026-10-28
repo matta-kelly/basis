@@ -1,3 +1,5 @@
 node_modules
 *.tsbuildinfo
 dist
+# it's license, copied from the repo's when it is packed.
+it/LICENSE

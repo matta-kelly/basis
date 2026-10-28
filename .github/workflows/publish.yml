@@ -1,12 +1,12 @@
-# Publishes basis on npm, as @mku1tra/basis, when a version tag is pushed: the same check set first, then
-# `npm publish` by trusted publishing (OIDC), with no token and with provenance. The tag is the gate: a ruleset lets
-# only an admin of the repo make a version tag. npmjs.com holds the other half: the package's Trusted Publisher names
-# this repo and this file.
+# Publishes a package of this repo on npm when a version tag of it is pushed: @mku1tra/basis by a `v*` tag, from the
+# repo's root, and @mku1tra/it by an `it-v*` tag, from it/. The same check set first, then `npm publish` by trusted
+# publishing (OIDC), with no token and with provenance. The tag is the gate: a ruleset lets only an admin of the repo
+# make a version tag, of either prefix. npmjs.com holds the other half: each package's Trusted Publisher names this repo and this file.
 name: publish
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*", "it-v*"]
 
 permissions:
   contents: read
@@ -27,15 +27,24 @@ jobs:
           registry-url: https://registry.npmjs.org
       # Trusted publishing needs npm 11.5.1 or later; Node 22 has npm 10.
       - run: npm install --global npm@11.21.0
-      - name: The tag is the version in package.json
-        run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      # The tag names the package: `v<version>` is basis, at the root, and `it-v<version>` is it, in it/. Its version is
+      # the one in that package's package.json.
+      - name: The tag is the package's version
+        run: |
+          case "$GITHUB_REF_NAME" in
+            it-v*) folder=it prefix=it-v ;;
+            *) folder=. prefix=v ;;
+          esac
+          echo "FOLDER=$folder" >>"$GITHUB_ENV"
+          test "$prefix$(node -p "require('./$folder/package.json').version")" = "$GITHUB_REF_NAME"
       - run: scripts/check.sh
       # A version npm has already is left as it is: a run again, or the first version, published by hand.
       - name: Publish, if npm does not have this version
+        working-directory: ${{ env.FOLDER }}
         run: |
-          version=$(node -p 'require("./package.json").version')
-          if npm view "@mku1tra/basis@$version" version >/dev/null 2>&1; then
-            echo "npm has @mku1tra/basis@$version already"
+          package=$(node -p 'require("./package.json").name')@$(node -p 'require("./package.json").version')
+          if npm view "$package" version >/dev/null 2>&1; then
+            echo "npm has $package already"
           else
             npm publish
           fi
