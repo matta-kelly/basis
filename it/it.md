@@ -7,7 +7,7 @@ The kinds of notes Matt keeps, as a package on [[basis]], `@mku1tra/it`, publish
 - [[#Layers]] the layer each note sits at
 - [[#Ontology]] the types, how they group, and where they are defined
 
-- [[basis]]: what a note, a type, a property and a link are ([[basis#State]], [[basis#Schema]])
+- [[basis]]: what a note, a type, a property and a link are ([[basis-node]], [[basis#Schema]])
 - [[kinetic]]: the work types, in its own package
 
 ---

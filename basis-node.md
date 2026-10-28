@@ -1,0 +1,34 @@
+---
+type: doc
+description: "A basis node and how it is made: its pieces (a note, a source's piece, a definition) and the merge that joins the pieces of one name into one node. Read before writing a source, giving a thing in code a note, or reading a basis/merge or basis/unique-name problem."
+status: active
+---
+Part of the state in [[basis]] (State): the terms are those of [[state-machine]].
+
+- **node**: one actual thing of a type ([[basis#Schema]]): its name, its fields, and its links to other nodes by name. It is made of one or more pieces
+	- every node has what PG-Schema gives every node: an identity, its `name`, a slug as the open standards take one (lowercase letters and digits, with single hyphens between them), which no two nodes share (a note's is its file name); a label, its `type`, the name of its type; and a property, its `description`
+	- in code these are the fields of `node`, the abstract parent of every type, which every type inherits unlisted
+	- **piece**: what one source gives of a node: a note, whose frontmatter holds its fields, or a piece a source gives. Each piece has the node's name, names the node's type, gives some of its fields, and names its source
+		- every piece names its source: a note's is `notes`, a code piece's is the source that gave it. A piece is a note when its source is `notes`; a note's body is its prose, and does not make it a note
+		- a piece that names no source, or the empty string, is the caller's fault, not a problem: the in-memory `lint` throws, naming its path. So does a thing not read that names none. `lintFolder` and the CLI name the source of each piece they read, so the in-memory `lint` and a folder's lint give the same problems for the same pieces
+		- **note**: a markdown file that explains a thing: what it is, why, and when to use it. Notes are the documentation layer
+			- a thing that is only written, such as an issue or a decision, has its note as its one form. The note is its node, and its frontmatter holds its fields
+			- a thing that lives in code, such as a plugin, gives a piece of its node from code, by a source. Its note, of the same name, is another piece of the same node: the note gives the prose, and the facts the code does not hold. The lint merges the pieces into one node (merge, below)
+		- **source**: where pieces come from. The notes of a folder are basis's own source. A schema, or a config, can name more, each a function that gives pieces, such as a package's reader of its things in code. basis reads no code itself: the package that knows a thing's shape reads it
+			- a source gives `{ pieces, problems, unread }`, as the loader gives a folder. A source gives pieces, not notes: every note is the loader's, read from the folder that holds it. Each path is from the folder of the notes it is beside (its schema's, or the folder linted), and is not the path of a note the lint reads, in any of its folders. A link is the name of the node it points at. Its problems are only what it cannot read (`fatal`): a check of what it read is a rule
+			- it gives no piece of type `type`: a type's pieces are its code, which basis reads from `defineType`, and its type note, in the folder its schema declares
+			- a source that throws, or gives another shape, is at fault, not a piece: the lint throws, naming it
+			- a source does not name itself on its pieces or its unread things: a folder's lint names each source. The loader's notes, and the notes it could not read, are of the source `notes`
+		- **definition**: a value that code gives as one node, marked with its name and type by `markDefinition(value, { name, type })` (`src/definition.ts`), which marks the value and gives it back. A package's `define*` function calls it on what it gives
+			- the mark is a property of the value under `Symbol.for("@mku1tra/basis/definition")`, the global symbol registry's key, so a value marked by another install of basis, or another copy of its module, reads the same: read by its shape, not by which copy made it (React marks an element with `Symbol.for("react.element")` for the same reason). The key, once released, keeps its name, as an id does
+			- the mark is not enumerable: a spread, `Object.entries` and JSON do not see it, and it cannot change. A name that is no slug, or a type that is no non-empty string, throws a TypeError; so does a value that is no object, is frozen, or is marked already, as `Object.defineProperty` does
+			- it is not a piece: a source gives the piece of a definition. The lint finds each definition in a package's exports itself, and does not take its source's word for what it read: a definition that no source gives a piece of is a problem (`basis/definition-piece`, [[basis#Conformance]])
+	- **merge**: the pieces of one name are one node, as the Nix module system merges the definitions of an option, and GraphQL federation merges the fields of an entity from its subgraphs
+		- the pieces of a name all name one type, and each comes from another source: a source gives each name once, as a folder holds one note of a name. Otherwise they are not one node: each piece is a node of its own, and they share a name (`basis/unique-name`)
+		- one fact, one place: each field of a node comes from one piece, in code or in a note. A field that two pieces give is a problem on each of them, which names the other (`basis/merge`). No piece overrides another, and none has a priority. No copy is kept, on purpose or not
+		- the node is its fields, from every piece, checked against its type as one. A field its type needs and no piece gives is missing; a field set to undefined is not given. So a note whose code piece is gone has a problem: the fields the code gave are missing
+		- the order of the pieces does not change the node, or its problems, or their order
+		- a thing a source found and could not read names that source, as a piece does. It may be a piece of the node of its name, so it is no second node. A note the loader could not read, of the source `notes`, beside a node with a note of its name, is a second note of that name (`basis/unique-name`)
+		- each piece writes its links in its own syntax: a note `"[[name]]"`, a source the name
+		- a problem of a field is on the piece that gives the field. A problem of the whole node is on its note, or, with no note, on its first piece by path
+		- a node keeps each value as its piece gives it. A live value, such as a function or a zod schema, stays live, and its type describes it (`z.custom`, `z.instanceof`). Only plain data, arrays and objects of no class, is copied and frozen, so a rule cannot change what the next one reads, and a piece's values stay its source's

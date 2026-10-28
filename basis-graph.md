@@ -1,0 +1,18 @@
+---
+type: doc
+description: "basis's graph and its subgraphs: root, composed graph, outermost graph, subgraph, ground and package, the relative terms every lint runs in. Read to know what one lint reads as one graph, or where one package's notes end and another's begin."
+status: active
+---
+Part of the state in [[basis]] (State): the terms are those of [[state-machine]].
+
+- the graph and its subgraphs are relative terms: the graph is the one linted from its root, and its subgraphs are what it imports
+	- root: the graph a lint starts from: its schema, and the folder of its notes
+	- composed graph: the graph of a root and every subgraph it imports, joined into one graph
+	- outermost graph: a graph that no other graph imports
+	- subgraph: a package, with its notes, its types (made with basis, on zod), and a `package.json` that names what it depends on
+		- in code, a subgraph is its schema: its types and rules, its notes and its sources, and the schemas it imports
+		- npm gives versions, resolution and install. No own package format
+		- the lint of a schema is the lint of its subgraph: it and every schema it imports, as one graph (composed graph, above)
+		- ground: the part of a folder that a graph reads as its own notes: its schema's notes folder, less its skip
+		- package: an npm package. It exports a schema, which names its notes, its type notes and its sources, and imports the schemas it builds on. It ships the folders its schema names, so a package that imports it lints them
+			- a package inside another's folder is set apart by its import: the folder of an imported schema is that schema's, read once, by its skip and with its sources. A folder no schema the lint sees names is read as the notes of the folder that holds it (Bazel's package boundary, set here by the import, which already says it). This is short of the invariant that a ground ends where a subgraph's root begins, which has no rule yet ([[basis#Invariants]], graph and subgraph)
