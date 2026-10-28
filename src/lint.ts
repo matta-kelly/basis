@@ -608,13 +608,36 @@ const Report = z.strictObject({
   message: z.string().min(1),
 });
 
-/** A value, frozen through its arrays and objects, so a rule cannot change what the next one reads. A Date is not frozen by this. */
-function deepFreeze<V>(value: V): V {
-  if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const item of Object.values(value)) deepFreeze(item);
-  }
-  return value;
+/** Plain data: an array, or an object of no class. Anything else, a function, a zod schema or a Date, is a live value. */
+const isPlain = (value: unknown): value is object =>
+  typeof value === "object" &&
+  value !== null &&
+  [Array.prototype, Object.prototype, null].includes(
+    Object.getPrototypeOf(value),
+  );
+
+/**
+ * A frozen copy of the plain data in a value, so a rule cannot change what the next one reads, and the caller's fields
+ * stay theirs. A live value is kept as its piece gives it: its type describes it. A value that holds itself, as a YAML
+ * alias can make, holds its copy.
+ */
+function frozenCopy<V>(value: V, copies = new Map<object, object>()): V {
+  if (!isPlain(value)) return value;
+  const had = copies.get(value);
+  if (had) return had as V;
+  const copy: Record<PropertyKey, unknown> = Array.isArray(value)
+    ? []
+    : Object.create(Object.getPrototypeOf(value) as object | null);
+  copies.set(value, copy);
+  // Defined, not assigned: a key named __proto__ stays an own key, as in the value, and sets no prototype.
+  for (const [key, item] of Object.entries(value))
+    Object.defineProperty(copy, key, {
+      value: frozenCopy(item, copies),
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  return Object.freeze(copy) as V;
 }
 
 /** The graph a rule and a link's message read, and each node of a type that parsed, with its value, in path order. */
@@ -645,10 +668,7 @@ function parsedOf(
         const at = nodeType(seen, node);
         if (!at || at.type.abstract) return [];
         const parse = parseOf(at.type, node);
-        // A copy: the caller's fields stay as they were, and stay theirs.
-        return parse.success
-          ? [[node, deepFreeze(structuredClone(parse.data))]]
-          : [];
+        return parse.success ? [[node, frozenCopy(parse.data)]] : [];
       }),
     );
     return values;

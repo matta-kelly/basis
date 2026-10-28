@@ -65,6 +65,7 @@ Code defines, markdown describes, and the lint checks that they agree.
 		- a thing a source found and could not read may be a piece of the node of its name, so it is no second node. A note the loader could not read, beside a node with a note of its name, is a second note of that name (`basis/unique-name`)
 		- each piece writes its links in its own syntax: a note `"[[name]]"`, a source the name
 		- a problem of a field is on the piece that gives the field. A problem of the whole node is on its note, or, with no note, on its first piece by path
+		- a node keeps each value as its piece gives it. A live value, such as a function or a zod schema, stays live, and its type describes it (`z.custom`, `z.instanceof`). Only plain data, arrays and objects of no class, is copied and frozen, so a rule cannot change what the next one reads, and a piece's values stay its source's
 	- **type**: a kind of node, with its fields beside those every node has. Made with `defineType`
 		- **key**: fields of a type that, together, no two of its nodes share (PG-Schema's key). A type has none unless it says
 		- **parents**: the types it inherits (PG-Schema's `&`). Their fields, links and keys are its own, and a key of a parent holds over the nodes of every type that inherits it. A field two parents give differently, or one it gives again, is refused: extend, never override

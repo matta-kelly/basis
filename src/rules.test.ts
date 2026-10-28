@@ -610,6 +610,124 @@ describe("the lint of rules", () => {
     );
   });
 
+  it("gives each live value as its piece gives it, a function and a zod schema, and copies and freezes only plain data", () => {
+    const op = defineType({
+      name: "op",
+      description: "d",
+      fields: {
+        run: z.custom<() => number>((value) => typeof value === "function"),
+        input: z.instanceof(z.ZodObject),
+        tags: z.array(z.string()),
+      },
+    });
+    let got: { run: unknown; input: unknown; tags: string[] } | undefined;
+    let fromGraph: unknown;
+    const reads = defineRule({
+      name: "reads",
+      description: "d",
+      on: op,
+      check: (node, graph) => {
+        got = node;
+        fromGraph = graph.get("search", op);
+        return [];
+      },
+    });
+    const run = () => 42;
+    const input = z.object({ q: z.string() });
+    const tags = ["a"];
+    const problems = lint(
+      defineSchema({
+        name: "live",
+        description: "d",
+        types: { op },
+        typeNotes: new URL("./types/", import.meta.url),
+        rules: [reads],
+      }),
+      [
+        {
+          path: "code/search.ts",
+          name: "search",
+          fields: { type: "op", description: "d", run, input, tags },
+        },
+      ],
+    );
+    expect(problems).toEqual([]);
+    expect(got?.run).toBe(run);
+    expect(got?.input).toBe(input);
+    expect(Object.isFrozen(input)).toBe(false);
+    expect(got?.tags).toEqual(["a"]);
+    expect(got?.tags).not.toBe(tags);
+    expect(Object.isFrozen(got?.tags)).toBe(true);
+    expect(fromGraph).toBe(got);
+  });
+
+  it("gives a value that holds itself, as a YAML alias makes, as a frozen copy that holds itself", () => {
+    const holder = defineType({
+      name: "holder",
+      description: "d",
+      fields: { extra: z.unknown() },
+    });
+    let got: { extra?: unknown } | undefined;
+    const reads = defineRule({
+      name: "reads",
+      description: "d",
+      on: holder,
+      check: (node) => {
+        got = node;
+        return [];
+      },
+    });
+    const extra: unknown[] = [];
+    extra.push(extra);
+    lint(
+      defineSchema({
+        name: "holding",
+        description: "d",
+        types: { holder },
+        typeNotes: new URL("./types/", import.meta.url),
+        rules: [reads],
+      }),
+      [note("h.md", { type: "holder", description: "d", extra })],
+    );
+    const copy = got?.extra as unknown[];
+    expect(copy).not.toBe(extra);
+    expect(copy[0]).toBe(copy);
+    expect(Object.isFrozen(copy)).toBe(true);
+  });
+
+  it("gives a field named __proto__ in a value as its own key, and makes nothing inherited", () => {
+    const holder = defineType({
+      name: "holder",
+      description: "d",
+      fields: { extra: z.unknown() },
+    });
+    let got: { extra?: unknown } | undefined;
+    const reads = defineRule({
+      name: "reads",
+      description: "d",
+      on: holder,
+      check: (node) => {
+        got = node;
+        return [];
+      },
+    });
+    const extra: unknown = JSON.parse('{"__proto__": {"polluted": true}}');
+    lint(
+      defineSchema({
+        name: "holding",
+        description: "d",
+        types: { holder },
+        typeNotes: new URL("./types/", import.meta.url),
+        rules: [reads],
+      }),
+      [note("h.md", { type: "holder", description: "d", extra })],
+    );
+    const copy = got?.extra as Record<string, unknown>;
+    expect(Object.hasOwn(copy, "__proto__")).toBe(true);
+    expect(Object.getPrototypeOf(copy)).toBe(Object.prototype);
+    expect(copy.polluted).toBeUndefined();
+  });
+
   it("throws, naming the rule and the note, when a check throws or gives something other than a list of { field?, message }", () => {
     const fails = (name: string, check: () => unknown) =>
       defineSchema({
