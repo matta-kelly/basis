@@ -85,7 +85,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 		- rule: `basis/link`
 - **graph and subgraph:** how layers build on basis
 	- a graph stands alone: linted from its own root, it and its subgraphs pass, with nothing above it
-		- rule: each repo's check lints each of its roots alone, at every push ([[presubmit]]): basis's `.`, `types/` and `it/`; que's four roots; each other root by its repo's check
+		- rule: each repo's check lints each of its roots alone, at every push: basis's `.`, `types/` and `it/`; que's four roots; each other root by its repo's check
 		- a node's links, and the rules that see it, resolve only in the composed graph of the graph that owns it: a subgraph that links up to a graph above it fails alone
 			- rule: the lint, in one pass. Each piece names its owner, the schema whose ground or sources gave it ([[basis-graph]], owner): a root's lint names the schema of the place that read it; the lint's core gives a piece that names none to the schema linted, and throws on an owner it does not see. Each node is checked in its owner's composed graph: its type is one its owner sees, `basis/link` resolves each link only to a node of that graph, and only the rules of that graph's schemas run on it, each reading only that graph ([[basis-rule]]). A name or a key it shares with a node of a graph its owner does not import is a problem of its own, which names that node and its owner (`basis/unique-name`, `basis/key`)
 	- a lint starts only at a root: a caller names a root, and the root decides its graph: its ground, skip, sources and imports, and where its ground ends. No caller chooses a scope, so each tool that lints a graph reads the one graph its root's own lint reads. As `tsc -p` takes no file beside a project, and a Go or Cargo build reads a module by its `go.mod` or `Cargo.toml`
@@ -102,7 +102,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 	- schemas form no cycle, and imports point only down
 		- rule: `defineSchema` refuses these when a schema is built
 	- every push lints, from its root, the graph whose ground it changes
-		- rule: no lint rule, since a push is no state. Each repo's `checks` job holds it at every push to every branch, and the ruleset on main refuses a commit whose `checks` is not green ([[presubmit]], [[ci#checks.yml]]). A root's own check lints its graph; a repo whose notes are lot's ground lints lot's graph, with our repos at their main
+		- rule: no lint rule, since a push is no state. Each repo's `checks` job holds it at every push to every branch, and the ruleset on main refuses a commit whose `checks` is not green. A root's own check lints its graph; a repo whose notes are the ground of a graph above it lints that graph
 	- packages are nodes, and each dependency is on a published package, by version: never a path into another repo
 		- rule: a rule of the graph that holds the packages, none in basis. It reads each `package.json`: a dependency npm resolves to a place (a folder, a tarball, a git or other url), a published package used as a workspace, or a workspace with no package fails. It reads `package.json`, not code, so it does not see an import by a relative path
 
