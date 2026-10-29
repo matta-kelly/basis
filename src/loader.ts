@@ -26,6 +26,11 @@ export type Piece = {
    * "[[name]]".
    */
   source: string;
+  /**
+   * The name of the schema that owns it: the schema whose ground or sources gave it. None for the schema linted. Its
+   * links, and the rules that see its node, resolve in that schema's composed graph.
+   */
+  owner?: string;
 };
 
 /**
@@ -73,10 +78,14 @@ export type Problem = {
  */
 export type Source = () => Loaded<SourcePiece> | Promise<Loaded<SourcePiece>>;
 
-/** A piece a source gives: never a body, as a note has, and no source: the folder's lint names the source of each. */
-export type SourcePiece = Omit<Piece, "body" | "source"> & {
+/**
+ * A piece a source gives: never a body, as a note has, and no source or owner: the folder's lint names the source of
+ * each, and its owner, the schema that names the source.
+ */
+export type SourcePiece = Omit<Piece, "body" | "source" | "owner"> & {
   body?: never;
   source?: never;
+  owner?: never;
 };
 
 export type Read = { ok: true; note: Note } | { ok: false; problem: Problem };

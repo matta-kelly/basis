@@ -59,7 +59,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 		- rule: a fatal problem, with no rule id ([[basis-problem]])
 	- every piece names its source: a note's is `notes`, a code piece's is the source that gave it
 		- rule: the in-memory `lint` throws on a piece or an unread thing that names no source; the loader names `notes`, and `lintFolder` and the CLI name each source
-	- the pieces of one name and one type, each from another source, are one node, and each field comes from one piece. Two pieces of one source are two nodes of one name
+	- the pieces of one name, one type and one owner, each from another source, are one node, and each field comes from one piece. Two pieces of one source, or of two owners, are two nodes of one name
 		- rule: `basis/merge`, `basis/unique-name`
 	- a thing's note and its code are pieces of one node, joined by its name: the code gives what runs, the note the prose and the facts the code does not hold
 		- rule: `basis/merge`, `basis/unique-name`
@@ -87,7 +87,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 	- a graph stands alone: linted from its own root, it and its subgraphs pass, with nothing above it
 		- no rule yet: no check lints each root alone
 		- a node's links, and the rules that see it, resolve only in the composed graph of the graph that owns it: a subgraph that links up to a graph above it fails alone
-			- no rule yet: `basis/link` resolves a link against every node linted, and a rule sees every node linted
+			- rule: the lint, in one pass. Each piece names its owner, the schema whose ground or sources gave it ([[basis-graph]], owner): `lintFolder` and the CLI name the schema of the place that read it; the in-memory `lint` gives a piece that names none to the schema linted, and throws on an owner it does not see. Each node is checked in its owner's composed graph: its type is one its owner sees, `basis/link` resolves each link only to a node of that graph, and only the rules of that graph's schemas run on it, each reading only that graph ([[basis-rule]]). A name or a key it shares with a node of a graph its owner does not import is a problem of its own, which names that node and its owner (`basis/unique-name`, `basis/key`)
 	- a subgraph is the same inside a graph as alone: a graph has a subgraph only through the subgraph's schema, once, and never reads its ground
 		- each note has one owner: one graph's ground holds it, and a ground ends at a nested root: a folder with its own `basis.config`, as a BUILD file ends a Bazel package and a `go.mod` a Go module. Where a file lies on disk does not make it part of a graph; an import does
 			- rule: `lintFolder` and the CLI. A ground ends at a nested root below its top: a real folder with its own `basis.config.ts` or `.js` file. A nested root is read only as a place of the lint, once, as its schema's; one that no schema the lint sees names is not read. A path another place reads is that place's: all of an imported schema's notes folder, and the own `.md` files of a folder of type notes. The folder linted is the top: its walk ends only below it ([[basis-graph]], ground)
@@ -126,7 +126,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 
 - validation: the check that the specification gives what the intent asks for. Does the rule set say all that "each real thing is defined once" means?
 - what the rule set does not say ([[#Invariants]])
-	- the invariants with no rule yet: a graph stands alone; a node's links and rules resolve only in the graph that owns it; every push lints the graph whose ground it changes
+	- the invariants with no rule yet: a graph stands alone; every push lints the graph whose ground it changes
 	- transitions: basis checks one state of the graph, never a move from one state to the next. No rule can say what a change may do
 - what basis leaves to its schemas: an invariant about what only a schema defines. The schema that owns it states it and holds it, with its own rule or by how it builds it; basis does not check it
 	- a relation is stated once: one link, on one node, and its reverse comes from the graph, not from a second link. Only a schema knows that two of its links state one relation, so a schema that states a relation holds this with its own rule over the graph. A schema that states a relation twice and writes no rule is not caught
@@ -137,6 +137,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 
 - implementation: a graph's code and notes ([[#Specification]]). basis's own code is the implementation of the lint, and its tests check that code
 	- two of its tests are fast-check properties of the merge: over random pieces of three names, each of whose fields one or more pieces give, the order of the pieces does not change the problems or their order; and every field two pieces give is a problem on each piece, and only those
+	- a third is a fast-check property of the composed graph: over random composed graphs (a base schema, two schemas that import it and not each other, and a root that imports both, each with a rule that reads the graph; random pieces and unread things of random owners, with links between their names), the problems the root's lint gives on each schema's pieces are those of that schema's own lint, and more only where they name a piece of a schema it does not import
 
 ### Foundation
 
@@ -159,5 +160,5 @@ An invariant is a property true in every state. One with a rule is checked; one 
 	- what makes basis more than a zod wrapper: where schemas become one graph
 	- prior art: NixOS module merging
 2. loader: basis's own source. A folder in, notes out, each a piece of a node (path, name, fields) of the source `notes`, with its body. Each note it could not read is of the source `notes` too, so what it gives goes to the in-memory `lint` as it is. A `skip` option leaves out the paths that are not notes, such as a README or code. It also finds the notes a skip leaves out, by their frontmatter, for `basis/skip`
-3. lint: a schema and the pieces in, problems and the graph out: the pieces merged into nodes, then the rule layers, the rules of each schema it sees last. A folder's lint (`lintFolder`) reads the folder's notes and the pieces of each source it is given, the notes and sources of each schema it sees, and each folder of type notes, and lints them as one graph. The lint merges each type note with its type's code piece
+3. lint: a schema and the pieces in, problems and the graph out: the pieces merged into nodes, each node checked in the composed graph of its owner, then the rule layers, the rules of each schema it sees last. A folder's lint (`lintFolder`) reads the folder's notes and the pieces of each source it is given, the notes and sources of each schema it sees, and each folder of type notes, and lints them as one graph. The lint merges each type note with its type's code piece
 4. cli: `basis lint [folder]`, the lint run on a folder with the schema, skip and sources of its config. The one command a person, a hook and a pipeline run

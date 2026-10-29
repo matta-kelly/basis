@@ -1026,7 +1026,7 @@ describe("the sources of a folder", () => {
     representedAs: ["till-item"],
   });
   const gives =
-    (...pieces: Omit<Piece, "body" | "source">[]): Source =>
+    (...pieces: Omit<Piece, "body" | "source" | "owner">[]): Source =>
     () => ({ pieces, problems: [], unread: [] });
 
   it("gives the graph it checked, of the folder's notes and each source's pieces", async () => {

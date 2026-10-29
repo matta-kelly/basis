@@ -1,6 +1,7 @@
 /**
- * The lint: pieces and a schema in, problems out. It changes nothing. The pieces of one name are merged into one node,
- * and the nodes are checked against the schema and the schemas it imports, as one set.
+ * The lint: pieces and a schema in, problems out. It changes nothing. The pieces of one name and one owner are merged
+ * into one node, and the nodes are checked against the schema and the schemas it imports, as one set. Each node is
+ * checked in the composed graph of its owner: its owner's schema and what it imports.
  * Each node is parsed by its type, and each link it writes must point at a node of the type the link points at, or of
  * a type that inherits it. No node is of an abstract type. A folder's lint also reads the type notes of each schema it
  * sees, from the folder the schema declares.
@@ -156,6 +157,8 @@ const isNote = (piece: Piece) => piece.source === "notes";
  */
 type Node = {
   name: string;
+  /** The name of the schema that owns it: every piece of it names it. */
+  owner: string;
   /** Its pieces, in path order. */
   pieces: readonly Piece[];
   path: string;
@@ -205,7 +208,7 @@ const canonical = <T extends { path: string; name: string; fields: object }>(
  * One node from pieces of one name, and the problems of its merge: a field two pieces give is a problem on each, and
  * the node takes it from the first. Every piece names the type: the node's is its path's piece's.
  */
-function mergeOne(pieces: readonly Piece[]): {
+function mergeOne(pieces: readonly Owned[]): {
   node: Node;
   problems: Problem[];
 } {
@@ -250,28 +253,37 @@ function mergeOne(pieces: readonly Piece[]): {
         })),
   );
   return {
-    node: { name: first.name, pieces: sorted, path: home.path, fields, from },
+    node: {
+      name: first.name,
+      owner: first.owner,
+      pieces: sorted,
+      path: home.path,
+      fields,
+      from,
+    },
     problems,
   };
 }
 
 /**
- * The pieces, merged into nodes by name, with the problems of each merge. The pieces of one name that all name one
- * type, each from another source (the folder's notes are one), are one node. Otherwise each piece is a node of its
- * own, and the nodes share a name.
+ * The pieces, merged into nodes by name and owner, with the problems of each merge. The pieces of one name and one
+ * owner that all name one type, each from another source (the folder's notes are one), are one node. Otherwise each
+ * piece is a node of its own, and the nodes share a name. Pieces of one name from two owners are two nodes.
  */
-function mergeAll(pieces: readonly Piece[]): {
+function mergeAll(pieces: readonly Owned[]): {
   nodes: Node[];
   problems: Problem[];
 } {
-  const byName = new Map<string, Piece[]>();
-  for (const piece of pieces)
-    byName.set(piece.name, [...(byName.get(piece.name) ?? []), piece]);
+  const byName = new Map<string, Owned[]>();
+  for (const piece of pieces) {
+    const id = JSON.stringify([piece.name, piece.owner]);
+    byName.set(id, [...(byName.get(id) ?? []), piece]);
+  }
   const nodes: Node[] = [];
   const problems: Problem[] = [];
   for (const same of [...byName.keys()]
     .sort()
-    .map((name) => byName.get(name) ?? [])) {
+    .map((id) => byName.get(id) ?? [])) {
     // A source gives each name once, as a folder holds one note of a name: two of one source are two things.
     const sources = same.map((piece) => piece.source);
     const apart =
@@ -286,12 +298,27 @@ function mergeAll(pieces: readonly Piece[]): {
   return { nodes: canonical(nodes), problems };
 }
 
+/**
+ * A value of a node, by the type it is read as, made once: a node is read by its owner's type for its problems, and by
+ * the type each graph above it sees, which may extend it, for the rules of that graph.
+ */
+function onceFor<V>(cache: WeakMap<Node, Map<Type, V>>) {
+  return (type: Type, node: Node, make: () => V): V => {
+    const byType = cache.get(node) ?? new Map<Type, V>();
+    cache.set(node, byType);
+    if (!byType.has(type)) byType.set(type, make());
+    return byType.get(type) as V;
+  };
+}
+
 /** For each node, its schema as its pieces write it: a link from a note a wikilink, and from another piece a name. */
-const nodeSchemas = new WeakMap<Node, z.ZodObject>();
+const nodeSchemas = onceFor(new WeakMap<Node, Map<Type, z.ZodObject>>());
 
 function schemaOf(type: Type, node: Node): z.ZodObject {
-  const had = nodeSchemas.get(node);
-  if (had) return had;
+  return nodeSchemas(type, node, () => schemaMade(type, node));
+}
+
+function schemaMade(type: Type, node: Node): z.ZodObject {
   const notes = node.pieces.filter(isNote).length;
   const fromNote = linksOf(type).filter((link) => {
     const piece = node.from.get(link.name);
@@ -310,25 +337,19 @@ function schemaOf(type: Type, node: Node): z.ZodObject {
               ]),
             ),
           );
-  nodeSchemas.set(node, schema);
   return schema;
 }
 
-/** Each node's parse, once, by the type the schema sees: the lint's problems and the graph read the same one. */
-const parses = new WeakMap<Node, z.ZodSafeParseResult<unknown>>();
+/** Each node's parse, once for each type it is read as: the lint's problems and the graph read the same one. */
+const parses = onceFor(
+  new WeakMap<Node, Map<Type, z.ZodSafeParseResult<unknown>>>(),
+);
 
 /** A node parsed by its type, as its pieces write it, with its name. */
-function parseOf(type: Type, node: Node): z.ZodSafeParseResult<unknown> {
-  let result = parses.get(node);
-  if (!result) {
-    result = schemaOf(type, node).safeParse({
-      ...node.fields,
-      name: node.name,
-    });
-    parses.set(node, result);
-  }
-  return result;
-}
+const parseOf = (type: Type, node: Node): z.ZodSafeParseResult<unknown> =>
+  parses(type, node, () =>
+    schemaOf(type, node).safeParse({ ...node.fields, name: node.name }),
+  );
 
 /**
  * A link's own message for a failure, or none for basis's. A message that throws, or gives other than a non-empty
@@ -441,18 +462,48 @@ function linkNames(node: Node, field: string): string[] {
 /** The types a schema sees, its own and its imports', with the schema that holds each. */
 type Seen = Map<string, { type: Type; owner: Schema }>;
 
+/**
+ * The composed graph of a schema: the schema, the types it sees, and the names of the schemas it sees, itself and its
+ * imports at every depth. A node of the schema is checked in it: its links resolve to its nodes, and the rules of its
+ * schemas run on the node and read its nodes.
+ */
+type Scope = {
+  schema: Schema;
+  seen: Seen;
+  sees: ReadonlySet<string>;
+};
+
+/** A piece with the name of its owner. */
+type Owned = Piece & { owner: string };
+
+/** The composed graph of each schema a schema sees, by its name. */
+const scopesOf = (schema: Schema): Map<string, Scope> =>
+  new Map(
+    schemasSeen(schema).map((at) => [
+      at.name,
+      {
+        schema: at,
+        seen: seenTypes<Schema>(at),
+        sees: new Set(schemasSeen(at).map(({ name }) => name)),
+      },
+    ]),
+  );
+
 /** The node's type, with the schema that holds it, if the schema or its imports have it. */
 const nodeType = (seen: Seen, node: { fields: Record<string, unknown> }) => {
   const type = node.fields.type;
   return typeof type === "string" ? seen.get(type) : undefined;
 };
 
+/**
+ * What is wrong with one node, in the composed graph of its owner: its name, its type, its fields, and each link, which
+ * resolves only to a node of that graph. A link to a thing of that graph a source could not read is not a problem.
+ */
 function nodeProblems(
-  schema: Schema,
-  seen: Seen,
+  { schema, seen, sees }: Scope,
   node: Node,
   byName: Map<string, Node[]>,
-  unread: Set<string>,
+  unread: Map<string, string[]>,
   graph: Graph,
 ): Problem[] {
   const problem = (
@@ -517,10 +568,10 @@ function nodeProblems(
     const own = (failure: LinkFailure) =>
       linkMessage(at.type, link, node, failure, graph);
     for (const name of linkNames(node, link.name)) {
-      const targets = byName.get(name);
-      if (!targets) {
+      const targets = (byName.get(name) ?? []).filter((t) => sees.has(t.owner));
+      if (targets.length === 0) {
         // A piece that could not be read exists, and has that problem itself.
-        if (unread.has(name)) continue;
+        if (unread.get(name)?.some((owner) => sees.has(owner))) continue;
         problems.push(
           problem(
             "basis/link",
@@ -564,7 +615,10 @@ function nodeProblems(
  * schema, so a link is the name it points at, a node with a problem in another field is compared, and a node whose
  * key field has a problem is not: it has that problem.
  */
-function keyProblems(seen: Seen, nodes: readonly Node[]): Problem[] {
+function keyProblems(
+  scopes: ReadonlyMap<string, Scope>,
+  nodes: readonly Node[],
+): Problem[] {
   // Each value a number, by a map: a key field gives a scalar, and a map tells "1" from 1. Type names are slugs.
   const ids = new Map<unknown, number>();
   const idOf = (value: unknown) => {
@@ -576,7 +630,7 @@ function keyProblems(seen: Seen, nodes: readonly Node[]): Problem[] {
     { node: Node; over: string; key: readonly string[]; values: string }[]
   >();
   for (const node of nodes) {
-    const type = nodeType(seen, node)?.type;
+    const type = nodeType(scopeOf(scopes, node).seen, node)?.type;
     if (!type) continue;
     const shape = schemaOf(type, node).shape;
     for (const { over, key } of keysOf(type)) {
@@ -599,19 +653,56 @@ function keyProblems(seen: Seen, nodes: readonly Node[]): Problem[] {
     }
   }
   return [...byKey.values()].flatMap((same) =>
-    same.length < 2
-      ? []
-      : same.map(({ node, over, key, values }) => ({
-          path: key.length === 1 ? pathOf(node, key[0]) : node.path,
-          rule: "basis/key",
-          ...(key.length === 1 && { field: pointer(key) }),
-          message: `The key ${values} of the type ${over} is also the key of ${same
-            .filter((other) => other.node !== node)
-            .map((other) => other.node.path)
-            .join(", ")}.`,
-        })),
+    same.flatMap(({ node, over, key, values }): Problem[] => {
+      const at = {
+        path: key.length === 1 ? pathOf(node, key[0]) : node.path,
+        rule: "basis/key",
+        ...(key.length === 1 && { field: pointer(key) }),
+      };
+      const { inside, outside } = byGraph(
+        scopeOf(scopes, node),
+        same.map((other) => other.node).filter((other) => other !== node),
+      );
+      const head = `The key ${values} of the type ${over} is also the key of`;
+      return [
+        ...(inside ? [{ ...at, message: `${head} ${inside}.` }] : []),
+        ...(outside
+          ? [{ ...at, message: `${head} ${outside}, ${notImported(node)}.` }]
+          : []),
+      ];
+    }),
   );
 }
+
+/** The composed graph of a node's owner. */
+function scopeOf(scopes: ReadonlyMap<string, Scope>, node: Node): Scope {
+  const scope = scopes.get(node.owner);
+  if (!scope) throw new Error(`No schema ${node.owner} owns ${node.path}.`);
+  return scope;
+}
+
+/**
+ * Things of one name or one key, beside a node, as its owner's composed graph sees them: the paths of those of that
+ * graph, and of those of a graph it does not import, each with its owner. Empty when there are none.
+ */
+function byGraph(
+  { sees }: Scope,
+  others: readonly { path: string; owner: string }[],
+): { inside: string; outside: string } {
+  return {
+    inside: others
+      .filter(({ owner }) => sees.has(owner))
+      .map(({ path }) => path)
+      .join(", "),
+    outside: others
+      .filter(({ owner }) => !sees.has(owner))
+      .map(({ path, owner }) => `${path} (of ${owner})`)
+      .join(", "),
+  };
+}
+
+/** Where a thing named beside a node is: in a graph its owner does not import. */
+const notImported = (node: Node) => `in a graph ${node.owner} does not import`;
 
 /** What a rule gives for each thing wrong: the field it is in, if one, and the message. */
 const Report = z.strictObject({
@@ -658,16 +749,23 @@ type Parsed = {
 };
 
 /**
- * The graph of the nodes linted: each node that parsed, by its name or by its type. Each node is parsed when the graph
- * is first read, so it is whole wherever it is read from. A name two nodes share, or an unread note shares, gives none.
+ * The composed graph of a schema: each node of it that parsed, by its name or by its type, read as the schema sees its
+ * type. Each node is parsed when the graph is first read, so it is whole wherever it is read from. A name two of its
+ * nodes share, or an unread note of it shares, gives none.
  */
 function parsedOf(
-  schema: Schema,
-  seen: Seen,
-  nodes: readonly Node[],
+  { schema, seen, sees }: Scope,
+  all: readonly Node[],
   byName: Map<string, Node[]>,
-  contested: Set<string>,
+  unreadNotes: Map<string, { path: string; owner: string }[]>,
 ): Parsed {
+  const nodes = all.filter((node) => sees.has(node.owner));
+  const ofScope = (name: string) =>
+    (byName.get(name) ?? []).filter((node) => sees.has(node.owner));
+  // A name an unread note shares with a node that has a note: two notes of one name, so neither is the node.
+  const contested = (name: string) =>
+    ofScope(name).some((node) => node.pieces.some(isNote)) &&
+    (unreadNotes.get(name) ?? []).some(({ owner }) => sees.has(owner));
   const isOf = (node: Node, type: Type) => {
     const at = nodeType(seen, node);
     return at !== undefined && isOfType(at.type, type);
@@ -704,9 +802,8 @@ function parsedOf(
   const graph: Graph = {
     get: (name, type) => {
       seenType(type);
-      const same = byName.get(name);
-      const only =
-        same?.length === 1 && !contested.has(name) ? same[0] : undefined;
+      const same = ofScope(name);
+      const only = same.length === 1 && !contested(name) ? same[0] : undefined;
       return only && valuesOf().has(only) && isOf(only, type)
         ? (valuesOf().get(only) as never)
         : undefined;
@@ -717,20 +814,21 @@ function parsedOf(
 }
 
 /**
- * What the rules of each schema the lint sees find wrong: each rule runs on each node of its type that parsed, and
- * each `{ field?, message }` it gives is a problem of rule `<schema>/<rule>`, on the piece that gives the field. A check
- * that throws, or gives something other than a list of `{ field?, message }`, is a fault of the rule, not of the node:
- * the lint throws, naming both.
+ * What the rules of a schema's composed graph find wrong on the nodes the schema owns: each rule of the schema and of
+ * each schema it imports runs on each node of its type that the schema owns and that parsed, and reads the schema's
+ * composed graph. Each `{ field?, message }` it gives is a problem of rule `<schema>/<rule>`, on the piece that gives the
+ * field. A check that throws, or gives something other than a list of `{ field?, message }`, is a fault of the rule, not
+ * of the node: the lint throws, naming both.
  */
 function ruleProblems(
-  schema: Schema,
-  seen: Seen,
+  { schema, seen }: Scope,
   { graph, nodesOf }: Parsed,
 ): Problem[] {
   const problems: Problem[] = [];
   for (const { rule, owner } of rulesSeen(schema)) {
     const id = `${owner.name}/${rule.name}`;
     for (const [node, value] of nodesOf(rule.on)) {
+      if (node.owner !== schema.name) continue;
       let reports: unknown;
       try {
         reports = rule.check(value as never, graph);
@@ -777,8 +875,14 @@ function byNameOf(nodes: readonly Node[]) {
   return byName;
 }
 
-/** A thing a source found and could not read, with that source: the loader's is `notes`. */
-export type Unread = Loaded["unread"][number] & { source: string };
+/**
+ * A thing a source found and could not read, with that source, the loader's `notes`, and the name of the schema that
+ * owns it, as a piece names it: none for the schema linted.
+ */
+export type Unread = Loaded["unread"][number] & {
+  source: string;
+  owner?: string;
+};
 
 /**
  * What a lint gives: what is wrong, in path order, and the graph it checked, which a rule reads: each node that parsed,
@@ -789,11 +893,18 @@ export type LintResult = { problems: Problem[]; graph: Graph };
 
 /**
  * What is wrong with the pieces, by the schema, in path order, from every source as one graph, and the graph: the
- * pieces of one name are merged into one node first. `unread` holds the things a source found and could not read: a
- * link to one is not a problem. A note that could not be read and a node with a note of its name are two notes of one
- * name, a duplicate; any other thing that could not be read may be a piece of the node of its name, so it is not.
- * Each piece and each thing not read names its source, a note's `notes`: one that names none is the caller's fault,
- * and the lint throws, naming its path.
+ * pieces of one name and one owner are merged into one node first. `unread` holds the things a source found and could
+ * not read: a link to one is not a problem. A note that could not be read and a node with a note of its name are two
+ * notes of one name, a duplicate; any other thing that could not be read may be a piece of the node of its name, so it
+ * is not. Each piece and each thing not read names its source, a note's `notes`: one that names none is the caller's
+ * fault, and the lint throws, naming its path.
+ *
+ * Each piece and each thing not read can name its owner: the schema whose ground or sources gave it, by its name. One
+ * that names none is the schema linted's; one that names a schema the lint does not see is the caller's fault, and the
+ * lint throws, naming its path. Each node is checked in the composed graph of its owner, its owner's schema and what
+ * it imports: its type is one its owner sees, its links resolve only to nodes of that graph, and the rules of that
+ * graph's schemas run on it and read only that graph. A name or a key a node shares with a node of a graph its owner
+ * does not import is a problem of its own, naming the other. The graph the lint gives is the schema linted's.
  */
 export function lint(
   schema: Schema,
@@ -814,58 +925,104 @@ export function lint(
       throw new Error(
         `The thing at ${thing.path}, not read, names no source: each names the source that found it, and a note's is notes.`,
       );
-  const unreadNotes = new Map<string, string[]>();
-  for (const { path, name, source } of unread)
-    if (source === "notes")
-      unreadNotes.set(name, [...(unreadNotes.get(name) ?? []), path]);
-  const unreadNames = new Set(unread.map(({ name }) => name));
   // The schema's own check once: a node of an imported type is parsed by its own schema, not by this one.
   checked(schema);
   // A schema made another way than defineSchema, such as a spread, has its rules checked here.
   checkRules(schema);
-  const seen: Seen = seenTypes<Schema>(schema);
-  // A type's code piece joins its one type note. Two type notes of one name are two nodes that share it, and neither
-  // is the type's.
-  const typeNotes = new Map<string, number>();
-  for (const piece of pieces)
+  const scopes = scopesOf(schema);
+  // An owner the lint does not see is the caller's fault, as a piece with no source is.
+  const ownerOf = (thing: { owner?: unknown }, what: string): string => {
+    if (thing.owner === undefined) return schema.name;
+    if (typeof thing.owner === "string" && scopes.has(thing.owner))
+      return thing.owner;
+    throw new Error(
+      `${what} names the owner ${String(thing.owner)}, which is no schema the lint of ${schema.name} sees: a piece's owner is the schema linted or one it imports.`,
+    );
+  };
+  const owned: Owned[] = pieces.map((piece) => ({
+    ...piece,
+    owner: ownerOf(piece, `The piece at ${piece.path}`),
+  }));
+  const unreadNotes = new Map<string, { path: string; owner: string }[]>();
+  const unreadNames = new Map<string, string[]>();
+  for (const thing of unread) {
+    const { path, name, source } = thing;
+    const owner = ownerOf(thing, `The thing at ${path}, not read,`);
+    unreadNames.set(name, [...(unreadNames.get(name) ?? []), owner]);
+    if (source === "notes")
+      unreadNotes.set(name, [
+        ...(unreadNotes.get(name) ?? []),
+        { path, owner },
+      ]);
+  }
+  // A type's code piece joins its one type note in its owner's composed graph. Two type notes of one name there are
+  // two nodes that share it, and neither is the type's.
+  const typeNotes = new Map<string, string[]>();
+  for (const piece of owned)
     if (isNote(piece) && isTypeNote(piece))
-      typeNotes.set(piece.name, (typeNotes.get(piece.name) ?? 0) + 1);
+      typeNotes.set(piece.name, [
+        ...(typeNotes.get(piece.name) ?? []),
+        piece.owner,
+      ]);
   const { nodes, problems } = mergeAll([
-    ...pieces,
-    ...pieces.flatMap((piece) =>
-      typeNotes.get(piece.name) === 1 ? (codePieceOf(seen, piece) ?? []) : [],
-    ),
+    ...owned,
+    ...owned.flatMap((piece) => {
+      const scope = scopes.get(piece.owner);
+      const notes = (typeNotes.get(piece.name) ?? []).filter((owner) =>
+        scope?.sees.has(owner),
+      );
+      return scope && notes.length === 1
+        ? (codePieceOf(scope.seen, piece) ?? [])
+        : [];
+    }),
   ]);
   const byName = byNameOf(nodes);
 
-  // The names an unread note shares with a node that has a note: two notes of one name, so neither is the node.
-  const contested = new Set<string>();
-  for (const [name, same] of byName) {
+  for (const [name, same] of byName)
     for (const node of same) {
       const unreadNote = node.pieces.some(isNote)
         ? (unreadNotes.get(name) ?? [])
         : [];
-      if (unreadNote.length) contested.add(name);
-      const others = [
-        ...same.filter((n) => n !== node).map((n) => n.path),
+      const { inside, outside } = byGraph(scopeOf(scopes, node), [
+        ...same.filter((n) => n !== node),
         ...unreadNote,
-      ];
-      if (others.length === 0) continue;
-      problems.push({
-        path: node.path,
-        rule: "basis/unique-name",
-        message: `The name ${node.name} is also the name of ${others.join(", ")}.`,
-      });
+      ]);
+      const head = `The name ${node.name} is also the name of`;
+      if (inside)
+        problems.push({
+          path: node.path,
+          rule: "basis/unique-name",
+          message: `${head} ${inside}.`,
+        });
+      if (outside)
+        problems.push({
+          path: node.path,
+          rule: "basis/unique-name",
+          message: `${head} ${outside}, ${notImported(node)}: a name has one node in the composed graph.`,
+        });
     }
-  }
-  const parsed = parsedOf(schema, seen, nodes, byName, contested);
-  for (const node of nodes)
+  // Each schema's composed graph, made when a node of it is first checked.
+  const parsed = new Map<string, Parsed>();
+  const parsedIn = (scope: Scope) => {
+    const had = parsed.get(scope.schema.name);
+    if (had) return had;
+    const made = parsedOf(scope, nodes, byName, unreadNotes);
+    parsed.set(scope.schema.name, made);
+    return made;
+  };
+  for (const node of nodes) {
+    const scope = scopeOf(scopes, node);
     problems.push(
-      ...nodeProblems(schema, seen, node, byName, unreadNames, parsed.graph),
+      ...nodeProblems(scope, node, byName, unreadNames, parsedIn(scope).graph),
     );
-  problems.push(...keyProblems(seen, nodes));
-  problems.push(...ruleProblems(schema, seen, parsed));
-  return { problems: problems.sort(byPath), graph: parsed.graph };
+  }
+  problems.push(...keyProblems(scopes, nodes));
+  for (const scope of scopes.values())
+    if (nodes.some((node) => node.owner === scope.schema.name))
+      problems.push(...ruleProblems(scope, parsedIn(scope)));
+  const root = scopes.get(schema.name);
+  if (!root) throw new Error(`The lint of ${schema.name} does not see it.`);
+  return { problems: problems.sort(byPath), graph: parsedIn(root).graph };
 }
 
 /** A path, as its real path: through each symbolic link. A path that is not there is kept. */
@@ -895,11 +1052,11 @@ async function placeOf(folder: string) {
 }
 
 /**
- * The code piece of the type a type note explains, when the schema sees a type of its name: its description and
- * abstract, as defineType made it, of the source defineType, at the note's path. The note gives the prose, and the two
- * are pieces of one node.
+ * The code piece of the type a type note explains, when the note's owner sees a type of its name: its description and
+ * abstract, as defineType made it, of the source defineType, at the note's path and of its owner. The note gives the
+ * prose, and the two are pieces of one node.
  */
-function codePieceOf(seen: Seen, piece: Piece): Piece | undefined {
+function codePieceOf(seen: Seen, piece: Owned): Owned | undefined {
   const at =
     isNote(piece) && isTypeNote(piece) ? seen.get(piece.name) : undefined;
   return (
@@ -907,6 +1064,7 @@ function codePieceOf(seen: Seen, piece: Piece): Piece | undefined {
       path: piece.path,
       name: piece.name,
       source: "defineType",
+      owner: piece.owner,
       fields: {
         type: "type",
         description: at.type.description,
@@ -976,11 +1134,12 @@ async function typeNoteProblems(
 }
 
 /**
- * A folder the lint reads, by its real path: the paths in it that are not notes, and the sources of pieces beside its
- * notes. A folder of type notes that is no other place's folder is read alone, by its own notes only, whatever the
- * place it is in leaves out, and may not be there.
+ * A folder the lint reads, by its real path: the schema that owns what it gives, the paths in it that are not notes,
+ * and the sources of pieces beside its notes. A folder of type notes that is no other place's folder is read alone, by
+ * its own notes only, whatever the place it is in leaves out, and may not be there.
  */
 type Place = {
+  owner: Schema;
   folder: string;
   skip?: (path: string) => boolean;
   sources: readonly Source[];
@@ -995,10 +1154,11 @@ const within = (folder: string, path: string) =>
 const folderOf = (url: URL) => realPathOf(resolve(fileURLToPath(url)));
 
 /**
- * The places of a schema's lint: the folder linted, for the schema linted; the folder of notes of each schema it sees,
- * with its skip and sources; and each folder of type notes that is no other place's folder. The folder linted, when a
- * schema it sees names it as its notes, is that schema's place, with its skip and sources; a skip or sources given
- * beside it are a second place for one fact, and refused.
+ * The places of a schema's lint, each with the schema that owns it: the folder linted, for the schema linted; the
+ * folder of notes of each schema it sees, with its skip and sources; and each folder of type notes that is no other
+ * place's folder, for the schema that declares it. The folder linted, when a schema it sees names it as its notes, is
+ * that schema's place, with its skip and sources; a skip or sources given beside it are a second place for one fact,
+ * and refused.
  */
 async function placesOf(
   schema: Schema,
@@ -1006,13 +1166,19 @@ async function placesOf(
   { skip, sources }: LintOptions,
 ): Promise<Place[]> {
   const places: Place[] = [
-    { folder: root, ...(skip && { skip }), sources: sources ?? [] },
+    {
+      owner: schema,
+      folder: root,
+      ...(skip && { skip }),
+      sources: sources ?? [],
+    },
   ];
   const seen = schemasSeen(schema);
   for (const owner of seen) {
     if (!owner.notes) continue;
     const folder = await folderOf(owner.notes);
     const place: Place = {
+      owner,
       folder,
       ...(owner.skip && { skip: owner.skip }),
       sources: owner.sources ?? [],
@@ -1032,6 +1198,7 @@ async function placesOf(
     const folder = await folderOf(owner.typeNotes);
     if (!places.some((place) => place.folder === folder))
       places.push({
+        owner,
         folder,
         skip: (path) => path.includes("/"),
         sources: [],
@@ -1215,20 +1382,22 @@ function oneDefinitionProblems(exported: readonly Exported[]): Problem[] {
 
 /**
  * What is wrong with the exports of each schema that gives them: each definition in them, at the top or inside a list
- * or an object of no class, at any depth, is a piece that a source gives, of its name and type. A note is no source's
- * piece: a definition is code. A value that throws as it is read is a fault of the schema: throws, naming it.
+ * or an object of no class, at any depth, is a piece that a source of the schema's composed graph gives, of its name and
+ * type. A note is no source's piece: a definition is code. A value that throws as it is read is a fault of the schema:
+ * throws, naming it.
  */
 async function definitionPieceProblems(
   exported: readonly Exported[],
-  pieces: readonly Piece[],
+  pieces: readonly Owned[],
 ): Promise<Problem[]> {
-  const given = new Set(
-    pieces
-      .filter((piece) => !isNote(piece))
-      .map((piece) => `${String(piece.fields.type)}\0${piece.name}`),
-  );
   const problems: Problem[] = [];
   for (const { owner, entries, path } of exported) {
+    const sees = new Set(schemasSeen(owner).map(({ name }) => name));
+    const given = new Set(
+      pieces
+        .filter((piece) => !isNote(piece) && sees.has(piece.owner))
+        .map((piece) => `${String(piece.fields.type)}\0${piece.name}`),
+    );
     // Each object or function once: a value that holds itself, or is held twice, is read once.
     const seen = new Set<unknown>();
     const visit = (name: string, at: PropertyKey[], value: unknown): void => {
@@ -1271,19 +1440,22 @@ export async function lintFolder(
 ): Promise<LintResult> {
   const { realRoot, from } = await placeOf(folder);
   const places = await placesOf(schema, realRoot, options);
-  const pieces: Piece[] = [];
+  const pieces: Owned[] = [];
   const problems: Problem[] = [];
-  const unread: (Unread & { at: string })[] = [];
+  const unread: (Unread & { owner: string; at: string })[] = [];
   const notes: Placed[] = [];
   // Each path a place's loader read, or could not read, by its real path: no source gives a note's path.
   const notePaths = new Set<string>();
   const at = (place: Place, path: string) => join(place.folder, path);
+  // Each thing a place gives, by its path from the folder linted, and, a piece or a thing not read, of the place's
+  // schema.
   const placed =
     (place: Place) =>
     <P extends { path: string }>(p: P): P => ({
       ...p,
       path: from(at(place, p.path)),
     });
+  const owned = (place: Place) => ({ owner: place.owner.name });
   for (const place of places) {
     const inner = places.filter(
       (other) =>
@@ -1317,7 +1489,7 @@ export async function lintFolder(
       read = { pieces: [], problems: [], unread: [] };
     }
     for (const note of read.pieces) {
-      const piece = placed(place)(note);
+      const piece = { ...placed(place)(note), ...owned(place) };
       pieces.push(piece);
       notes.push({ piece, at: at(place, note.path) });
     }
@@ -1325,6 +1497,7 @@ export async function lintFolder(
     unread.push(
       ...read.unread.map((u) => ({
         ...placed(place)(u),
+        ...owned(place),
         at: at(place, u.path),
       })),
     );
@@ -1355,6 +1528,7 @@ export async function lintFolder(
         ...l.pieces.map((piece) => ({
           ...placed(place)(piece),
           source: `${first + i + 1}`,
+          ...owned(place),
         })),
       );
       problems.push(...l.problems.map(placed(place)));
@@ -1362,6 +1536,7 @@ export async function lintFolder(
         ...l.unread.map((u) => ({
           ...placed(place)(u),
           source: `${first + i + 1}`,
+          ...owned(place),
           at: at(place, u.path),
         })),
       );

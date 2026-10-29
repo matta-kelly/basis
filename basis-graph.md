@@ -8,6 +8,7 @@ Part of the state in [[basis]] (State): the terms are those of [[state-machine]]
 - the graph and its subgraphs are relative terms: the graph is the one linted from its root, and its subgraphs are what it imports
 	- root: the graph a lint starts from: its schema, and the folder of its notes
 	- composed graph: the graph of a root and every subgraph it imports, joined into one graph
+	- owner: the schema whose ground or sources gave a piece, and so the node it is a piece of. In a folder's lint, the schema of the place that read it: the folder linted is the root's, an imported schema's notes folder and sources are that schema's, and a folder of type notes is the schema's that declares it. A node is checked in the composed graph of its owner, not of the root: its links resolve there, and the rules that run on it read only that graph ([[basis-lint]], [[basis-rule]])
 	- outermost graph: a graph that no other graph imports
 	- subgraph: a package, with its notes, its types (made with basis, on zod), and a `package.json` that names what it depends on
 		- in code, a subgraph is its schema: its types and rules, its notes and its sources, and the schemas it imports
