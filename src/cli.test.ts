@@ -116,6 +116,21 @@ describe("basis lint", () => {
     ]);
   });
 
+  it("gives 2 when its config gives a skip or sources for a folder its schema names as its type notes", async () => {
+    const index = JSON.stringify(
+      fileURLToPath(new URL("./index.ts", import.meta.url)),
+    );
+    const root = await folderOf({
+      "basis.config.ts": `import { defineSchema, defineType } from ${index};\nconst buns = defineSchema({ name: "buns", description: "d", types: { bun: defineType({ name: "bun", description: "d", fields: {} }) }, typeNotes: new URL("./", import.meta.url) });\nexport default { schema: buns, skip: ["sub"] };\n`,
+      "bun.md": "---\ntype: type\n---\nA soft bread.\n",
+    });
+    const { code, error } = await cli(["lint"], root);
+    expect(code).toBe(2);
+    expect(error).toEqual([
+      `${root} cannot be checked: Error: The schema buns names this folder as its type notes: a folder of type notes has no skip and no sources.`,
+    ]);
+  });
+
   it("checks the folder it is given, from the folder it runs in", async () => {
     const root = await folderOf({
       "notes/basis.config.ts": config(),

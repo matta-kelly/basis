@@ -1934,6 +1934,16 @@ describe("the lint of a schema and the schemas it imports, as one graph", () => 
             "The schema buns names this folder as its type notes: a folder of type notes has no skip and no sources.",
           );
       });
+
+      it("with no config of its own, is no root: a note below its top is the ground's around it, read once", async () => {
+        const { base, buns } = await typesRoot();
+        await rm(join(base, "types/basis.config.ts"));
+        await rm(join(base, "types/sub/stray.md"));
+        const { problems, graph } = await lintFolder(shopOf(buns), base);
+        // slate is a source, and shop's, which sees things: one node, with no problem.
+        expect(problems).toEqual([]);
+        expect(names(graph)).toEqual(["slate"]);
+      });
     });
 
     it("is not the folder linted: a config at the folder's top ends nothing", async () => {
