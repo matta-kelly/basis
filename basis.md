@@ -30,7 +30,7 @@ Code defines, markdown describes, and the lint checks that they agree --> a tool
 - the system modelled is a graph. Its specification is basis's schema, its implementation is the graph's code and notes, and the lint checks the one against the other
 	- specification: a schema, that is the types and rules of a graph: a model of every valid graph
 	- implementation: a graph's code and notes
-	- conformance: the lint's check of a graph against its specification ([[#Conformance]])
+	- conformance: the lint's check of a graph against its specification ([[basis-lint]])
 
 ### State
 
@@ -41,54 +41,9 @@ Code defines, markdown describes, and the lint checks that they agree --> a tool
 
 ### Schema
 
-- **schema**: a named set of types, with the schemas it imports, and the subgraph they make: its rules, the folder of its notes (`notes`, a file URL), the paths there that are not notes (`skip`), the sources of its pieces (`sources`), its package's exports (`exports`, a function that gives them, `() => import("./index.ts")`), and the names of the exports that are bridges (`bridges`). Made with `defineSchema`. As a CUE package holds its types and its values, and as Bazel builds a target with all its deps, a schema's lint is its notes and every import's
-	- the schema is the specification: a model of every valid graph. Its parts are below; in code they are in `src/primitives.ts`
-	- the words are those of the property graph (PG-Schema): node, type, property, link, schema, abstract type. Content collections (Astro) use other words for the same parts: a type is a collection, a node is an entry, and a link is a `reference()`
-	- **built-in types**: `node` and `type`, held in the built-in schema `basis`. Every schema sees them as if it imported `basis`, as every GraphQL schema has `__Type`. They are basis's own words: no schema can define another type of their names
-		- `node`: the abstract parent of every type, as GraphQL's `Node` interface. A link to it, or a rule on it, takes every node. No type lists it as a parent, and no schema extends it
-		- `type`: the type of a type note. A schema can extend it. Its field `abstract` is `true` when the type the note explains is abstract, and `false` when not. The type's code gives it, as it gives `description`
-	- **bridge**: an export a schema names in `bridges`: a shape an outside standard asks for, which no type defines
-	- how schemas combine
-		- dependency: a schema depends only downward. The graph has no cycles
-			- test: "to understand this, what else must I understand?" Every answer points down
-			- a cycle is fixed by a merge, or by a third piece both sit on
-		- namespace: each name has one owner. Others refer to it, and never define it again
-			- the same word in two schemas is two things (`shopify:product`, `odoo:product`)
-			- outside copies of one thing link to it (the crosswalk pattern), and are not a second definition
-		- extend, never override: a type can extend an imported type, and cannot change it
-		- public and private: others depend on what a schema exposes, never on its insides
-- **type**: a kind of node, defined once in code, as zod in `defineType`: its properties and its links, beside those every node has, and a one-line description. It says what a valid thing of that kind is
-	- one definition: code takes a thing's contract from its type, and declares no second shape of it. `basis/one-definition` holds it over what a package exports ([[#Conformance]])
-	- **key**: fields of a type that, together, no two of its nodes share (PG-Schema's key). A type has none unless it says
-	- **parents**: the types it inherits (PG-Schema's `&`). Their fields, links and keys are its own, and a key of a parent holds over the nodes of every type that inherits it. A field two parents give differently, or one it gives again, is refused: extend, never override
-	- **abstract**: a type no node is of (PG-Schema's `ABSTRACT`, GraphQL's interface). Its nodes are of the types that inherit it, and a link to it takes a node of any of them
-	- **extension**: the same type, under its name, with more fields, in a schema that imports it (GraphQL's `extend type`). Made with `extendType`. It cannot change the fields it extends
-	- **property**: a named field of a type, with a zod schema
-		- **constraint**: a rule on a field, such as required, a minimum or a pattern. It is the field's zod schema, not a primitive of its own. A check over several fields, or several nodes, is a rule
-	- **link**: a field of the type it starts from, whose schema records the type it points at. Its value is the name of the node it points at, as PG-Schema's edge ends at a node's identity
-		- a note writes it `"[[name]]"`, quoted, as an Obsidian property writes a link. That is the syntax of markdown, not the value: the lint reads a note's links as wikilinks, by its type, and a link a note writes without `[[ ]]` is a problem. Another source gives the name
-		- `Schema.parse` takes the values of the graph: a link is a name
-		- one, oneOrNone, many (one or more), or manyOrNone (none, or an empty list). The lint checks each one points at a node of one of its types, or of a type that inherits one
-		- a link to `node` takes a node of any type: for a link that can point at any note. A list of types is for a link whose targets mean something
-		- a link can carry its own message: `one(() => model, { message })`, and the same for each kind. `message` is a function of the failure and the graph, `(failure, graph) => string | undefined`, which gives the message, or undefined for basis's. The rule and the field stay basis's (SHACL's `sh:message`, zod's `error`)
-			- the failure (`LinkFailure`) is one of: `missing`, a required link that gives no name (absent, or an empty list); `not-a-node`, the name is no node; `wrong-type`, the node of the name is of another type (`targetType`). Each has `node`, the name of the node the link starts from, and the last two `target`, the name it points at
-			- `node` is a name, not a value: a node with a missing link did not parse. A message reads a parsed node through the graph, which is the graph a rule gets: every node that parsed, in the whole lint
-			- a value that is not one name in its piece's syntax, such as a note's link without `[[ ]]`, keeps basis's message: it is the syntax of a piece, not what the link means
-			- a type that inherits the link, or extends its type, has its message. The message is the lint's: `Schema.parse` gives zod's
-			- a message that throws, or gives other than a non-empty string or undefined, is a fault of the link: the lint throws, naming the type, the link and the node's path
-		- data on a link itself is not supported yet
-		- whether an absent optional link is worth a warning is a lint rule, not a schema question
-	- **type note**: the documentation of a type, as a docstring is the documentation of a function
-		- one per type, of type `type`, with the type's name as its file name. `type` is built into basis, and every schema sees it without an import
-		- it sits in the folder its schema declares: `defineSchema({ ..., typeNotes: new URL("./types/", import.meta.url) })`. basis's own type notes are in `types/` (`node.md`, `type.md`), in its package
-		- a type is one node: its code piece, as `defineType` made it, gives its `description` and `abstract`, and its type note gives the prose. The lint adds the code piece of each type note it is given, named for a type the schema sees, at the note's path, of the source `defineType`, and merges the two by name (merge, above). A note that gives the description or abstract again is `basis/merge`, which names the code
-		- an extension is the type it extends: its type note is the one of the schema that owns that type
-		- its body says what the type is for, and when to use it over another. It is the template for a new node of that type
-- **rule**: a check a schema brings, beside basis's own. Made with `defineRule`, held by a schema (`defineSchema({ rules })`), and seen by every schema that imports it, as a type is. Its name is unique in its schema, and its id is `<schema>/<name>`, as ESLint's `plugin/rule`: two schemas can each have a rule of one name
-	- it runs on a type (`on`): each node of that type, or of a type that inherits it, that parsed. A rule on an extension does not run on a type that inherits the type extended: that type does not have the extension's fields
-	- it gets the node, parsed by its type, and the graph: each node that parsed, its own too, by name (`get`) and by type (`all`), of a type the schema sees. It gives back what is wrong: a list of `{ field?, message }`, where `field` is a JSON Pointer into a field of its node's type, other than `name`
-	- it sees the nodes linted, from every source and every schema the lint sees, type notes too
-	- a node that did not parse is not in the graph: it has its own problem, and a rule that reads it can give a second one, which goes when the first is fixed
+- [[basis-schema]]: a named set of types with its imports, rules, notes, sources, exports and bridges; the built-in types; how schemas combine
+- [[basis-type]]: a kind of node, defined once in code: its key, parents, properties, links and type note
+- [[basis-rule]]: a check a schema brings, made with defineRule: what it runs on, what it gets and what it gives back
 
 ### Transition
 
@@ -101,7 +56,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 
 - **piece and node:** how a node is made
 	- every piece can be read: a note parses, and its frontmatter is YAML
-		- rule: a fatal problem, with no rule id ([[#Conformance]], problem)
+		- rule: a fatal problem, with no rule id ([[basis-problem]])
 	- every piece names its source: a note's is `notes`, a code piece's is the source that gave it
 		- rule: the in-memory `lint` throws on a piece or an unread thing that names no source; the loader names `notes`, and `lintFolder` and the CLI name each source
 	- the pieces of one name and one type, each from another source, are one node, and each field comes from one piece. Two pieces of one source are two nodes of one name
@@ -163,42 +118,10 @@ An invariant is a property true in every state. One with a rule is checked; one 
 
 ### Conformance
 
-- conformance: the verification of a graph's code and notes against its specification ([[#Specification]]). It is the lint, over the composed graph, from its root
-	- a linter checks definitions against rules without running anything. In: pieces, merged into nodes. Out: a list of problems, and the graph it checked. It changes nothing
-		- the graph (`{ problems, graph }`, as zod's `safeParse` gives the data with its error) is the one a rule reads: each node that parsed, by its name (`get`) and by its type (`all`), with each value as its piece gives it. A program runs on it once the problems are none, so the lint and the program read one graph
-	- one graph, one linter: every node, from every source, goes into one graph, and is checked against its type, each link against the type it points at, and the rules of each schema. A node is of a type the schema sees, whatever its source: the world stays closed
-		- one linter, not one per subgraph: separate linters drift, and none can check an edge that crosses subgraphs. A subgraph brings its rules to it, as it brings its types
-	- parse, don't validate (Alexis King): zod turns raw fields into a typed value. After the lint passes, code downstream trusts the shape, and reads it from the graph the lint gives
-		- closed by design: code runs with the basis types themselves
-- its rules come in layers, each one on the one before
-	- shape: the source can read the thing: for a note, the file parses and the frontmatter is valid YAML
-	- merge: the pieces of one name are one node, and no two of them give one field (`basis/merge`)
-	- schema: the node has a type the schema sees, not an abstract one, and its fields match the type (zod) (`basis/type`, `basis/fields`). Its name is a slug, and not one of its fields (`basis/name`)
-	- reference: each link resolves, to a thing of the right type (`basis/link`). A link's message, when it gives one, is the problem's message, here and for a required link that gives no name (`basis/fields`)
-	- identity: no two nodes share a name (`basis/unique-name`), and no two nodes of a type share a key (`basis/key`)
-	- graph: no cycles, one owner per name, imports only down. `defineSchema` refuses these when a schema is built, before any node is read
-	- type notes: for each schema the lint sees, each type it owns has its type note in the folder it declares (`basis/type-note`), merged with the type's code piece, and each type note there explains one of its types (`basis/type-note-type`). Each type note the lint reads is in the folder of a schema the lint sees (`basis/type-note-folder`). `lintFolder` and the CLI read each folder from disk, by its URL, also when it is outside the folder linted, and compare folders by their real paths. A folder of type notes is read as one of the schema's places: its type notes are nodes of the one graph, wherever it is, and a skip of a folder around it does not leave them out. The in-memory `lint` reads no folder, and merges each type note it is given with its type's code piece, as a folder's lint does
-	- one definition: each zod object a schema's exports give is part of a type the schema sees, by identity: a type's schema, a schema inside one of its fields at any depth, or the schema of a type it extends. Or it is a bridge the schema names: a shape an outside standard asks for, which no type defines (`basis/one-definition`). A zod object is one of zod or of zod/mini. Each bridge is an export, a zod object, and no part of a type: a bridge that is not is stale, and a problem of the same rule. The problem is on the folder of the schema's notes, or of its type notes, or the folder linted, as basis does not know the module's file. `lintFolder` and the CLI run it; the in-memory `lint`, which calls no code, does not. Exports that throw, or give no object, are a fault of the schema: the lint throws, naming it
-		- blind spot: it sees only zod objects a package exports, at the top of its exports. A TypeScript type or interface, a zod object it does not export, or one inside another export, is not seen. Prior art: an ESLint rule over the source sees them all (the spike counted 24 in que), at the cost of basis reading code
-	- definition piece: each definition a schema's exports give, at the top or inside a list or an object of no class, at any depth, is a piece that a source of the lint gives, of the name and type its mark says (`basis/definition-piece`). A note of its name is no source's piece: a definition is code. The problem names the export, and the place inside it as a JSON Pointer, and is where a problem of one definition is. A value that holds itself is read once. A value that throws as it is read, such as a getter, is a fault of the schema: the lint throws, naming it. `lintFolder` and the CLI run it, and read a schema's exports once for both rules of the exports; the in-memory `lint` does not
-		- blind spot: it sees only definitions a package exports, through its schema's `exports`. A definition in a module the exports do not reach, such as a plugin's own `index.ts`, is not seen. Nor is one held by a value that is no plain data: a Map, a Set, a value of a class, a function or a zod schema is not read into. Inside plain data, only own enumerable string keys are read: a symbol key or a property that is not enumerable is not. A mark is read only as a value's own: a subclass of a marked class, or an object made by `Object.create` from a marked one, is no definition
-	- skip: a skip leaves out what is not a note, never a note. Each `.md` file a skip names, itself or by a folder it is in, whose frontmatter parses and has a `type`, is a note the lint does not see, and a problem on the file (`basis/skip`). The lint finds its frontmatter as the loader does, and reads at most the file's first 64 KiB, to the end of its last whole line there: a frontmatter that does not close in them is none. It reads no file of another kind. A file with no frontmatter, or one whose frontmatter does not parse or has no `type`, or one the loader could not read, is no problem. Bytes that are not UTF-8 after the first 64 KiB are not seen. The skip checked is a schema's or a config's; the skip basis gives a folder of type notes is not. `lintFolder` and the CLI run it; the in-memory `lint`, which reads no folder, does not
-	- convention: the rules each schema brings, made with `defineRule` (the ESLint model: a small core, rules from plugins). The lint runs the rules of every schema it sees. A rule that throws, or gives a field its node's type does not have, is a fault of the rule, not of the note: the lint throws, naming both
-- a problem is `{ path, rule?, field?, message, fatal? }`, the parts of a SARIF result (`ruleId`, a location, `message`) and of ESLint's `LintMessage`
-	- `path`: where the piece is, from the folder linted: a note's file, or the path a source gives
-	- `rule`: the id of the rule that found it. A schema's are `<schema>/<rule>`. basis's own are a closed list under the schema name `basis`, which no other schema can take, exported as `coreRules`: `basis/name`, `basis/unique-name`, `basis/merge`, `basis/type`, `basis/fields`, `basis/link`, `basis/key`, `basis/type-note`, `basis/type-note-type`, `basis/type-note-folder`, `basis/one-definition`, `basis/definition-piece` and `basis/skip`. One id for each check a person could want on its own, as ESLint's rules and SHACL's constraint components. An id, once released, keeps its name
-	- `fatal: true`, with no `rule`: the path cannot be read as a node. For a note: its frontmatter has no closing line, is not YAML, expands too far or is not a set of fields; or the file is not UTF-8, cannot be read, or is a symbolic link; or a folder cannot be read. A source gives its own, for what it cannot read. No rule can turn it off, as ESLint's fatal message (`ruleId: null`) and SARIF's tool notification
-	- `field`: where in the node, as a JSON Pointer (RFC 6901), as SARIF and JSON Schema give a place in a JSON document: `/states/0`, with `~1` for a `/` in a key and `~0` for a `~`. None when the problem is the whole node. A key of one field names that field
-	- `message`: what is wrong, and the fix. It does not say the field again: a field the node does not have is "Missing:", with what its type needs there
-	- the CLI prints a problem as `path: field: message (rule)`, as ESLint's compact format, so an editor can open the path
-	- each rule has a severity, and a schema sets it per rule: error, warning or off. Not built: every problem is an error
-		- error: the note is wrong. The check fails, and so does CI
-		- warning: the note is valid but maybe not complete ("fabric has no outside copy yet"). It is reported, and the check passes
-		- the schema only says valid or not. Severity lives in the lint, on top of it
-		- prior art: ESLint (`off`, `warn`, `error`), SHACL (`Violation`, `Warning`, `Info`)
-- front ends call the core (`lint`, `lintFolder`)
-	- the CLI, `basis lint [folder]`, for a person, a hook and CI. It reads `basis.config.ts` (or `.js`) at the root of the folder: the schema, the paths to skip, and the sources of pieces beside the folder's notes. The schema brings its own notes and sources, and its imports', so a config that names only its schema lints the whole subgraph. The config's skip and sources are for a folder that is no schema's notes: when a schema the lint sees names the folder as its notes, a skip or sources in the config are refused (exit 2), as its skip and sources are its `defineSchema`'s. It gives each problem by its path from where it runs, and exits 0 when every node fits, 1 when one does not, and 2 when it cannot check. A `.ts` config needs Node 22.18 or later, which strips types
-	- not built: an Obsidian plugin on save
+- [[basis-lint]]: the lint: a linter over one graph, from pieces to problems and the graph it checked; parse, don't validate
+- [[basis-lint-rules]]: the layers of the lint rules, from shape to convention, each with its rule id and its blind spots
+- [[basis-problem]]: a problem the lint gives: its path, rule, field, message and fatal flag, and its severity (not built)
+- [[basis-front-ends]]: the CLI, `basis lint [folder]`, and its config and exit codes; an Obsidian plugin is not built
 
 ### Internal verification
 
@@ -212,7 +135,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 	- the invariant held by construction: no lint or rule reads a bridge
 	- a relation stated twice is caught only where a schema writes its own rule over the graph
 	- transitions: basis checks one state of the graph, never a move from one state to the next. No rule can say what a change may do
-- the blind spots of a rule are gaps of conformance, under the rule they belong to ([[#Conformance]])
+- the blind spots of a rule are gaps of conformance, under the rule they belong to ([[basis-lint-rules]])
 
 ## Implementation
 

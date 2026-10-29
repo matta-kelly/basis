@@ -5,7 +5,7 @@ status: active
 ---
 Part of the state in [[basis]] (State): the terms are those of [[state-machine]].
 
-- **node**: one actual thing of a type ([[basis#Schema]]): its name, its fields, and its links to other nodes by name. It is made of one or more pieces
+- **node**: one actual thing of a type ([[basis-type]]): its name, its fields, and its links to other nodes by name. It is made of one or more pieces
 	- every node has what PG-Schema gives every node: an identity, its `name`, a slug as the open standards take one (lowercase letters and digits, with single hyphens between them), which no two nodes share (a note's is its file name); a label, its `type`, the name of its type; and a property, its `description`
 	- in code these are the fields of `node`, the abstract parent of every type, which every type inherits unlisted
 	- **piece**: what one source gives of a node: a note, whose frontmatter holds its fields, or a piece a source gives. Each piece has the node's name, names the node's type, gives some of its fields, and names its source
@@ -22,7 +22,7 @@ Part of the state in [[basis]] (State): the terms are those of [[state-machine]]
 		- **definition**: a value that code gives as one node, marked with its name and type by `markDefinition(value, { name, type })` (`src/definition.ts`), which marks the value and gives it back. A package's `define*` function calls it on what it gives
 			- the mark is a property of the value under `Symbol.for("@mku1tra/basis/definition")`, the global symbol registry's key, so a value marked by another install of basis, or another copy of its module, reads the same: read by its shape, not by which copy made it (React marks an element with `Symbol.for("react.element")` for the same reason). The key, once released, keeps its name, as an id does
 			- the mark is not enumerable: a spread, `Object.entries` and JSON do not see it, and it cannot change. A name that is no slug, or a type that is no non-empty string, throws a TypeError; so does a value that is no object, is frozen, or is marked already, as `Object.defineProperty` does
-			- it is not a piece: a source gives the piece of a definition. The lint finds each definition in a package's exports itself, and does not take its source's word for what it read: a definition that no source gives a piece of is a problem (`basis/definition-piece`, [[basis#Conformance]])
+			- it is not a piece: a source gives the piece of a definition. The lint finds each definition in a package's exports itself, and does not take its source's word for what it read: a definition that no source gives a piece of is a problem (`basis/definition-piece`, [[basis-lint-rules]])
 	- **merge**: the pieces of one name are one node, as the Nix module system merges the definitions of an option, and GraphQL federation merges the fields of an entity from its subgraphs
 		- the pieces of a name all name one type, and each comes from another source: a source gives each name once, as a folder holds one note of a name. Otherwise they are not one node: each piece is a node of its own, and they share a name (`basis/unique-name`)
 		- one fact, one place: each field of a node comes from one piece, in code or in a note. A field that two pieces give is a problem on each of them, which names the other (`basis/merge`). No piece overrides another, and none has a priority. No copy is kept, on purpose or not
