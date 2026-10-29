@@ -20,9 +20,9 @@ Code defines, markdown describes, and the lint checks that they agree --> a tool
 - everything is a graph. A subgraph is one piece of it, small enough to own, check and build on
 - the world is closed and strict: every node matches a type, and nothing undeclared is allowed. So the lint is objective
 	- when the world does not hold a need, the ontology grows. The check does not loosen
-- a harness (que) mounts the subgraphs it is given and navigates them. That is the goal: agent legibility
+- a harness mounts the subgraphs it is given and navigates them. That is the goal: agent legibility
 - the same idea exists closed (Palantir Ontology and AIP). basis is the open version: small subgraphs that stack by import and are checked by lint
-- basis is PG-Schema plus schemas that import each other. Binding, connector, tool, skill and navigation are real, and belong to the packages that import basis, such as que, not to basis
+- basis is PG-Schema plus schemas that import each other. Binding, connector, tool, skill and navigation are real, and belong to the packages that import basis, not to basis
 - basis imports nothing. A package that imports it says so in its own note; basis keeps no map of what is built on it
 
 ## Specification
@@ -152,7 +152,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 	- `z.toJSONSchema`: the schema, for other tools
 - `yaml` to read frontmatter
 - vitest for tests
-- published to npm as `@mku1tra/basis`, by a version tag. A repo that builds on basis installs it from npm by version, as que does. Inside basis's repo, `it/` links the root by its dev dependency `file:..`, and the export condition `@mku1tra/source` picks `src/`, with no build or release
+- published to npm as `@mku1tra/basis`, by a version tag. A repo that builds on basis installs it from npm by version. Inside basis's repo, `it/` links the root by its dev dependency `file:..`, and the export condition `@mku1tra/source` picks `src/`, with no build or release
 - the repo holds a second package, `@mku1tra/it` in `it/`: Matt's note types ([[it]]), built on basis by version and published by its own tag, `it-v<version>`. basis does not import it, and basis's package does not ship it. The repo's check covers both
 - a dev container. No npm on the host
 
