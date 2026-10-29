@@ -1,19 +1,19 @@
-# The checks every push to main runs, and every pull request.
+# The checks every push runs, to every branch, main included: the ruleset on main requires this job's result on the
+# exact commit, so it has no path filter (a required check that a path filter skips stays pending).
 # The check set is in `scripts/check.sh`, which `just check` runs too: this file sets up the toolchain and calls it.
 name: checks
 
 on:
-  pull_request:
   push:
-    branches: [main]
 
 permissions:
   contents: read
 
-# A newer push to a pull request replaces the run of the older one. A run on main is never cancelled.
+# One group per ref: a newer push to a branch cancels the older run. On main a running run is not cancelled, but GitHub
+# keeps one waiting run per group, so a newer push replaces a waiting one.
 concurrency:
-  group: checks-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: checks-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   checks:
