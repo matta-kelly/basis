@@ -40,5 +40,8 @@ step format npx prettier --check .
 step tests npx vitest run --reporter="$reporter"
 # The repo's notes, from its root: basis's notes and type notes, and it's through its import, each read once.
 step notes node --conditions=@mku1tra/source src/bin.ts lint .
+# Each root of the repo also passes alone, not only through the import of `.`: another graph can import it alone.
+step "notes: types/ alone" node --conditions=@mku1tra/source src/bin.ts lint types
+step "notes: it/ alone" node --conditions=@mku1tra/source src/bin.ts lint it
 step packages scripts/install-check.sh
 echo "check passed"
