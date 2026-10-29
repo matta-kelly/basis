@@ -11,6 +11,8 @@ Part of the state in [[basis]] (State): the terms are those of [[state-machine]]
 	- outermost graph: a graph that no other graph imports
 	- subgraph: a package, with its notes, its types (made with basis, on zod), and a `package.json` that names what it depends on
 		- in code, a subgraph is its schema: its types and rules, its notes and its sources, and the schemas it imports
+		- type-only subgraph: a subgraph whose schema declares no notes folder. It defines kinds of nodes and holds none: the nodes of its types are in the ground of a graph that imports it
+		- a subgraph is not a repo. A repo is a store: one repo can hold a type-only subgraph and notes of a graph above it, kept apart only so that they stay private
 		- npm gives versions, resolution and install. No own package format
 		- the lint of a schema is the lint of its subgraph: it and every schema it imports, as one graph (composed graph, above)
 		- ground: the part of a folder that a graph reads as its own notes: its schema's notes folder, less its skip

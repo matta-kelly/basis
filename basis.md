@@ -133,8 +133,10 @@ An invariant is a property true in every state. One with a rule is checked; one 
 - **graph and subgraph:** how layers build on basis
 	- a graph stands alone: linted from its own root, it and its subgraphs pass, with nothing above it
 		- no rule yet: no check lints each root alone
+		- a node's links, and the rules that see it, resolve only in the composed graph of the graph that owns it: a subgraph that links up to a graph above it fails alone
+			- no rule yet: `basis/link` resolves a link against every node linted, and a rule sees every node linted
 	- a subgraph is the same inside a graph as alone: a graph has a subgraph only through the subgraph's schema, once, and never reads its ground
-		- each note has one owner: one graph's ground holds it, and a ground ends where a subgraph's root begins
+		- each note has one owner: one graph's ground holds it, and a ground ends at a nested root: a folder with its own `basis.config`, as a BUILD file ends a Bazel package and a `go.mod` a Go module. Where a file lies on disk does not make it part of a graph; an import does
 			- no rule yet: a ground does not end at a subgraph's root: a package inside another's folder is set apart by its import ([[basis-graph]], package), and the outermost graph's skip stands in for the rest
 		- a skip leaves out only what is not a note: a file whose frontmatter has a `type` is a note, so a skip that names one fails
 			- rule: `basis/skip`
@@ -144,8 +146,8 @@ An invariant is a property true in every state. One with a rule is checked; one 
 		- rule: `defineSchema` (a type name), `basis/unique-name` (a name), `basis/one-definition` (a type). Two subgraphs that no graph composes are not checked against each other
 	- schemas form no cycle, and imports point only down
 		- rule: `defineSchema` refuses these when a schema is built
-	- every push lints the graph pushed, from its root
-		- no rule yet: how the push runs it is open: each repo's own check, or one shared gate
+	- every push lints, from its root, the graph whose ground it changes
+		- no rule yet: a push is no state, so no lint rule can hold it. Each root's own check at its push holds it, not one shared gate: a gate run from the outermost root cannot show that a graph stands alone
 	- packages are nodes, and each dependency is on a published package, by version: never a path into another repo
 		- rule: a rule of the graph that holds the packages, none in basis. It reads each `package.json`: a dependency npm resolves to a place (a folder, a tarball, a git or other url), a published package used as a workspace, or a workspace with no package fails. It reads `package.json`, not code, so it does not see an import by a relative path
 - **outside:** what basis meets but does not read
@@ -206,7 +208,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 
 - validation: the check that the specification gives what the intent asks for. Does the rule set say all that "each real thing is defined once" means?
 - what the rule set does not say ([[#Invariants]])
-	- the invariants with no rule yet: a graph stands alone; a ground ends where a subgraph's root begins; every push lints the graph pushed, from its root
+	- the invariants with no rule yet: a graph stands alone; a node's links and rules resolve only in the graph that owns it; a ground ends at a nested root; every push lints the graph whose ground it changes
 	- the invariant held by construction: no lint or rule reads a bridge
 	- a relation stated twice is caught only where a schema writes its own rule over the graph
 	- transitions: basis checks one state of the graph, never a move from one state to the next. No rule can say what a change may do
