@@ -1258,10 +1258,11 @@ async function definitionPieceProblems(
 
 /**
  * A folder, and each place of the schema's lint, loaded, with the pieces of each source and the code piece of each type,
- * linted as one graph: the schema, and each schema it imports. A ground ends at a root below it: a folder another place
- * reads is that place's, read once, so an imported schema's folder inside the folder linted is read as that schema's;
- * and a folder that holds its own config is another graph's root, read only as a place of the lint. Gives the loader's and the sources'
- * problems and the lint's, in path order, each by its path from the folder linted, and the graph of every piece.
+ * linted as one graph: the schema, and each schema it imports. A ground ends at a nested root below its top: a folder
+ * that holds its own config, read only as a place of the lint. A path another place reads is that place's, read once:
+ * all of an imported schema's notes folder, so one inside the folder linted is read as that schema's, and the own .md
+ * files of a folder of type notes. Gives the loader's and the sources' problems and the lint's, in path order, each by
+ * its path from the folder linted, and the graph of every piece.
  */
 export async function lintFolder(
   schema: Schema,
@@ -1288,9 +1289,9 @@ export async function lintFolder(
       (other) =>
         other.folder !== place.folder && within(place.folder, other.folder),
     );
-    // A place's walk ends at a root below its top: a folder another place reads, or a folder that holds its own config,
-    // the root of another graph. What is below a root is that root's: read by its place, if the lint has one, and by no
-    // other. A folder of type notes is no root: only its own notes are its place's.
+    // A ground ends at a nested root below its top: a folder that holds its own config, the root of another graph, read
+    // only as a place of the lint. A path another place reads is that place's: all of an imported schema's notes
+    // folder, and the own .md files of a folder of type notes.
     const elsewhere = (path: string) => {
       const real = at(place, path);
       return (
