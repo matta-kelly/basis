@@ -135,19 +135,26 @@ export function readNote(path: string, file: string): Read {
 /** The names a config can have, in the order they are looked for. A folder that holds one is the root of a graph. */
 export const configNames = ["basis.config.ts", "basis.config.js"] as const;
 
-/** Whether a path is a file: a path that cannot be looked at is none. */
-const isFile = (path: string) => {
-  try {
-    return statSync(path).isFile();
-  } catch {
-    return false;
-  }
-};
+/**
+ * The config file of a folder, by its path, or none: the first of `configNames` that is a file there. A path that
+ * cannot be looked at is none. The CLI reads this config, and the walk of a ground ends at a folder that has one.
+ */
+export function configFileOf(folder: string): string | undefined {
+  return configNames
+    .map((name) => join(folder, name))
+    .find((path) => {
+      try {
+        return statSync(path).isFile();
+      } catch {
+        return false;
+      }
+    });
+}
 
 /**
- * Whether a path is the root of a graph: a real folder, not a symbolic link to one, that holds a file of one of
- * `configNames`. basis reads no symbolic link, so a link is never a root. A folder that cannot be looked at is none:
- * the loader gives its problem.
+ * Whether a path is the root of a graph: a real folder, not a symbolic link to one, that has a config file. basis
+ * reads no symbolic link, so a link is never a root. A folder that cannot be looked at is none: the loader gives its
+ * problem.
  */
 export function isRoot(path: string): boolean {
   try {
@@ -155,7 +162,7 @@ export function isRoot(path: string): boolean {
   } catch {
     return false;
   }
-  return configNames.some((name) => isFile(join(path, name)));
+  return configFileOf(path) !== undefined;
 }
 
 /** What a folder read leaves out, beside each file and folder whose name starts with a dot. */

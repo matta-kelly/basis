@@ -4,11 +4,10 @@
  * A person, a hook and a pipeline run the same command, so a folder is checked the same way in each.
  */
 
-import { existsSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { lintFolder } from "./lint.ts";
-import { configNames, type Source } from "./loader.ts";
+import { configFileOf, configNames, type Source } from "./loader.ts";
 import type { AnySchema } from "./primitives.ts";
 
 /** What the config of a folder exports by default: the schema its nodes are checked against, what is not a note, and where more pieces come from. */
@@ -77,9 +76,7 @@ function configProblem(config: unknown): string | undefined {
 async function configOf(
   folder: string,
 ): Promise<{ ok: true; config: Config } | { ok: false; message: string }> {
-  const file = configNames
-    .map((name) => join(folder, name))
-    .find((path) => existsSync(path));
+  const file = configFileOf(folder);
   if (!file)
     return {
       ok: false,
