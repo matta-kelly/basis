@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,6 +50,60 @@ describe("basis's exports", () => {
     expect(typeof basis.lintRoot).toBe("function");
     expect(Object.keys(basis)).not.toContain("lint");
     expect(Object.keys(basis)).not.toContain("lintFolder");
+  });
+
+  it("give the root whose ground holds a folder, as lintRoot finds it", () => {
+    expect(typeof basis.rootOf).toBe("function");
+  });
+});
+
+describe("rootOf", () => {
+  it("gives the root whose ground holds a folder, by its real path: the folder itself, or the first above it with a config", async () => {
+    const root = await realpath(
+      await folderOf({
+        "basis.config.ts": config(),
+        "kitchen/shelf/slate.md": slate,
+      }),
+    );
+    expect(basis.rootOf(root)).toBe(root);
+    expect(basis.rootOf(join(root, "kitchen", "shelf"))).toBe(root);
+    const link = join(await folderOf({}), "shelf");
+    await symlink(join(root, "kitchen", "shelf"), link);
+    expect(basis.rootOf(link)).toBe(root);
+    expect(basis.rootOf(join(root, "kitchen", "none"))).toBe(root);
+  });
+
+  it("gives a nested root for a folder in its ground, not the root around it", async () => {
+    const root = await realpath(
+      await folderOf({
+        "basis.config.ts": config(),
+        "inner/basis.config.js": "export default {};\n",
+        "inner/below/slate.md": slate,
+      }),
+    );
+    expect(basis.rootOf(join(root, "inner", "below"))).toBe(
+      join(root, "inner"),
+    );
+    expect(basis.rootOf(join(root, "inner"))).toBe(join(root, "inner"));
+  });
+
+  it("gives none for a folder in no root's ground", async () => {
+    const at = await folderOf({ "kitchen/slate.md": slate });
+    expect(basis.rootOf(join(at, "kitchen"))).toBeUndefined();
+  });
+
+  it("gives none for a folder whose path has a part named node_modules, also one with a config", async () => {
+    const root = await folderOf({
+      "basis.config.ts": config(),
+      "node_modules/pkg/types/basis.config.js": "export default {};\n",
+      "node_modules/pkg/notes/slate.md": slate,
+    });
+    expect(
+      basis.rootOf(join(root, "node_modules", "pkg", "types")),
+    ).toBeUndefined();
+    expect(
+      basis.rootOf(join(root, "node_modules", "pkg", "notes")),
+    ).toBeUndefined();
   });
 });
 
