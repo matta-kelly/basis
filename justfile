@@ -14,6 +14,11 @@ check: _up
 run +command: _up
     podman exec -it -u node -w "{{root}}" "$(just _container)" {{command}}
 
+# Stub for the container tests, which are written before the maker is built: it is the old private `_up`,
+# and this change replaces it with the dev container CLI call, with no setting passed by `just`.
+# The maker: the dev container, made if there is none, and started.
+up: _up
+
 # The dev container, made if there is none, and started. The same settings as .devcontainer/devcontainer.json,
 # so VS Code's "Reopen in Container" and `just` give the same toolchain.
 _up:
