@@ -6,7 +6,7 @@ status: active
 Part of the schema in [[basis]] (Schema): the terms are those of [[state-machine]].
 
 - **schema**: a named set of types, with the schemas it imports, and the subgraph they make: its rules, the folder of its notes (`notes`, a file URL), the paths there that are not notes (`skip`), the sources of its pieces (`sources`), its package's exports (`exports`, a function that gives them, `() => import("./index.ts")`), and the names of the exports that are bridges (`bridges`). Made with `defineSchema`. As a CUE package holds its types and its values, and as Bazel builds a target with all its deps, a schema's lint is its notes and every import's
-	- the schema is the specification: a model of every valid graph. Its parts are below; in code they are in `src/primitives.ts`
+	- the schema is the specification: a model of every valid graph. Its parts are its types ([[basis-type]]), its rules ([[basis-rule]]), and the built-in types, bridges and imports below; in code they are in `src/primitives.ts`
 	- the words are those of the property graph (PG-Schema): node, type, property, link, schema, abstract type. Content collections (Astro) use other words for the same parts: a type is a collection, a node is an entry, and a link is a `reference()`
 	- **built-in types**: `node` and `type`, held in the built-in schema `basis`. Every schema sees them as if it imported `basis`, as every GraphQL schema has `__Type`. They are basis's own words: no schema can define another type of their names
 		- `node`: the abstract parent of every type, as GraphQL's `Node` interface. A link to it, or a rule on it, takes every node. No type lists it as a parent, and no schema extends it
