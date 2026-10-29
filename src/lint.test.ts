@@ -1888,6 +1888,54 @@ describe("the lint of a schema and the schemas it imports, as one graph", () => 
       expect(names(graph)).toEqual(["slate"]);
     });
 
+    describe("that is a schema's folder of type notes", () => {
+      // A schema of one type, bun, whose type notes are types/, a root, with notes in a folder below its top.
+      const typesRoot = async () => {
+        const base = await filesIn({
+          "types/basis.config.ts": "export default {};\n",
+          "types/bun.md": "---\ntype: type\n---\nA soft bread.\n",
+          "types/sub/stray.md": '---\ntype: type\ndescription: "d"\n---\n',
+          "types/sub/slate.md": slateNote,
+        });
+        const buns = defineSchema({
+          name: "buns",
+          description: "d",
+          types: {
+            bun: defineType({ name: "bun", description: "d", fields: {} }),
+          },
+          typeNotes: pathToFileURL(`${base}/types/`),
+        });
+        return { base, buns };
+      };
+      const shown = (problems: readonly { path: string; rule?: string }[]) =>
+        problems.map((p) => [p.path, p.rule]);
+
+      it("reads each note under it as its own lint does, with the same problems: the schema's, from its folder down", async () => {
+        const { base, buns } = await typesRoot();
+        // Its own lint, by a config whose schema imports buns and things; and the lint of a folder around it.
+        const alone = await lintFolder(shopOf(buns), join(base, "types"));
+        const inside = await lintFolder(shopOf(buns), base);
+        // slate is a source, a type buns does not see: the note is buns's, in both.
+        expect(shown(alone.problems)).toEqual([
+          ["sub/slate.md", "basis/type"],
+          ["sub/stray.md", "basis/type-note-folder"],
+        ]);
+        expect(shown(inside.problems)).toEqual(
+          shown(alone.problems).map(([path, rule]) => [`types/${path}`, rule]),
+        );
+      });
+
+      it("takes no skip or sources beside it, in its own lint: the schema's place has none", async () => {
+        const { base, buns } = await typesRoot();
+        for (const options of [{ skip: () => false }, { sources: [] }])
+          await expect(
+            lintFolder(buns, join(base, "types"), options),
+          ).rejects.toThrow(
+            "The schema buns names this folder as its type notes: a folder of type notes has no skip and no sources.",
+          );
+      });
+    });
+
     it("is not the folder linted: a config at the folder's top ends nothing", async () => {
       const base = await filesIn({
         "basis.config.ts": "export default {};\n",
