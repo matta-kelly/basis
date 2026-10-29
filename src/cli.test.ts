@@ -7,6 +7,9 @@ import { fixture } from "../fixtures/notes.ts";
 import { run } from "./index.ts";
 
 const things = fileURLToPath(new URL("../fixtures/things.ts", import.meta.url));
+const index = JSON.stringify(
+  fileURLToPath(new URL("./index.ts", import.meta.url)),
+);
 const slate =
   '---\ntype: source\ndescription: "Where each bake is written."\nrole: entry\n---\n';
 const oven = "---\ntype: source\nrole: entry\n---\n";
@@ -29,9 +32,10 @@ async function folderOf(files: Record<string, string>) {
   return root;
 }
 
-// A config with the bakery's schema, and the skip given as code.
-const config = (skip?: string) =>
-  `import things from ${JSON.stringify(things)};\nexport default { schema: things${skip ? `, skip: ${skip}` : ""} };\n`;
+// A config whose schema, shop, imports the bakery's and names the config's folder as its notes, with more of its
+// defineSchema given as code, and more of the config beside its schema.
+const config = (schema = "", beside = "") =>
+  `import { defineSchema } from ${index};\nimport things from ${JSON.stringify(things)};\nconst shop = defineSchema({ name: "shop", description: "d", imports: [things], types: {}, notes: new URL("./", import.meta.url)${schema} });\nexport default { schema: shop${beside} };\n`;
 
 // The command, run, with what it wrote.
 async function cli(args: string[], cwd: string) {
@@ -74,7 +78,7 @@ describe("basis lint", () => {
       new URL("../fixtures/kitchen.ts", import.meta.url),
     );
     const root = await folderOf({
-      "basis.config.ts": `import kitchen from ${JSON.stringify(kitchen)};\nexport default { schema: kitchen };\n`,
+      "basis.config.ts": `import { defineSchema } from ${index};\nimport kitchen from ${JSON.stringify(kitchen)};\nexport default { schema: defineSchema({ name: "shop", description: "d", imports: [kitchen], types: {}, notes: new URL("./", import.meta.url) }) };\n`,
     });
     const bun = fileURLToPath(fixture("types/kitchen/bun.md"));
     const { code, log } = await cli(["lint"], root);
@@ -89,7 +93,7 @@ describe("basis lint", () => {
     const root = await folderOf({
       "pkg/schema.ts": pkg,
       "pkg/oven.md": oven,
-      "shop/basis.config.ts": `import { defineSchema } from ${JSON.stringify(fileURLToPath(new URL("./index.ts", import.meta.url)))};\nimport pkg from "../pkg/schema.ts";\nexport default { schema: defineSchema({ name: "shop", description: "d", imports: [pkg], types: {} }) };\n`,
+      "shop/basis.config.ts": `import { defineSchema } from ${JSON.stringify(fileURLToPath(new URL("./index.ts", import.meta.url)))};\nimport pkg from "../pkg/schema.ts";\nexport default { schema: defineSchema({ name: "shop", description: "d", imports: [pkg], types: {}, notes: new URL("./", import.meta.url) }) };\n`,
       "shop/slate.md": slate,
     });
     const { code, log } = await cli(["lint", "shop"], root);
@@ -101,33 +105,57 @@ describe("basis lint", () => {
     ]);
   });
 
-  it("gives 2 when its config gives a skip or sources for a folder its schema names as its notes", async () => {
-    const index = JSON.stringify(
-      fileURLToPath(new URL("./index.ts", import.meta.url)),
-    );
+  it("gives 2 when its config gives more than its schema: the root's schema gives its skip and sources", async () => {
+    for (const beside of [', skip: ["README.md"]', ", sources: []"]) {
+      const root = await folderOf({
+        "basis.config.ts": config("", beside),
+        "slate.md": slate,
+      });
+      const { code, log, error } = await cli(["lint"], root);
+      expect({ code, log }).toEqual({ code: 2, log: [] });
+      expect(error).toEqual([
+        `${join(root, "basis.config.ts")}: a config gives only its schema: export default { schema }. Give the skip and sources of the root in its schema's defineSchema.`,
+      ]);
+    }
+  });
+
+  it("gives 2 when the folder is no root of its config's schema: its schema names it as neither its notes nor its type notes", async () => {
     const root = await folderOf({
-      "basis.config.ts": `import { defineSchema } from ${index};\nimport things from ${JSON.stringify(things)};\nconst pkg = defineSchema({ name: "pkg", description: "d", imports: [things], types: {}, notes: new URL("./", import.meta.url) });\nexport default { schema: pkg, skip: ["README.md"] };\n`,
+      "basis.config.ts": `import things from ${JSON.stringify(things)};\nexport default { schema: things };\n`,
       "slate.md": slate,
     });
-    const { code, error } = await cli(["lint"], root);
-    expect(code).toBe(2);
+    const { code, log, error } = await cli(["lint"], root);
+    expect({ code, log }).toEqual({ code: 2, log: [] });
     expect(error).toEqual([
-      `${root} cannot be checked: Error: The schema pkg names this folder as its notes: give its skip and sources in its defineSchema.`,
+      expect.stringContaining(
+        `${root} is no root of its schema: a lint starts only at the folder its schema names as its notes or its type notes`,
+      ),
     ]);
   });
 
-  it("gives 2 when its config gives a skip or sources for a folder its schema names as its type notes", async () => {
-    const index = JSON.stringify(
-      fileURLToPath(new URL("./index.ts", import.meta.url)),
-    );
-    const root = await folderOf({
-      "basis.config.ts": `import { defineSchema, defineType } from ${index};\nconst buns = defineSchema({ name: "buns", description: "d", types: { bun: defineType({ name: "bun", description: "d", fields: {} }) }, typeNotes: new URL("./", import.meta.url) });\nexport default { schema: buns, skip: ["sub"] };\n`,
-      "bun.md": "---\ntype: type\n---\nA soft bread.\n",
+  it("gives 2 when a schema it sees names a folder with its own config, and is not that config's schema", async () => {
+    const at = await folderOf({
+      "target/basis.config.ts": config(),
+      "target/slate.md": slate,
+      "wrap/basis.config.ts": `import { defineSchema } from ${index};\nconst picked = defineSchema({ name: "picked", description: "d", types: {}, notes: new URL("../target/", import.meta.url), skip: () => true });\nexport default { schema: defineSchema({ name: "wrap", description: "d", imports: [picked], types: {}, notes: new URL("./", import.meta.url) }) };\n`,
     });
-    const { code, error } = await cli(["lint"], root);
-    expect(code).toBe(2);
+    const { code, log, error } = await cli(["lint", "wrap"], at);
+    expect({ code, log }).toEqual({ code: 2, log: [] });
     expect(error).toEqual([
-      `${root} cannot be checked: Error: The schema buns names this folder as its type notes: a folder of type notes has no skip and no sources.`,
+      `${join(at, "target")} holds its own config, so it is read only as its config's schema, shop, reads it: the schema picked, which names it as its notes, is another. Import its config's schema, one copy of it, or name another folder.`,
+    ]);
+  });
+
+  it("gives 2 when a schema it sees names a folder with no config in another root's ground, and is not that root's schema", async () => {
+    const at = await folderOf({
+      "target/basis.config.ts": config(),
+      "target/sub/slate.md": slate,
+      "wrap/basis.config.ts": `import { defineSchema } from ${index};\nconst picked = defineSchema({ name: "picked", description: "d", types: {}, typeNotes: new URL("../target/sub/", import.meta.url) });\nexport default { schema: defineSchema({ name: "wrap", description: "d", imports: [picked], types: {}, notes: new URL("./", import.meta.url) }) };\n`,
+    });
+    const { code, log, error } = await cli(["lint", "wrap"], at);
+    expect({ code, log }).toEqual({ code: 2, log: [] });
+    expect(error).toEqual([
+      `${join(at, "target", "sub")} is in the ground of the root ${join(at, "target")}, whose config's schema is shop: the schema picked, which names it as its type notes, is another, so its notes would be read one way here and another in that root's lint. Name a folder that no other root's ground holds, or give this one a config of its own.`,
     ]);
   });
 
@@ -146,35 +174,20 @@ describe("basis lint", () => {
     ]);
   });
 
-  it("leaves out each path its skip names, with all in it, and only that path", async () => {
+  it("leaves out each path the skip of its schema leaves out", async () => {
     const root = await folderOf({
-      "basis.config.ts": config('["./code/", "README.md"]'),
-      "slate.md": slate,
-      "README.md": "No frontmatter.\n",
-      "code/notes.md": "No frontmatter.\n",
-      "codebook.md": "No frontmatter.\n",
-    });
-    const { code, log } = await cli(["lint"], root);
-    expect(code).toBe(1);
-    expect(log).toEqual([
-      "codebook.md: /type: The node has no type. (basis/type)",
-    ]);
-  });
-
-  it("takes a skip that is a function", async () => {
-    const root = await folderOf({
-      "basis.config.ts": config('(path) => path.startsWith("code")'),
+      "basis.config.ts": config(', skip: (path) => path.startsWith("code")'),
       "slate.md": slate,
       "code/notes.md": "No frontmatter.\n",
     });
     expect((await cli(["lint"], root)).code).toBe(0);
   });
 
-  it("lints the pieces of each source its config names, with the folder's notes", async () => {
+  it("lints the pieces of each source its schema names, with the root's notes", async () => {
     // A node of code that links to the note slate, and one that does not fit its type.
     const sources = `[() => ({ pieces: [{ path: "code/loaf.ts", name: "loaf", fields: { type: "object", description: "A bake.", key: "k", states: ["drafted"], livesIn: ["slate"] } }, { path: "code/oven.ts", name: "oven", fields: { type: "source" } }], problems: [], unread: [] })]`;
     const root = await folderOf({
-      "basis.config.ts": `import things from ${JSON.stringify(things)};\nexport default { schema: things, sources: ${sources} };\n`,
+      "basis.config.ts": config(`, sources: ${sources}`),
       "slate.md": slate,
     });
     expect(await cli(["lint"], root)).toEqual({
@@ -201,7 +214,7 @@ describe("basis lint", () => {
     expect(code).toBe(2);
     expect(log).toEqual([]);
     expect(error).toEqual([
-      `${root} has no config: basis lint reads basis.config.ts or basis.config.js.`,
+      `${root} is no root: a lint starts only at a root, a folder with basis.config.ts or basis.config.js.`,
     ]);
   });
 
@@ -214,7 +227,7 @@ describe("basis lint", () => {
     expect(code).toBe(2);
     expect(log).toEqual([]);
     expect(error).toEqual([
-      `${root} has no config: basis lint reads basis.config.ts or basis.config.js.`,
+      `${root} is no root: a lint starts only at a root, a folder with basis.config.ts or basis.config.js.`,
     ]);
   });
 
@@ -223,8 +236,7 @@ describe("basis lint", () => {
       "throw new Error('broken');\n",
       "export default 1;\n",
       "export default { schema: {} };\n",
-      `${config('"code"')}`,
-      `import things from ${JSON.stringify(things)};\nexport default { schema: things, sources: ["code"] };\n`,
+      config("", ', skip: "code"'),
     ]) {
       const root = await folderOf({ "basis.config.ts": text });
       const { code, error } = await cli(["lint"], root);
@@ -238,7 +250,7 @@ describe("basis lint", () => {
   it("gives 2 when the schema of the config does not hold, which only the lint finds", async () => {
     const root = await folderOf({
       "basis.config.ts":
-        'export default { schema: { name: "Not A Name", description: "d", types: {}, imports: [] } };\n',
+        'export default { schema: { name: "Not A Name", description: "d", types: {}, imports: [], notes: new URL("./", import.meta.url) } };\n',
       "slate.md": slate,
     });
     const { code, log, error } = await cli(["lint"], root);
@@ -246,6 +258,18 @@ describe("basis lint", () => {
     expect(log).toEqual([]);
     expect(error).toEqual([
       expect.stringMatching(new RegExp(`^${root} cannot be checked: `)),
+    ]);
+  });
+
+  it("gives 2 for a folder in node_modules: an installed copy is linted through its import", async () => {
+    const at = await folderOf({
+      "node_modules/pkg/basis.config.ts": config(),
+      "node_modules/pkg/slate.md": slate,
+    });
+    const { code, log, error } = await cli(["lint", "node_modules/pkg"], at);
+    expect({ code, log }).toEqual({ code: 2, log: [] });
+    expect(error).toEqual([
+      `${join(at, "node_modules", "pkg")} is in node_modules: it is an installed copy, no root, and is linted only through its schema's import. Lint the root that imports it.`,
     ]);
   });
 
@@ -262,12 +286,12 @@ describe("basis lint", () => {
       expect(await cli(args, root)).toEqual({
         code: 2,
         log: [],
-        error: ["Usage: basis lint [folder]"],
+        error: ["Usage: basis lint [root]"],
       });
     for (const args of [["--help"], ["-h"], ["lint", "--help"]])
       expect(await cli(args, root)).toEqual({
         code: 0,
-        log: ["Usage: basis lint [folder]"],
+        log: ["Usage: basis lint [root]"],
         error: [],
       });
   });
