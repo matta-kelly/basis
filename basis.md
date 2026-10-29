@@ -83,8 +83,6 @@ An invariant is a property true in every state. One with a rule is checked; one 
 		- rule: `basis/unique-name`, `basis/key`
 	- every link resolves, to a node of the right type
 		- rule: `basis/link`
-	- a relation is stated once: one link, on one node. Its reverse comes from the graph, not from a second link
-		- no rule yet: basis has none. A schema can write its own rule over the graph; a schema that states a relation twice and writes none is not caught
 - **graph and subgraph:** how layers build on basis
 	- a graph stands alone: linted from its own root, it and its subgraphs pass, with nothing above it
 		- no rule yet: no check lints each root alone
@@ -105,9 +103,6 @@ An invariant is a property true in every state. One with a rule is checked; one 
 		- no rule yet: a push is no state, so no lint rule can hold it. Each root's own check at its push holds it, not one shared gate: a gate run from the outermost root cannot show that a graph stands alone
 	- packages are nodes, and each dependency is on a published package, by version: never a path into another repo
 		- rule: a rule of the graph that holds the packages, none in basis. It reads each `package.json`: a dependency npm resolves to a place (a folder, a tarball, a git or other url), a published package used as a workspace, or a workspace with no package fails. It reads `package.json`, not code, so it does not see an import by a relative path
-- **outside:** what basis meets but does not read
-	- no lint or rule reads a bridge
-		- no rule yet: it holds by construction. A graph that meets an outside standard writes its bridge at publish only, never commits it, and has no reader of it
 
 ## Checking
 
@@ -132,9 +127,10 @@ An invariant is a property true in every state. One with a rule is checked; one 
 - validation: the check that the specification gives what the intent asks for. Does the rule set say all that "each real thing is defined once" means?
 - what the rule set does not say ([[#Invariants]])
 	- the invariants with no rule yet: a graph stands alone; a node's links and rules resolve only in the graph that owns it; a ground ends at a nested root; every push lints the graph whose ground it changes
-	- the invariant held by construction: no lint or rule reads a bridge
-	- a relation stated twice is caught only where a schema writes its own rule over the graph
 	- transitions: basis checks one state of the graph, never a move from one state to the next. No rule can say what a change may do
+- what basis leaves to its schemas: an invariant about what only a schema defines. The schema that owns it states it and holds it, with its own rule or by how it builds it; basis does not check it
+	- a relation is stated once: one link, on one node, and its reverse comes from the graph, not from a second link. Only a schema knows that two of its links state one relation, so a schema that states a relation holds this with its own rule over the graph. A schema that states a relation twice and writes no rule is not caught
+	- nothing reads what a schema writes to a bridge's shape: the schema writes it at publish only, never commits it, and has no reader of it. basis reads only the bridge's name and shape (`basis/one-definition`)
 - the blind spots of a rule are gaps of conformance, under the rule they belong to ([[basis-lint-rules]])
 
 ## Implementation
