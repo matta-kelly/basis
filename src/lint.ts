@@ -1145,8 +1145,9 @@ async function typeNoteProblems(
 
 /**
  * A folder the lint reads, by its real path: the schema that owns what it gives, the paths in it that are not notes,
- * and the sources of pieces beside its notes. A folder of type notes that is no other place's folder is read alone, by
- * its own notes only, whatever the place it is in leaves out, and may not be there.
+ * and the sources of pieces beside its notes. A folder of type notes that is no other place's folder is read whatever
+ * the place it is in leaves out, and may not be there: by its own notes only, or, when it is a root, by all of its
+ * ground, as its own lint reads it.
  */
 type Place = {
   owner: Schema;
@@ -1166,23 +1167,22 @@ const folderOf = (url: URL) => realPathOf(resolve(fileURLToPath(url)));
 /**
  * The places of a schema's lint, each with the schema that owns it: the folder linted, for the schema linted; the
  * folder of notes of each schema it sees, with its skip and sources; and each folder of type notes that is no other
- * place's folder, for the schema that declares it. The folder linted, when a schema it sees names it as its notes, is
- * that schema's place, with its skip and sources; a skip or sources given beside it are a second place for one fact,
- * and refused.
+ * place's folder, for the schema that declares it. A place is the same in each lint that reads it: the folder linted,
+ * when a schema it sees names it as its notes or its type notes, is that schema's place, and a skip or sources given
+ * beside it are a second place for one fact, and refused.
  */
 async function placesOf(
   schema: Schema,
   root: string,
   { skip, sources }: LintOptions,
 ): Promise<Place[]> {
-  const places: Place[] = [
-    {
-      owner: schema,
-      folder: root,
-      ...(skip && { skip }),
-      sources: sources ?? [],
-    },
-  ];
+  const top: Place = {
+    owner: schema,
+    folder: root,
+    ...(skip && { skip }),
+    sources: sources ?? [],
+  };
+  const places: Place[] = [top];
   const seen = schemasSeen(schema);
   for (const owner of seen) {
     if (!owner.notes) continue;
@@ -1206,14 +1206,24 @@ async function placesOf(
   for (const owner of seen) {
     if (!owner.typeNotes) continue;
     const folder = await folderOf(owner.typeNotes);
-    if (!places.some((place) => place.folder === folder))
-      places.push({
-        owner,
-        folder,
-        skip: (path) => path.includes("/"),
-        sources: [],
-        typeNotes: true,
-      });
+    if (folder === root && places[0] === top) {
+      if (skip !== undefined || sources !== undefined)
+        throw new Error(
+          `The schema ${owner.name} names this folder as its type notes: a folder of type notes has no skip and no sources.`,
+        );
+      places[0] = { owner, folder, sources: [] };
+      continue;
+    }
+    if (places.some((place) => place.folder === folder)) continue;
+    // A root's ground is all of it, to the roots below it, as its own lint reads it. A folder of type notes that is
+    // no root holds only its own notes: what is below them is the ground's that holds the folder.
+    places.push({
+      owner,
+      folder,
+      ...(!isRoot(folder) && { skip: (path: string) => path.includes("/") }),
+      sources: [],
+      typeNotes: true,
+    });
   }
   return places;
 }
@@ -1440,7 +1450,7 @@ async function definitionPieceProblems(
  * linted as one graph: the schema, and each schema it imports. A ground ends at a nested root below its top: a folder
  * that holds its own config, read only as a place of the lint. A path another place reads is that place's, read once:
  * all of an imported schema's notes folder, so one inside the folder linted is read as that schema's, and the own .md
- * files of a folder of type notes. Gives the loader's and the sources' problems and the lint's, in path order, each by
+ * files of a folder of type notes, or all of its ground when it is a root. Gives the loader's and the sources' problems and the lint's, in path order, each by
  * its path from the folder linted, and the graph of every piece.
  */
 export async function lintFolder(
@@ -1473,7 +1483,7 @@ export async function lintFolder(
     );
     // A ground ends at a nested root below its top: a folder that holds its own config, the root of another graph, read
     // only as a place of the lint. A path another place reads is that place's: all of an imported schema's notes
-    // folder, and the own .md files of a folder of type notes.
+    // folder, and the own .md files of a folder of type notes that is no root.
     const elsewhere = (path: string) => {
       const real = at(place, path);
       return (
