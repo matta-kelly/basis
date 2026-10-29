@@ -5,7 +5,7 @@
   "type": "module",
   "exports": "./schema.ts",
   "peerDependencies": {
-    "@mku1tra/basis": "^0.28.0",
-    "@mku1tra/it": "^0.7.0"
+    "@mku1tra/basis": "^0.29.0",
+    "@mku1tra/it": "^0.8.0"
   }
 }

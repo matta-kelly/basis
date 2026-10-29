@@ -38,7 +38,9 @@ jobs:
           echo "FOLDER=$folder" >>"$GITHUB_ENV"
           test "$prefix$(node -p "require('./$folder/package.json').version")" = "$GITHUB_REF_NAME"
       - run: scripts/check.sh
-      # A version npm has already is left as it is: a run again, or the first version, published by hand.
+      # A version npm has already is left as it is: a run again, or the first version, published by hand through
+      # scripts/published.sh. The package.json npm publishes has no workspaces: scripts/published.sh takes them out for
+      # the command, as install-check packs it, and basis's prepublishOnly stops a publish not run through it.
       - name: Publish, if npm does not have this version
         working-directory: ${{ env.FOLDER }}
         run: |
@@ -46,5 +48,5 @@ jobs:
           if npm view "$package" version >/dev/null 2>&1; then
             echo "npm has $package already"
           else
-            npm publish
+            "$GITHUB_WORKSPACE/scripts/published.sh" npm publish
           fi

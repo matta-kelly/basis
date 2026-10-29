@@ -1,6 +1,6 @@
 import { lstatSync, statSync } from "node:fs";
 import { open, readdir, readFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, join, sep } from "node:path";
 import { parseDocument } from "yaml";
 
 /**
@@ -13,7 +13,7 @@ import { parseDocument } from "yaml";
  * read, the source that gave it, and a note's body. The lint merges the pieces of one name into one node.
  */
 export type Piece = {
-  /** From the folder its source reads, with `/` between parts: for a lint, the folder linted. */
+  /** From the folder its source reads, with `/` between parts: for a lint, the root linted. */
   path: string;
   /** The name of its node: its identity. */
   name: string;
@@ -70,16 +70,16 @@ export type Problem = {
 };
 
 /**
- * A source of pieces beside the notes of a folder, which a schema or a folder's lint names: a function that gives what it read, as the loader gives a folder.
+ * A source of pieces beside the notes of a folder, which a schema names: a function that gives what it read, as the loader gives a folder.
  * It gives pieces, not notes: every note is the loader's, read from the folder that holds it. Each path is from the
- * folder of the notes it is beside: its schema's folder of notes, or the folder linted. A link is the name of the node
+ * folder of the notes it is beside: its schema's folder of notes. A link is the name of the node
  * it points at. The package that knows a thing's shape writes its
  * source: basis reads no code.
  */
 export type Source = () => Loaded<SourcePiece> | Promise<Loaded<SourcePiece>>;
 
 /**
- * A piece a source gives: never a body, as a note has, and no source or owner: the folder's lint names the source of
+ * A piece a source gives: never a body, as a note has, and no source or owner: the lint names the source of
  * each, and its owner, the schema that names the source.
  */
 export type SourcePiece = Omit<Piece, "body" | "source" | "owner"> & {
@@ -146,7 +146,7 @@ export const configNames = ["basis.config.ts", "basis.config.js"] as const;
 
 /**
  * The config file of a folder, by its path, or none: the first of `configNames` that is a file there. A path that
- * cannot be looked at is none. The CLI reads this config, and the walk of a ground ends at a folder that has one.
+ * cannot be looked at is none. `lintRoot` reads this config, and the walk of a ground ends at a folder that has one.
  */
 export function configFileOf(folder: string): string | undefined {
   return configNames
@@ -161,11 +161,19 @@ export function configFileOf(folder: string): string | undefined {
 }
 
 /**
- * Whether a path is the root of a graph: a real folder, not a symbolic link to one, that has a config file. basis
- * reads no symbolic link, so a link is never a root. A folder that cannot be looked at is none: the loader gives its
- * problem.
+ * Whether a path has a part named node_modules. Such a path is in no graph's ground, and no folder there is a root: an
+ * installed package is read only through its schema's import, and a config it ships is never read.
+ */
+export const inNodeModules = (path: string) =>
+  path.split(sep).includes("node_modules");
+
+/**
+ * Whether a path is the root of a graph: a real folder, not a symbolic link to one, that has a config file, and that is
+ * not in node_modules. basis reads no symbolic link, so a link is never a root. A folder that cannot be looked at is
+ * none: the loader gives its problem.
  */
 export function isRoot(path: string): boolean {
+  if (inNodeModules(path)) return false;
   try {
     if (!lstatSync(path).isDirectory()) return false;
   } catch {
@@ -174,7 +182,7 @@ export function isRoot(path: string): boolean {
   return configFileOf(path) !== undefined;
 }
 
-/** What a folder read leaves out, beside each file and folder whose name starts with a dot. */
+/** What a folder read leaves out, beside each file and folder whose name starts with a dot, and node_modules. */
 export type FolderOptions = {
   /**
    * True for a path to leave out, as if it were not there: a file, or a folder and all in it. The path is from the
@@ -183,7 +191,15 @@ export type FolderOptions = {
   skip?: (path: string) => boolean;
 };
 
-/** The notes under a folder, by their paths from it, and a problem for each symbolic link and each folder that cannot be read. A file or folder whose name starts with a dot is skipped, and so is a path `skip` names. */
+/**
+ * Whether the walk of a folder leaves out a file or folder by its name: one that starts with a dot, and node_modules,
+ * which is in no graph's ground. An installed package's notes are read only through its schema's import, as every Node
+ * tool reads an installed copy.
+ */
+const outOfGround = (name: string) =>
+  name.startsWith(".") || name === "node_modules";
+
+/** The notes under a folder, by their paths from it, and a problem for each symbolic link and each folder that cannot be read. A file or folder whose name starts with a dot, node_modules, and a path `skip` names are skipped. */
 async function notePaths(
   root: string,
   skip: FolderOptions["skip"],
@@ -205,7 +221,7 @@ async function notePaths(
     return { paths, skipped };
   }
   for (const entry of entries) {
-    if (entry.name.startsWith(".")) continue;
+    if (outOfGround(entry.name)) continue;
     const path = folder ? `${folder}/${entry.name}` : entry.name;
     if (skip?.(path)) continue;
     if (entry.isSymbolicLink()) {
@@ -323,7 +339,7 @@ async function skippedPaths(
     return paths;
   }
   for (const entry of entries) {
-    if (entry.name.startsWith(".")) continue;
+    if (outOfGround(entry.name)) continue;
     const path = folder ? `${folder}/${entry.name}` : entry.name;
     if (apart(path)) continue;
     if (!skip(path)) {

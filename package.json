@@ -1,6 +1,6 @@
 {
   "name": "@mku1tra/basis",
-  "version": "0.28.0",
+  "version": "0.29.0",
   "description": "The root package for semantic subgraphs: the primitives, the compiler and the lint core that every subgraph imports.",
   "license": "MIT",
   "repository": {
@@ -28,7 +28,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "prepublishOnly": "node -e \"if (require('./package.json').workspaces) { console.error('package.json has workspaces: publish through scripts/published.sh, which takes them out'); process.exit(1); }\""
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -43,6 +44,7 @@
     "prettier": "3.9.10",
     "typescript": "6.0.3",
     "typescript-eslint": "8.71.2",
+    "vite": "8.3.4",
     "vitest": "5.0.4",
     "zod": "4.6.7"
   },

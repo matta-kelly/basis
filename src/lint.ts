@@ -915,6 +915,9 @@ export type LintResult = { problems: Problem[]; graph: Graph };
  * it imports: its type is one its owner sees, its links resolve only to nodes of that graph, and the rules of that
  * graph's schemas run on it and read only that graph. A name or a key a node shares with a node of a graph its owner
  * does not import is a problem of its own, naming the other. The graph the lint gives is the schema linted's.
+ *
+ * Inside the package only, as `lintFolder` is: basis exports `lintRoot`, so no caller outside it chooses what a lint
+ * reads.
  */
 export function lint(
   schema: Schema,
@@ -1452,6 +1455,9 @@ async function definitionPieceProblems(
  * all of an imported schema's notes folder, so one inside the folder linted is read as that schema's, and the own .md
  * files of a folder of type notes, or all of its ground when it is a root. Gives the loader's and the sources' problems and the lint's, in path order, each by
  * its path from the folder linted, and the graph of every piece.
+ *
+ * Inside the package only: `lintRoot` calls it on a root, with the root's schema and no options, and basis's tests call
+ * it on a folder of their own. basis exports `lintRoot`, so no caller outside it chooses what a lint reads.
  */
 export async function lintFolder(
   schema: Schema,

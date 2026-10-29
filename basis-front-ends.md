@@ -1,10 +1,11 @@
 ---
 type: doc
-description: "The front ends that call the basis lint: the CLI, basis lint [folder], with its basis.config.ts and its exit codes; an Obsidian plugin is not built. Read before running the lint, writing a basis.config.ts, or reading an exit code."
+description: "The front ends that call the basis lint: lintRoot(folder) and the CLI, basis lint [root], with the basis.config.ts of a root and its exit codes; an Obsidian plugin is not built. Read before running the lint, writing a basis.config.ts, or reading an exit code."
 status: active
 ---
 Part of conformance in [[basis]] (Conformance): the terms are those of [[state-machine]].
 
-- front ends call the core (`lint`, `lintFolder`)
-	- the CLI, `basis lint [folder]`, for a person, a hook and CI. It reads `basis.config.ts` (or `.js`) at the root of the folder: the schema, the paths to skip, and the sources of pieces beside the folder's notes. The schema brings its own notes and sources, and its imports', so a config that names only its schema lints the whole subgraph. The config's skip and sources are for a folder that is no schema's notes or type notes: when a schema the lint sees names the folder as its notes, a skip or sources in the config are refused (exit 2), as its skip and sources are its `defineSchema`'s; when it names the folder as its type notes, they are refused too, as a folder of type notes has none. It gives each problem by its path from where it runs, and exits 0 when every node fits, 1 when one does not, and 2 when it cannot check. A `.ts` config needs Node 22.18 or later, which strips types
+- front ends lint a root: a folder with its own config, `basis.config.ts` (or `.js`), which exports `{ schema }` by default and gives nothing more. The schema names the folder as its notes or its type notes, and gives its skip and sources in its `defineSchema`, and its imports bring their own notes and sources, so the config lints the whole subgraph. A lint starts nowhere else ([[basis#Invariants]], a lint starts only at a root)
+	- `lintRoot(folder)`, for a program: it gives `{ problems, graph }`, each problem by its path from the root, and throws when it cannot check: the folder is in `node_modules` (an installed copy, linted through its import), has no config, its config gives more than its schema, its schema names the folder as neither its notes nor its type notes, a schema it sees names a folder that a root's ground holds (the folder's own config, or the first one above it) and is not that root's config's schema, or its schema does not hold
+	- the CLI, `basis lint [root]`, for a person, a hook and CI: `lintRoot` on the folder given, or the folder it runs in. It gives each problem by its path from where it runs, and exits 0 when every node fits, 1 when one does not, and 2 when it cannot check, with the reason. A `.ts` config needs Node 22.18 or later, which strips types
 	- not built: an Obsidian plugin on save

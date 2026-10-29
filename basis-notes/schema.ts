@@ -9,16 +9,14 @@
 import { defineSchema } from "@mku1tra/basis";
 import it from "@mku1tra/it";
 
-// Not notes: the README npm and GitHub show (Reality, with no frontmatter), and the installed packages.
-const notNotes = new Set(["README.md", "node_modules"]);
-
 const notes = defineSchema({
   name: "basis-notes",
   description: "The notes that explain basis, on the note types of it.",
   types: {},
   imports: [it],
   notes: new URL("../", import.meta.url),
-  skip: (path) => notNotes.has(path),
+  // Not a note: the README npm and GitHub show (Reality, with no frontmatter). basis never reads node_modules.
+  skip: (path) => path === "README.md",
 });
 
 export default notes;

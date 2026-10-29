@@ -25,8 +25,6 @@ import {
   defineSchema,
   defineType,
   extendType,
-  lint,
-  lintFolder,
   loadFolder,
   many,
   manyOrNone,
@@ -40,8 +38,8 @@ import {
   type Piece,
   type Note,
   type Source,
-  type Unread,
 } from "./index.ts";
+import { lint, lintFolder, type Unread } from "./lint.ts";
 
 const note = (path: string, fields: Record<string, unknown>): Note => ({
   path,

@@ -23,12 +23,11 @@ import {
   defineRule,
   defineSchema,
   defineType,
-  lint,
-  lintFolder,
   markDefinition,
   type Note,
   type Problem,
 } from "./index.ts";
+import { lint, lintFolder } from "./lint.ts";
 
 const note = (path: string, fields: Record<string, unknown>): Note => ({
   path,

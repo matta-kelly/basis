@@ -7,10 +7,10 @@ import * as z from "zod";
 import {
   defineSchema,
   defineType,
-  lintFolder,
   markDefinition,
   type Source,
 } from "./index.ts";
+import { lintFolder } from "./lint.ts";
 
 const made: string[] = [];
 afterEach(async () => {

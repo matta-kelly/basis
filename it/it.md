@@ -22,7 +22,7 @@ Every note sits at exactly one layer. Mixing them is the primary failure mode.
 	- test: if the program reading it went away, would it still make sense as a note? No → Reality
 	- e.g. Reality: `SYSTEM.md`, `AGENTS.md`, a repo's `README.md`, dotfiles, runnable scripts
 	- e.g. still a note: [[it]] (loaded by pi, but a note first), a note with a code block
-	- `basis.config.ts` at the root of lot skips these, so `just lint` checks only notes
+	- lot's schema, the schema of lot's root, skips these, so `just lint` checks only notes
 
 ## Ontology
 

@@ -37,13 +37,6 @@ export {
   type Read,
   type Source,
 } from "./loader.ts";
-export {
-  coreRules,
-  lint,
-  lintFolder,
-  pointer,
-  type LintOptions,
-  type LintResult,
-  type Unread,
-} from "./lint.ts";
-export { run, type Config, type Out } from "./cli.ts";
+export { coreRules, pointer, type LintResult } from "./lint.ts";
+export { lintRoot, type Config } from "./root.ts";
+export { run, type Out } from "./cli.ts";

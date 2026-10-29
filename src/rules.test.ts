@@ -10,13 +10,12 @@ import {
   defineType,
   extendType,
   type Graph,
-  lint,
-  lintFolder,
   many,
   type Note,
   type Rule,
   type Type,
 } from "./index.ts";
+import { lint, lintFolder } from "./lint.ts";
 
 const note = (path: string, fields: Record<string, unknown>): Note => ({
   path,

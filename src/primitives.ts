@@ -609,21 +609,22 @@ export interface Schema<
   imports: I;
   /**
    * The folder of its type notes, one for each type of its own, as a file URL: `new URL("./types/", import.meta.url)`.
-   * None when it holds no type of its own. `lintFolder` reads it from disk.
+   * None when it holds no type of its own. A root's lint reads it from disk.
    */
   typeNotes?: URL;
   /**
-   * The folder of its notes, as a file URL: `new URL("./", import.meta.url)`. A folder's lint reads it, as it reads
-   * its own folder, for this schema and each schema that imports it: the lint of a schema is its imports' too.
+   * The folder of its notes, as a file URL: `new URL("./", import.meta.url)`. A root's lint reads it, for this schema
+   * and each schema that imports it: the lint of a schema is its imports' too. A root is a folder its schema names here
+   * or as its type notes.
    */
   notes?: URL;
-  /** The paths in its folder of notes that are not notes, as a folder's lint takes them. */
+  /** The paths in its folder of notes that are not notes, as a root's lint takes them. */
   skip?: (path: string) => boolean;
   /** The sources of its pieces beside its notes, such as its reader of its things in code. */
   sources?: readonly Source[];
   /**
    * Its package's exports, as a function that gives the module's object of them: `() => import("./index.ts")`. A
-   * folder's lint calls it, and each zod object exported is part of a type the schema sees, or a bridge.
+   * root's lint calls it, and each zod object exported is part of a type the schema sees, or a bridge.
    */
   exports?: () => unknown;
   /** The names of its exports that are bridges: a shape an outside standard asks for, which no type defines. */
