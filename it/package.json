@@ -14,6 +14,7 @@
   },
   "exports": {
     ".": {
+      "@mku1tra/source": "./src/schema.ts",
       "types": "./dist/schema.d.ts",
       "default": "./dist/schema.js"
     }

@@ -14,6 +14,7 @@ Part of the state in [[basis]] (State): the terms are those of [[state-machine]]
 		- in code, a subgraph is its schema: its types and rules, its notes and its sources, and the schemas it imports
 		- type-only subgraph: a subgraph whose schema declares no notes folder. It defines kinds of nodes and holds none: the nodes of its types are in the ground of a graph that imports it
 		- a subgraph is not a repo. A repo is a store: one repo can hold a type-only subgraph and notes of a graph above it, kept apart only so that they stay private
+			- one repo can hold the roots of more than one graph, each a folder with its own config, as basis's repo does ([[basis#Foundation]])
 		- npm gives versions, resolution and install. No own package format
 		- the lint of a schema is the lint of its subgraph: it and every schema it imports, as one graph (composed graph, above)
 		- ground: the part of a folder that a graph reads as its own notes: its schema's notes folder, less its skip, less each nested root below its top, and less each path another place reads

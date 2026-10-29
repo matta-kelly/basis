@@ -1,0 +1,11 @@
+{
+  "name": "basis-notes",
+  "description": "The schema of the notes that explain basis: the repo's own graph, which a graph above imports as a workspace. Never published.",
+  "private": true,
+  "type": "module",
+  "exports": "./schema.ts",
+  "peerDependencies": {
+    "@mku1tra/basis": "^0.27.0",
+    "@mku1tra/it": "^0.6.0"
+  }
+}

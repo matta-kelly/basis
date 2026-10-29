@@ -7,6 +7,8 @@ This repo holds two packages, each published on npm by its own tag:
 - `@mku1tra/basis`, at the root: basis itself
 - `@mku1tra/it`, in `it/`: the kinds of notes Matt keeps, as types on basis. Its notes are its folder: `it.md` and its type notes in `types/`
 
+and one private package, never published: `basis-notes`, in `basis-notes/`, the schema of the notes that explain basis
+
 ## Install
 
 From npm: `npm install @mku1tra/basis`, and `import { defineSchema } from "@mku1tra/basis"` in plain Node, 22.18 or later.
@@ -17,7 +19,7 @@ A repo that builds on basis installs `@mku1tra/basis` from npm by version, as qu
 
 Set the version in the package's `package.json`, commit, and push its tag: `v<version>` for basis, `it-v<version>` for it. `.github/workflows/publish.yml` runs the check set and publishes that package on npm by trusted publishing (no token, with provenance). A ruleset lets only an admin of the repo make a version tag, of either prefix (`v*` and `it-v*`). A version npm has is not published again. A published version cannot change: npm unpublishes only within 72 hours.
 
-it's peer range on basis is one minor (`^0.27.0`). Each new minor of basis needs it's range moved to it, and a new release of it.
+it's peer range on basis is one minor (`^0.27.0`). Each new minor of basis needs it's range moved to it, and a new release of it. basis-notes's peer ranges move with each new minor of basis and of it.
 
 ## Lint a folder
 
@@ -25,8 +27,16 @@ it's peer range on basis is one minor (`^0.27.0`). Each new minor of basis needs
 
 ## Check
 
-Node runs in a dev container, never on the host. `just check` makes the container if there is none, then runs the check set: types, lint, format, tests, it's notes against its schema, and the packages, each installed from its tarball in an empty project and run in plain Node. The pipeline runs the same file, `scripts/check.sh`.
+Node runs in a dev container, never on the host. `just check` makes the container if there is none, then runs the check set: types, lint, format, tests, the repo's notes from its root (`basis lint .`), and the packages, each installed from its tarball in an empty project and run in plain Node. The pipeline runs the same file, `scripts/check.sh`.
 
 it is a workspace of the repo. It depends on basis by version (`^0.27.0`, a peer), and in the repo its dev dependency `file:..` links the root, so its check runs on basis as it is.
+
+Each folder of notes in the repo is the root of one graph, with its own `basis.config.ts`:
+
+- the repo's root: the notes that explain basis (`basis.md` and its `basis-*.md` notes). Their schema is `basis-notes`, a private workspace of the repo whose notes folder is the repo's root. It imports `@mku1tra/it` for their note types, by the peer dependencies `@mku1tra/basis` and `@mku1tra/it`, so a graph that imports it as a workspace gives it its own basis and it, one copy of each. it's export condition `@mku1tra/source` picks its `src/`, as basis's does
+- `types/`: basis's built-in type notes. Its config's schema is the built-in schema, `basis`. The package ships `types/` but not this config
+- `it/`: it's notes and type notes, with it's schema
+
+The root's lint, `basis lint .`, reads each note once: its own, `types/` as the built-in schema's, and it's through the import. A ground ends at a nested root, so a graph that holds the repo, such as a vault with basis as a submodule, reads none of the repo's notes unless it imports `basis-notes`. The packages on npm ship neither `basis-notes` nor the notes that explain basis.
 
 `just run <command>` runs any other command in the container, such as `just run npm install zod`.

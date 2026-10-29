@@ -151,6 +151,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 - vitest for tests
 - published to npm as `@mku1tra/basis`, by a version tag. A repo that builds on basis installs it from npm by version. Inside basis's repo, `it/` links the root by its dev dependency `file:..`, and the export condition `@mku1tra/source` picks `src/`, with no build or release
 - the repo holds a second package, `@mku1tra/it` in `it/`: Matt's note types ([[it]]), built on basis by version and published by its own tag, `it-v<version>`. basis does not import it, and basis's package does not ship it. The repo's check covers both
+- each folder of notes in the repo is the root of one graph ([[basis-graph]], ground): the repo's root, whose notes (this note and the other notes that explain basis) are owned by `basis-notes`, a private package of the repo, never published, that imports it for their note types; `types/`, the root of the built-in schema, whose config the package does not ship; and `it/`, it's root. The repo's check lints from the repo's root, which reads each note once. basis's code imports none of them
 - a dev container. No npm on the host
 
 ### Components

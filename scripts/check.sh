@@ -9,13 +9,13 @@ cd "$(dirname "$0")/.."
 # says what they came from, so a stale install is made again and a current one is left alone.
 install() {
   local stamp=node_modules/.installed-from
-  if cat package.json it/package.json package-lock.json | cmp -s - "$stamp" &&
+  if cat package.json it/package.json basis-notes/package.json package-lock.json | cmp -s - "$stamp" &&
     [ ! node_modules/.package-lock.json -nt "$stamp" ]; then
     echo "node_modules matches the package.json files and the lockfile"
     return
   fi
   npm ci || return 1
-  cat package.json it/package.json package-lock.json >"$stamp" || return 1
+  cat package.json it/package.json basis-notes/package.json package-lock.json >"$stamp" || return 1
 }
 
 # One step, named in the output, so a failure reads the same on a machine and in the pipeline.
@@ -38,7 +38,7 @@ step types npx tsc --noEmit
 step lint npx eslint
 step format npx prettier --check .
 step tests npx vitest run --reporter="$reporter"
-# it's notes, against its schema: it.md and its type notes. Its config is in its folder.
-step notes node --conditions=@mku1tra/source src/bin.ts lint it
+# The repo's notes, from its root: basis's notes and type notes, and it's through its import, each read once.
+step notes node --conditions=@mku1tra/source src/bin.ts lint .
 step packages scripts/install-check.sh
 echo "check passed"

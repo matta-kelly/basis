@@ -18,6 +18,9 @@
     "fixtures",
     "it/src",
     "it/basis.config.ts",
+    "basis-notes",
+    "types/basis.config.ts",
+    "basis.config.ts",
     "eslint.config.ts",
     "vitest.config.ts"
   ]
