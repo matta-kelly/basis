@@ -19,5 +19,5 @@ Part of the schema in [[basis]] (Schema): the terms are those of [[state-machine
 		- namespace: each name has one owner. Others refer to it, and never define it again
 			- the same word in two schemas is two things (`shopify:product`, `odoo:product`)
 			- outside copies of one thing link to it (the crosswalk pattern), and are not a second definition
-		- extend, never override: a type can extend an imported type, and cannot change it
+		- extend, never override: a type can extend an imported type, and cannot change it. It adds only fields a node can leave out, so no node of the type stops fitting it ([[basis-type]], extension)
 		- public and private: others depend on what a schema exposes, never on its insides

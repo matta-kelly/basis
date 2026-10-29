@@ -779,7 +779,7 @@ describe("a type that extends a type", () => {
       expect(() =>
         extendType(capability, { fields: { [field]: schema } } as never),
       ).toThrow(
-        `The extension of capability adds ${field}, which a node must give: each field an extension adds is one a node can leave out (optional, oneOrNone, manyOrNone), so each node of the type it extends fits it.`,
+        `The extension of capability adds ${field}, which zod does not mark optional: each field an extension adds is one zod marks optional (.optional(), oneOrNone, manyOrNone), so each node of the type it extends fits it.`,
       );
     expect(() =>
       extendType(capability, {

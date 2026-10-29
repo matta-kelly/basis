@@ -749,12 +749,13 @@ type Parsed = {
 };
 
 /**
- * The composed graph of a schema: each node of it that parsed, by its name or by its type, read as the schema sees its
- * type. Each node is parsed when the graph is first read, so it is whole wherever it is read from. A name two of its
- * nodes share, or an unread note of it shares, gives none.
+ * The composed graph of a schema: each node of it that parsed by its owner's type, by its name or by its type, read as
+ * the schema sees its type, which takes it. Each node is parsed when the graph is first read, so it is whole wherever it
+ * is read from. A name two of its nodes share, or an unread note of it shares, gives none.
  */
 function parsedOf(
   { schema, seen, sees }: Scope,
+  scopes: ReadonlyMap<string, Scope>,
   all: readonly Node[],
   byName: Map<string, Node[]>,
   unreadNotes: Map<string, { path: string; owner: string }[]>,
@@ -774,10 +775,19 @@ function parsedOf(
   const valuesOf = () => {
     values ??= new Map(
       [...nodes].sort(byPath).flatMap((node): [Node, unknown][] => {
+        // A node that does not fit its owner's type is in no graph: it has that problem itself.
+        const own = nodeType(scopeOf(scopes, node).seen, node);
+        if (!own || own.type.abstract || !parseOf(own.type, node).success)
+          return [];
+        // The type this graph sees is the owner's, or an extension of it, which adds only fields a node can leave
+        // out: so a node that fits the one fits the other.
         const at = nodeType(seen, node);
-        if (!at || at.type.abstract) return [];
-        const parse = parseOf(at.type, node);
-        return parse.success ? [[node, frozenCopy(parse.data)]] : [];
+        const parse = at && parseOf(at.type, node);
+        if (!parse?.success)
+          throw new Error(
+            `The node at ${node.path} fits its type as ${node.owner} sees it, and not as ${schema.name} sees it: an extension adds only fields a node can leave out.`,
+          );
+        return [[node, frozenCopy(parse.data)]];
       }),
     );
     return values;
@@ -1006,7 +1016,7 @@ export function lint(
   const parsedIn = (scope: Scope) => {
     const had = parsed.get(scope.schema.name);
     if (had) return had;
-    const made = parsedOf(scope, nodes, byName, unreadNotes);
+    const made = parsedOf(scope, scopes, nodes, byName, unreadNotes);
     parsed.set(scope.schema.name, made);
     return made;
   };

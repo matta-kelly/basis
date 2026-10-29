@@ -183,22 +183,29 @@ export function defineType<
 
 /**
  * A type that extends another, as GraphQL's extend type: the same type, under its name and description, with its
- * fields and more, in a schema that imports it. Its zod schema is the extended type's, extended. It is abstract when
- * that type is, and has its parents. The schema that holds it checks it.
+ * fields and more, in a schema that imports it. Each field it adds is one zod marks optional: a node of the type it
+ * extends, held by a graph below, fits it, so a graph above reads that node by the extension. Its zod schema is the
+ * extended type's, extended. It is abstract when that type is, and has its parents. The schema that holds it checks it.
  * The extended type's shape and config are inferred from its schema, so the extension's schema is zod's own type for
- * it. It has the extended type's key. When that type has none, it can add one, over its own fields and that type's.
+ * it. It has the extended type's key. When that type has none, it can add one, over that type's fields: its own can be
+ * left out.
  */
 export function extendType<
   B extends Type,
   S extends z.ZodRawShape,
   C extends z.core.$ZodObjectConfig,
   const F extends z.ZodRawShape,
-  const K extends readonly (KeyField<S> | KeyField<F>)[] = readonly [],
+  const K extends readonly KeyField<S>[] = readonly [],
 >(
   extended: B & { schema: z.ZodObject<S, C> },
   type: {
-    /** No field of the type it extends: extend, never override. */
-    fields: F & { [K in keyof S]?: never };
+    /**
+     * No field of the type it extends: extend, never override. Each one zod marks optional, so each node of the type it
+     * extends fits it.
+     */
+    fields: F & { [K in keyof S]?: never } & {
+      [K in keyof F]: { _zod: { optout: "optional" } };
+    };
     /** None when the type it extends has a key: extend, never override. */
     key?: [NonNullable<B["key"]>[number]] extends [never] ? K : never;
   },
@@ -206,6 +213,13 @@ export function extendType<
   const fields: F = { ...type.fields };
   const original: B = extended;
   const name: B["name"] = original.name;
+  // A field zod does not mark optional could make a node of the type it extends, in a graph below, not fit it: as
+  // protobuf found of a required field added to a message others hold.
+  for (const [field, value] of Object.entries(fields))
+    if ((value as { _zod?: { optout?: unknown } })._zod?.optout !== "optional")
+      throw new Error(
+        `The extension of ${name} adds ${field}, which zod does not mark optional: each field an extension adds is one zod marks optional (.optional(), oneOrNone, manyOrNone), so each node of the type it extends fits it.`,
+      );
   const schema: z.ZodObject<S, C> = extended.schema;
   const made = Object.freeze({
     name,
