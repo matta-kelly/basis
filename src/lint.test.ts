@@ -2951,119 +2951,127 @@ describe("a node in the composed graph of the graph that owns it", () => {
     ...(owner && { owner }),
   });
 
-  it("gives the problems on each graph's pieces of its own lint, and more only for a piece of a graph it does not import", () => {
-    const nameOf = fc.constantFrom("a", "b", "c");
-    const pieceOf = fc.record({
-      owner: fc.constantFrom<Owner | undefined>(...owners, undefined),
-      name: nameOf,
-      note: fc.boolean(),
-      at: fc.constantFrom("p", "q"),
-      type: fc.constantFrom("app", "capability", "team", "site", "unit"),
-      // Mostly given, so most pieces parse and the rules read them.
-      description: fc.oneof(
-        { arbitrary: fc.constant(true), weight: 4 },
-        { arbitrary: fc.constant(false), weight: 1 },
-      ),
-      many: fc.subarray(["a", "b", "c"]),
-      one: fc.option(nameOf, { nil: undefined, freq: 4 }),
-      code: fc.constantFrom("x", "y"),
-      tier: fc.boolean(),
-    });
-    // Mostly notes, which share a name with a note of another graph: a note not read can be a second note of a name.
-    const unreadOf = fc.record({
-      owner: fc.constantFrom<Owner | undefined>(...owners, undefined),
-      name: nameOf,
-      note: fc.oneof(
-        { arbitrary: fc.constant(true), weight: 3 },
-        { arbitrary: fc.constant(false), weight: 1 },
-      ),
-    });
-    const toPiece = (
-      p: typeof pieceOf extends fc.Arbitrary<infer T> ? T : never,
-    ): Piece => {
-      const owner = p.owner ?? "root";
-      const link = (name: string) => (p.note ? `[[${name}]]` : name);
-      const links: Record<string, Record<string, unknown>> = {
-        app: { uses: p.many.map(link), ...(p.tier && { tier: "t" }) },
-        capability: {
-          heldBy: p.one && link(p.one),
-          touches: p.many.map(link),
-        },
-        team: { lead: p.one && link(p.one) },
-        site: { hosts: p.many.map(link) },
-        unit: { code: p.code },
+  // No time limit: the work is fixed at 3000 runs, and vitest checks the limit of a synchronous test only after it
+  // ends, so a limit fails a pass on a loaded machine and stops nothing.
+  it(
+    "gives the problems on each graph's pieces of its own lint, and more only for a piece of a graph it does not import",
+    { timeout: 0 },
+    () => {
+      const nameOf = fc.constantFrom("a", "b", "c");
+      const pieceOf = fc.record({
+        owner: fc.constantFrom<Owner | undefined>(...owners, undefined),
+        name: nameOf,
+        note: fc.boolean(),
+        at: fc.constantFrom("p", "q"),
+        type: fc.constantFrom("app", "capability", "team", "site", "unit"),
+        // Mostly given, so most pieces parse and the rules read them.
+        description: fc.oneof(
+          { arbitrary: fc.constant(true), weight: 4 },
+          { arbitrary: fc.constant(false), weight: 1 },
+        ),
+        many: fc.subarray(["a", "b", "c"]),
+        one: fc.option(nameOf, { nil: undefined, freq: 4 }),
+        code: fc.constantFrom("x", "y"),
+        tier: fc.boolean(),
+      });
+      // Mostly notes, which share a name with a note of another graph: a note not read can be a second note of a name.
+      const unreadOf = fc.record({
+        owner: fc.constantFrom<Owner | undefined>(...owners, undefined),
+        name: nameOf,
+        note: fc.oneof(
+          { arbitrary: fc.constant(true), weight: 3 },
+          { arbitrary: fc.constant(false), weight: 1 },
+        ),
+      });
+      const toPiece = (
+        p: typeof pieceOf extends fc.Arbitrary<infer T> ? T : never,
+      ): Piece => {
+        const owner = p.owner ?? "root";
+        const link = (name: string) => (p.note ? `[[${name}]]` : name);
+        const links: Record<string, Record<string, unknown>> = {
+          app: { uses: p.many.map(link), ...(p.tier && { tier: "t" }) },
+          capability: {
+            heldBy: p.one && link(p.one),
+            touches: p.many.map(link),
+          },
+          team: { lead: p.one && link(p.one) },
+          site: { hosts: p.many.map(link) },
+          unit: { code: p.code },
+        };
+        return {
+          path: p.note
+            ? `${owner}/${p.at}/${p.name}.md`
+            : `${owner}/code/${p.at}.ts`,
+          name: p.name,
+          fields: {
+            type: p.type,
+            ...(p.description && { description: "d" }),
+            ...links[p.type],
+          },
+          source: p.note ? "notes" : `${owner}-${p.at}`,
+          ...(p.note && { body: "" }),
+          ...(p.owner && { owner: p.owner }),
+        };
       };
-      return {
-        path: p.note
-          ? `${owner}/${p.at}/${p.name}.md`
-          : `${owner}/code/${p.at}.ts`,
-        name: p.name,
-        fields: {
-          type: p.type,
-          ...(p.description && { description: "d" }),
-          ...links[p.type],
-        },
-        source: p.note ? "notes" : `${owner}-${p.at}`,
-        ...(p.note && { body: "" }),
-        ...(p.owner && { owner: p.owner }),
+      const toUnread = (
+        u: typeof unreadOf extends fc.Arbitrary<infer T> ? T : never,
+      ): Unread => {
+        const owner = u.owner ?? "root";
+        return {
+          path: u.note
+            ? `${owner}/broken/${u.name}.md`
+            : `${owner}/code/broken.ts`,
+          name: u.name,
+          source: u.note ? "notes" : `${owner}-p`,
+          ...(u.owner && { owner: u.owner }),
+        };
       };
-    };
-    const toUnread = (
-      u: typeof unreadOf extends fc.Arbitrary<infer T> ? T : never,
-    ): Unread => {
-      const owner = u.owner ?? "root";
-      return {
-        path: u.note
-          ? `${owner}/broken/${u.name}.md`
-          : `${owner}/code/broken.ts`,
-        name: u.name,
-        source: u.note ? "notes" : `${owner}-p`,
-        ...(u.owner && { owner: u.owner }),
-      };
-    };
-    const ownerOf = (thing: { owner?: string }) => thing.owner ?? "root";
-    const text = (p: {
-      path: string;
-      rule?: string;
-      field?: string;
-      message: string;
-    }) => JSON.stringify([p.path, p.rule, p.field, p.message]);
-    fc.assert(
-      fc.property(
-        fc.array(pieceOf, { maxLength: 10 }).map((ps) => ps.map(toPiece)),
-        fc.array(unreadOf, { maxLength: 3 }).map((us) => us.map(toUnread)),
-        (pieces, unread) => {
-          const composed = lint(root, pieces, unread).problems;
-          for (const owner of owners) {
-            const inside = new Set<string>(closure[owner]);
-            const on = (p: { path: string }) => p.path.startsWith(`${owner}/`);
-            const own = lint(
-              schemas[owner],
-              pieces.filter((p) => inside.has(ownerOf(p))),
-              unread.filter((u) => inside.has(ownerOf(u))),
-            )
-              .problems.filter(on)
-              .map(text);
-            const more = composed.filter(on).map(text);
-            for (const problem of own) {
-              const at = more.indexOf(problem);
-              expect(at, `${owner}: ${problem}`).toBeGreaterThan(-1);
-              more.splice(at, 1);
+      const ownerOf = (thing: { owner?: string }) => thing.owner ?? "root";
+      const text = (p: {
+        path: string;
+        rule?: string;
+        field?: string;
+        message: string;
+      }) => JSON.stringify([p.path, p.rule, p.field, p.message]);
+      fc.assert(
+        fc.property(
+          fc.array(pieceOf, { maxLength: 10 }).map((ps) => ps.map(toPiece)),
+          fc.array(unreadOf, { maxLength: 3 }).map((us) => us.map(toUnread)),
+          (pieces, unread) => {
+            const composed = lint(root, pieces, unread).problems;
+            for (const owner of owners) {
+              const inside = new Set<string>(closure[owner]);
+              const on = (p: { path: string }) =>
+                p.path.startsWith(`${owner}/`);
+              const own = lint(
+                schemas[owner],
+                pieces.filter((p) => inside.has(ownerOf(p))),
+                unread.filter((u) => inside.has(ownerOf(u))),
+              )
+                .problems.filter(on)
+                .map(text);
+              const more = composed.filter(on).map(text);
+              for (const problem of own) {
+                const at = more.indexOf(problem);
+                expect(at, `${owner}: ${problem}`).toBeGreaterThan(-1);
+                more.splice(at, 1);
+              }
+              // Each problem more names a piece of a graph the owner does not import.
+              const outside = owners.filter((o) => !inside.has(o));
+              for (const problem of more)
+                expect(
+                  outside.some((o) => problem.includes(`${o}/`)),
+                  `${owner}: ${problem}`,
+                ).toBe(true);
             }
-            // Each problem more names a piece of a graph the owner does not import.
-            const outside = owners.filter((o) => !inside.has(o));
-            for (const problem of more)
-              expect(
-                outside.some((o) => problem.includes(`${o}/`)),
-                `${owner}: ${problem}`,
-              ).toBe(true);
-          }
-        },
-      ),
-      // 100 runs miss a get that counts nodes of every graph; 3000 catch it, in a few seconds.
-      { numRuns: 3000 },
-    );
-  });
+          },
+        ),
+        // A get that counts nodes of every graph fails about 1 run in 250 (measured over 30 seeds): 100 runs miss it
+        // about 2 times in 3, and 3000 runs about 1 time in 10000 or less.
+        { numRuns: 3000 },
+      );
+    },
+  );
 
   it("fails a link up to a graph above alone and in the composed graph alike", () => {
     const up = piece("base", "base/cap.ts", "cap", {
