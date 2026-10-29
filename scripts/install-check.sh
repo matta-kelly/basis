@@ -22,17 +22,19 @@ if ! grep -q '"workspaces"' package.json; then
 fi
 # A publish of basis not run through published.sh stops: npm runs prepublishOnly on `npm publish` and not on
 # `npm pack`, and it fails while package.json has workspaces. Through published.sh, the field is out and it passes.
+# The check runs the script with `npm run`, not `npm publish --dry-run`: npm 11 refuses a dry run of a version the
+# registry has already, so that check would fail on every run after a release.
 set +e
-out=$(npm publish --dry-run 2>&1)
+out=$(npm run --silent prepublishOnly 2>&1)
 code=$?
 set -e
 if [ "$code" -eq 0 ] || ! grep -q "package.json has workspaces" <<<"$out"; then
-  echo "npm publish, not run through scripts/published.sh, did not stop on workspaces" >&2
+  echo "prepublishOnly, not run through scripts/published.sh, did not stop on workspaces" >&2
   exit 1
 fi
-if ! out=$(scripts/published.sh npm publish --dry-run 2>&1); then
+if ! out=$(scripts/published.sh npm run --silent prepublishOnly 2>&1); then
   echo "$out" >&2
-  echo "npm publish --dry-run through scripts/published.sh failed" >&2
+  echo "prepublishOnly through scripts/published.sh failed" >&2
   exit 1
 fi
 (cd it && npm pack --silent --pack-destination "$tmp" >/dev/null)
