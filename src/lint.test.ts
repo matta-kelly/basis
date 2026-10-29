@@ -1886,6 +1886,40 @@ describe("the lint of a schema and the schemas it imports, as one graph", () => 
       ]);
     });
 
+    it("is a real folder: a symbolic link to a folder with a config is a symbolic link, and a problem", async () => {
+      const base = await filesIn({ "slate.md": slateNote });
+      const elsewhere = await filesIn({
+        "basis.config.ts": "export default {};\n",
+        "wrong.md": wrongNote,
+      });
+      await symlink(elsewhere, join(base, "linked"));
+      const { problems } = await lintFolder(shopOf(), base);
+      expect(problems).toEqual([
+        {
+          path: "linked",
+          message: "A symbolic link: basis reads only files and folders.",
+          fatal: true,
+        },
+      ]);
+    });
+
+    it("has its config as a file: a folder of a config's name makes no root", async () => {
+      const base = await filesIn({
+        "slate.md": slateNote,
+        "sub/basis.config.ts/keep.txt": "",
+        "sub/wrong.md": wrongNote,
+      });
+      const { problems } = await lintFolder(shopOf(), base);
+      expect(problems).toEqual([
+        {
+          path: "sub/wrong.md",
+          rule: "basis/fields",
+          field: "/role",
+          message: expect.stringMatching(/^Invalid option/),
+        },
+      ]);
+    });
+
     it("holds no note of the outer graph, so a skip of it, or of a folder it is in, hides none", async () => {
       const base = await filesIn({
         "slate.md": slateNote,
