@@ -190,6 +190,19 @@ describe("basis lint", () => {
     ]);
   });
 
+  it("gives 2 and names the config it looks for when a folder has a config's name: a config is a file", async () => {
+    const root = await folderOf({
+      "basis.config.ts/keep.txt": "",
+      "slate.md": slate,
+    });
+    const { code, log, error } = await cli(["lint"], root);
+    expect(code).toBe(2);
+    expect(log).toEqual([]);
+    expect(error).toEqual([
+      `${root} has no config: basis lint reads basis.config.ts or basis.config.js.`,
+    ]);
+  });
+
   it("gives 2 and names the config when it cannot be loaded, or is not a config", async () => {
     for (const text of [
       "throw new Error('broken');\n",
