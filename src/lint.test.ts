@@ -2822,6 +2822,436 @@ describe("the merge of pieces into a node", () => {
   });
 });
 
+describe("a node in the composed graph of the graph that owns it", () => {
+  // A base graph; two graphs that import it and not each other; and a root that imports both.
+  const app = defineType({
+    name: "app",
+    description: "Software data lives in.",
+    fields: { uses: manyOrNone(() => node) },
+  });
+  const capability = defineType({
+    name: "capability",
+    description: "An outcome someone asks for.",
+    fields: { heldBy: oneOrNone(() => app), touches: manyOrNone(() => node) },
+  });
+  const unit = defineType({
+    name: "unit",
+    description: "A thing with a code.",
+    fields: { code: z.string() },
+    key: ["code"],
+  });
+  // Each rule reads the graph: what it gives names every node the graph shows it.
+  const names = (graph: Graph) =>
+    graph
+      .all(node)
+      .map((n) => n.name)
+      .join(",");
+  const sees = (on: Parameters<typeof defineRule>[0]["on"]) =>
+    defineRule({
+      name: "sees",
+      description: "Gives the nodes it sees.",
+      on,
+      check: (_node, graph) => [{ message: `Sees ${names(graph)}.` }],
+    });
+  const base = defineSchema({
+    name: "base",
+    description: "d",
+    types: { app, capability, unit },
+    typeNotes: new URL("file:///nowhere/base/"),
+    rules: [
+      sees(capability),
+      defineRule({
+        name: "held",
+        description: "A capability is held by an app the graph has.",
+        on: capability,
+        check: (n, graph) =>
+          n.heldBy && !graph.get(n.heldBy, app)
+            ? [{ field: "/heldBy", message: "No app of that name." }]
+            : [],
+      }),
+    ],
+  });
+  const team = defineType({
+    name: "team",
+    description: "People.",
+    fields: { lead: oneOrNone(() => capability) },
+  });
+  // left extends base's app: a node of base is still base's app.
+  const tiered = extendType(app, { fields: { tier: z.string() } });
+  const left = defineSchema({
+    name: "left",
+    description: "d",
+    imports: [base],
+    types: { team, app: tiered },
+    typeNotes: new URL("file:///nowhere/left/"),
+    rules: [sees(tiered)],
+  });
+  const site = defineType({
+    name: "site",
+    description: "A place.",
+    fields: { hosts: manyOrNone(() => app) },
+  });
+  const right = defineSchema({
+    name: "right",
+    description: "d",
+    imports: [base],
+    types: { site },
+    typeNotes: new URL("file:///nowhere/right/"),
+    rules: [sees(app)],
+  });
+  const root = defineSchema({
+    name: "root",
+    description: "d",
+    imports: [left, right],
+    types: {},
+    rules: [sees(unit)],
+  });
+  const schemas = { base, left, right, root };
+  type Owner = keyof typeof schemas;
+  const owners = Object.keys(schemas) as Owner[];
+  // The schemas each graph sees: itself and what it imports, at every depth.
+  const closure: Record<Owner, readonly Owner[]> = {
+    base: ["base"],
+    left: ["base", "left"],
+    right: ["base", "right"],
+    root: owners,
+  };
+  const piece = (
+    owner: Owner | undefined,
+    path: string,
+    name: string,
+    fields: Record<string, unknown>,
+    source = "1",
+  ): Piece => ({
+    path,
+    name,
+    fields: { description: "d", ...fields },
+    source,
+    ...(owner && { owner }),
+  });
+
+  it("gives the problems on each graph's pieces of its own lint, and more only for a piece of a graph it does not import", () => {
+    const nameOf = fc.constantFrom("a", "b", "c");
+    const pieceOf = fc.record({
+      owner: fc.constantFrom<Owner | undefined>(...owners, undefined),
+      name: nameOf,
+      note: fc.boolean(),
+      at: fc.constantFrom("p", "q"),
+      type: fc.constantFrom("app", "capability", "team", "site", "unit"),
+      description: fc.boolean(),
+      many: fc.subarray(["a", "b", "c"]),
+      one: fc.option(nameOf, { nil: undefined }),
+      code: fc.constantFrom("x", "y"),
+      tier: fc.boolean(),
+    });
+    const unreadOf = fc.record({
+      owner: fc.constantFrom<Owner | undefined>(...owners, undefined),
+      name: nameOf,
+      note: fc.boolean(),
+    });
+    const toPiece = (
+      p: typeof pieceOf extends fc.Arbitrary<infer T> ? T : never,
+    ): Piece => {
+      const owner = p.owner ?? "root";
+      const link = (name: string) => (p.note ? `[[${name}]]` : name);
+      const links: Record<string, Record<string, unknown>> = {
+        app: { uses: p.many.map(link), ...(p.tier && { tier: "t" }) },
+        capability: {
+          heldBy: p.one && link(p.one),
+          touches: p.many.map(link),
+        },
+        team: { lead: p.one && link(p.one) },
+        site: { hosts: p.many.map(link) },
+        unit: { code: p.code },
+      };
+      return {
+        path: p.note
+          ? `${owner}/${p.at}/${p.name}.md`
+          : `${owner}/code/${p.at}.ts`,
+        name: p.name,
+        fields: {
+          type: p.type,
+          ...(p.description && { description: "d" }),
+          ...links[p.type],
+        },
+        source: p.note ? "notes" : `${owner}-${p.at}`,
+        ...(p.note && { body: "" }),
+        ...(p.owner && { owner: p.owner }),
+      };
+    };
+    const toUnread = (
+      u: typeof unreadOf extends fc.Arbitrary<infer T> ? T : never,
+    ): Unread => {
+      const owner = u.owner ?? "root";
+      return {
+        path: u.note
+          ? `${owner}/broken/${u.name}.md`
+          : `${owner}/code/broken.ts`,
+        name: u.name,
+        source: u.note ? "notes" : `${owner}-p`,
+        ...(u.owner && { owner: u.owner }),
+      };
+    };
+    const ownerOf = (thing: { owner?: string }) => thing.owner ?? "root";
+    const text = (p: {
+      path: string;
+      rule?: string;
+      field?: string;
+      message: string;
+    }) => JSON.stringify([p.path, p.rule, p.field, p.message]);
+    fc.assert(
+      fc.property(
+        fc.array(pieceOf, { maxLength: 10 }).map((ps) => ps.map(toPiece)),
+        fc.array(unreadOf, { maxLength: 2 }).map((us) => us.map(toUnread)),
+        (pieces, unread) => {
+          const composed = lint(root, pieces, unread).problems;
+          for (const owner of owners) {
+            const inside = new Set<string>(closure[owner]);
+            const on = (p: { path: string }) => p.path.startsWith(`${owner}/`);
+            const own = lint(
+              schemas[owner],
+              pieces.filter((p) => inside.has(ownerOf(p))),
+              unread.filter((u) => inside.has(ownerOf(u))),
+            )
+              .problems.filter(on)
+              .map(text);
+            const more = composed.filter(on).map(text);
+            for (const problem of own) {
+              const at = more.indexOf(problem);
+              expect(at, `${owner}: ${problem}`).toBeGreaterThan(-1);
+              more.splice(at, 1);
+            }
+            // Each problem more names a piece of a graph the owner does not import.
+            const outside = owners.filter((o) => !inside.has(o));
+            for (const problem of more)
+              expect(
+                outside.some((o) => problem.includes(`${o}/`)),
+                `${owner}: ${problem}`,
+              ).toBe(true);
+          }
+        },
+      ),
+    );
+  });
+
+  it("fails a link up to a graph above alone and in the composed graph alike", () => {
+    const up = piece("base", "base/cap.ts", "cap", {
+      type: "capability",
+      heldBy: "db",
+    });
+    const db = piece("root", "root/db.ts", "db", { type: "app" }, "2");
+    const problem = {
+      path: "base/cap.ts",
+      rule: "basis/link",
+      field: "/heldBy",
+      message: "It points at db, which is not a node.",
+    };
+    expect(lint(base, [up]).problems).toContainEqual(problem);
+    expect(lint(root, [up, db]).problems).toContainEqual(problem);
+  });
+
+  it("fails a note of an imported schema's folder that links up to the folder linted, as it fails alone", async () => {
+    const at = await mkdtemp(join(tmpdir(), "basis-owner-"));
+    made.push(at);
+    await mkdir(join(at, "base"));
+    await writeFile(
+      join(at, "base", "cap.md"),
+      '---\ntype: capability\ndescription: d\nheldBy: "[[db]]"\n---\n',
+    );
+    await writeFile(join(at, "db.md"), "---\ntype: app\ndescription: d\n---\n");
+    const below = defineSchema({
+      name: "below",
+      description: "d",
+      imports: [base],
+      types: {},
+      notes: pathToFileURL(`${at}/base/`),
+    });
+    const above = defineSchema({
+      name: "above",
+      description: "d",
+      imports: [below],
+      types: {},
+    });
+    const links = (problems: readonly { rule?: string }[]) =>
+      problems.filter((p) => p.rule === "basis/link");
+    expect(links((await lintFolder(above, at)).problems)).toEqual([
+      {
+        path: "base/cap.md",
+        rule: "basis/link",
+        field: "/heldBy",
+        message: "It points at db, which is not a node.",
+      },
+    ]);
+    expect(links((await lintFolder(below, join(at, "base"))).problems)).toEqual(
+      [
+        {
+          path: "cap.md",
+          rule: "basis/link",
+          field: "/heldBy",
+          message: "It points at db, which is not a node.",
+        },
+      ],
+    );
+  });
+
+  it("runs a rule of a type-only subgraph on a node owned above it, in that owner's composed graph", () => {
+    const seen: string[] = [];
+    const issue = defineType({
+      name: "issue",
+      description: "A piece of work.",
+      fields: { blocks: manyOrNone(() => node) },
+    });
+    const work = defineSchema({
+      name: "work",
+      description: "d",
+      types: { issue },
+      typeNotes: new URL("file:///nowhere/work/"),
+      rules: [
+        defineRule({
+          name: "reads",
+          description: "Reads the graph.",
+          on: issue,
+          check: (n, graph) => {
+            seen.push(`${n.name}: ${names(graph)}`);
+            return [];
+          },
+        }),
+      ],
+    });
+    const vault = defineSchema({
+      name: "vault",
+      description: "d",
+      imports: [work, base],
+      types: {},
+    });
+    const { problems } = lint(vault, [
+      piece(undefined, "fix.md", "fix", { type: "issue", blocks: ["db"] }),
+      piece("base", "base/db.ts", "db", { type: "app" }),
+    ]);
+    expect(problems).toEqual([]);
+    expect(seen).toEqual(["fix: db,fix"]);
+  });
+
+  it("never shows a rule a node above the owner of the node it runs on", () => {
+    const { problems } = lint(root, [
+      piece("base", "base/low.ts", "low", { type: "capability" }),
+      piece("left", "left/mid.ts", "mid", { type: "team" }),
+      piece("root", "root/top.ts", "top", { type: "capability" }, "2"),
+    ]);
+    expect(
+      problems
+        .filter((p) => p.rule === "base/sees")
+        .map((p) => [p.path, p.message]),
+    ).toEqual([
+      ["base/low.ts", "Sees low."],
+      ["root/top.ts", "Sees low,mid,top."],
+    ]);
+  });
+
+  it("gives get, in a rule, only a node of the owner's composed graph", () => {
+    const { problems } = lint(root, [
+      piece("base", "base/cap.ts", "cap", { type: "capability", heldBy: "db" }),
+      piece("right", "right/db.ts", "db", { type: "app" }),
+    ]);
+    expect(
+      problems.filter((p) => p.path === "base/cap.ts").map((p) => p.rule),
+    ).toEqual(["basis/link", "base/sees", "base/held"]);
+  });
+
+  it("does not merge the pieces of one name from two owners: each names the other, as a second node of the name", () => {
+    const low = piece("base", "base/a.md", "a", { type: "app" }, "notes");
+    const high: Piece = {
+      path: "root/a.ts",
+      name: "a",
+      source: "1",
+      fields: { type: "app", uses: ["a"] },
+    };
+    expect(
+      lint(root, [low, high]).problems.filter(
+        (p) => p.rule === "basis/unique-name",
+      ),
+    ).toEqual([
+      {
+        path: "base/a.md",
+        rule: "basis/unique-name",
+        message:
+          "The name a is also the name of root/a.ts (of root), in a graph base does not import: a name has one node in the composed graph.",
+      },
+      {
+        path: "root/a.ts",
+        rule: "basis/unique-name",
+        message: "The name a is also the name of base/a.md.",
+      },
+    ]);
+  });
+
+  it("gives two nodes of two owners with one key a problem on each, naming the other", () => {
+    expect(
+      lint(root, [
+        piece("left", "left/u.ts", "u", { type: "unit", code: "x" }),
+        piece("right", "right/v.ts", "v", { type: "unit", code: "x" }),
+      ]).problems.filter((p) => p.rule === "basis/key"),
+    ).toEqual([
+      {
+        path: "left/u.ts",
+        rule: "basis/key",
+        field: "/code",
+        message:
+          'The key code "x" of the type unit is also the key of right/v.ts (of right), in a graph left does not import.',
+      },
+      {
+        path: "right/v.ts",
+        rule: "basis/key",
+        field: "/code",
+        message:
+          'The key code "x" of the type unit is also the key of left/u.ts (of left), in a graph right does not import.',
+      },
+    ]);
+  });
+
+  it("parses a node by the types its owner sees, not by an extension above it", () => {
+    const fields = (
+      problems: readonly { path: string; rule?: string; field?: string }[],
+    ) =>
+      problems
+        .filter((p) => p.rule === "basis/fields")
+        .map((p) => [p.path, p.field]);
+    expect(
+      fields(
+        lint(root, [
+          piece("base", "base/db.ts", "db", { type: "app" }),
+          piece("left", "left/ui.ts", "ui", { type: "app" }),
+        ]).problems,
+      ),
+    ).toEqual([["left/ui.ts", "/tier"]]);
+  });
+
+  it("gives a piece that names no owner to the schema linted", () => {
+    expect(
+      lint(right, [
+        piece(undefined, "cap.ts", "cap", { type: "capability", heldBy: "db" }),
+        piece("right", "right/db.ts", "db", { type: "app" }, "2"),
+      ]).problems.filter((p) => p.rule === "basis/link"),
+    ).toEqual([]);
+  });
+
+  it("throws, naming its path, when a piece or a thing not read names an owner the lint does not see", () => {
+    const up = piece("left", "base/cap.ts", "cap", { type: "capability" });
+    expect(() => lint(right, [up])).toThrow(
+      "The piece at base/cap.ts names the owner left, which is no schema the lint of right sees: a piece's owner is the schema linted or one it imports.",
+    );
+    expect(() =>
+      lint(
+        right,
+        [],
+        [{ path: "x.md", name: "x", source: "notes", owner: "nowhere" }],
+      ),
+    ).toThrow(
+      "The thing at x.md, not read, names the owner nowhere, which is no schema the lint of right sees: a piece's owner is the schema linted or one it imports.",
+    );
+  });
+});
+
 describe("a link's own message", () => {
   // Like que's plugins: an op names one of its plugin's roles.
   const accessRole = defineType({

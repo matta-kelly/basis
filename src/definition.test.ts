@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -116,6 +116,24 @@ describe("the definition-piece rule", () => {
       root,
     );
     expect(ofRule(problems)).toEqual([]);
+  });
+
+  it("gives a problem for a marked definition of which only a source of a graph above the schema gives a piece", async () => {
+    const root = await folder();
+    await mkdir(join(root, "shop"));
+    const big = defineOrder({ name: "big", qty: 9 });
+    const above = defineSchema({
+      name: "above",
+      description: "d",
+      imports: [shop(join(root, "shop"), { big }, [])],
+      types: {},
+    });
+    const { problems } = await lintFolder(above, root, {
+      sources: [reading({ name: "big", qty: 9 })],
+    });
+    expect(ofRule(problems).map((p) => p.message)).toEqual([
+      "The export big of shop is the definition of the order big, and no source gives a piece of it: a source of the package gives a piece of each definition it exports.",
+    ]);
   });
 
   it("gives no problem for exports with no marked value", async () => {
