@@ -16,6 +16,7 @@ import {
   byPath,
   type FolderOptions,
   hiddenNotes,
+  isRoot,
   type Loaded,
   loadFolder,
   type Note,
@@ -1257,8 +1258,9 @@ async function definitionPieceProblems(
 
 /**
  * A folder, and each place of the schema's lint, loaded, with the pieces of each source and the code piece of each type,
- * linted as one graph: the schema, and each schema it imports. A folder another place holds is that place's, read once,
- * so an imported schema's folder inside the folder linted is read as that schema's. Gives the loader's and the sources'
+ * linted as one graph: the schema, and each schema it imports. A ground ends at a root below it: a folder another place
+ * reads is that place's, read once, so an imported schema's folder inside the folder linted is read as that schema's;
+ * and a folder that holds its own config is another graph's root, read only as a place of the lint. Gives the loader's and the sources'
  * problems and the lint's, in path order, each by its path from the folder linted, and the graph of every piece.
  */
 export async function lintFolder(
@@ -1286,13 +1288,20 @@ export async function lintFolder(
       (other) =>
         other.folder !== place.folder && within(place.folder, other.folder),
     );
-    // A folder another place reads is that place's: all in it, or, for a folder of type notes, its own notes.
-    const elsewhere = (path: string) =>
-      inner.some((other) =>
-        other.typeNotes
-          ? dirname(at(place, path)) === other.folder && path.endsWith(".md")
-          : within(other.folder, at(place, path)),
+    // A place's walk ends at a root below its top: a folder another place reads, or a folder that holds its own config,
+    // the root of another graph. What is below a root is that root's: read by its place, if the lint has one, and by no
+    // other. A folder of type notes is no root: only its own notes are its place's.
+    const elsewhere = (path: string) => {
+      const real = at(place, path);
+      return (
+        isRoot(real) ||
+        inner.some((other) =>
+          other.typeNotes
+            ? dirname(real) === other.folder && path.endsWith(".md")
+            : other.folder === real,
+        )
       );
+    };
     const skip = (path: string) =>
       (place.skip?.(path) ?? false) || elsewhere(path);
     let read: Loaded<Note, Unread>;

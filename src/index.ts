@@ -26,6 +26,7 @@ export type {
 } from "./primitives.ts";
 export { markDefinition, type Definition } from "./definition.ts";
 export {
+  configNames,
   loadFolder,
   readNote,
   type FolderOptions,
@@ -45,4 +46,4 @@ export {
   type LintResult,
   type Unread,
 } from "./lint.ts";
-export { configNames, run, type Config, type Out } from "./cli.ts";
+export { run, type Config, type Out } from "./cli.ts";

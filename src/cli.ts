@@ -8,7 +8,7 @@ import { existsSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { lintFolder } from "./lint.ts";
-import type { Source } from "./loader.ts";
+import { configNames, type Source } from "./loader.ts";
 import type { AnySchema } from "./primitives.ts";
 
 /** What the config of a folder exports by default: the schema its nodes are checked against, what is not a note, and where more pieces come from. */
@@ -22,9 +22,6 @@ export type Config = {
   /** The sources of pieces beside the folder's notes, as `lintFolder` takes them. */
   sources?: readonly Source[];
 };
-
-/** The names a config can have, in the order they are looked for. */
-export const configNames = ["basis.config.ts", "basis.config.js"] as const;
 
 /** Where the command writes: a line of its output, and a line of an error. */
 export type Out = {

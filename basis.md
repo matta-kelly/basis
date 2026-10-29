@@ -90,7 +90,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 			- no rule yet: `basis/link` resolves a link against every node linted, and a rule sees every node linted
 	- a subgraph is the same inside a graph as alone: a graph has a subgraph only through the subgraph's schema, once, and never reads its ground
 		- each note has one owner: one graph's ground holds it, and a ground ends at a nested root: a folder with its own `basis.config`, as a BUILD file ends a Bazel package and a `go.mod` a Go module. Where a file lies on disk does not make it part of a graph; an import does
-			- no rule yet: a ground does not end at a subgraph's root: a package inside another's folder is set apart by its import ([[basis-graph]], package), and the outermost graph's skip stands in for the rest
+			- rule: `lintFolder` and the CLI. The walk of each folder the lint reads ends at a root below its top: a folder that another place of the lint reads (an imported schema's notes), or a folder with its own `basis.config.ts` or `.js`. A root below is read only as a place of the lint, once, as its schema's; a nested root that no schema the lint sees names is not read. The folder linted is a root with its config at its top, so its walk ends only below it ([[basis-graph]], ground)
 		- a skip leaves out only what is not a note: a file whose frontmatter has a `type` is a note, so a skip that names one fails
 			- rule: `basis/skip`
 		- a second copy of a subgraph's notes is two nodes of one name
@@ -126,7 +126,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 
 - validation: the check that the specification gives what the intent asks for. Does the rule set say all that "each real thing is defined once" means?
 - what the rule set does not say ([[#Invariants]])
-	- the invariants with no rule yet: a graph stands alone; a node's links and rules resolve only in the graph that owns it; a ground ends at a nested root; every push lints the graph whose ground it changes
+	- the invariants with no rule yet: a graph stands alone; a node's links and rules resolve only in the graph that owns it; every push lints the graph whose ground it changes
 	- transitions: basis checks one state of the graph, never a move from one state to the next. No rule can say what a change may do
 - what basis leaves to its schemas: an invariant about what only a schema defines. The schema that owns it states it and holds it, with its own rule or by how it builds it; basis does not check it
 	- a relation is stated once: one link, on one node, and its reverse comes from the graph, not from a second link. Only a schema knows that two of its links state one relation, so a schema that states a relation holds this with its own rule over the graph. A schema that states a relation twice and writes no rule is not caught

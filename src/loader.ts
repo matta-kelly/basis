@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { open, readdir, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { parseDocument } from "yaml";
@@ -130,6 +131,13 @@ export function readNote(path: string, file: string): Read {
     },
   };
 }
+
+/** The names a config can have, in the order they are looked for. A folder that holds one is the root of a graph. */
+export const configNames = ["basis.config.ts", "basis.config.js"] as const;
+
+/** Whether a folder is the root of a graph: it holds a config, by one of `configNames`. */
+export const isRoot = (folder: string) =>
+  configNames.some((name) => existsSync(join(folder, name)));
 
 /** What a folder read leaves out, beside each file and folder whose name starts with a dot. */
 export type FolderOptions = {

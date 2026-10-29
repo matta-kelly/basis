@@ -1,6 +1,6 @@
 {
   "name": "@mku1tra/it",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "The kinds of notes Matt keeps, as types on basis: ideas and things, each with a type note that says when to use it.",
   "license": "MIT",
   "repository": {
@@ -33,7 +33,7 @@
     "@mku1tra/basis": "file:.."
   },
   "peerDependencies": {
-    "@mku1tra/basis": "^0.25.0",
+    "@mku1tra/basis": "^0.26.0",
     "zod": "^4.6.0"
   },
   "publishConfig": {
