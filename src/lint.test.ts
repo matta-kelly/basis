@@ -403,7 +403,10 @@ describe("the lint of a schema that imports another", () => {
       imports: [core],
       types: {
         capability: extendType(core.types.capability, {
-          fields: { stage: z.string(), heldBy: one(() => core.types.agent) },
+          fields: {
+            stage: z.string().optional(),
+            heldBy: oneOrNone(() => core.types.agent),
+          },
         }),
         review: defineType({
           name: "review",
@@ -450,16 +453,14 @@ describe("the lint of a schema that imports another", () => {
   });
 
   it("parses a note of an extended type by the extension, and a note of an imported type by its own", () => {
-    expect(lint(company, changed(ship, { stage: undefined })).problems).toEqual(
-      [
-        {
-          path: "ship.md",
-          rule: "basis/fields",
-          field: "/stage",
-          message: expect.stringMatching(/^Missing: /),
-        },
-      ],
-    );
+    expect(lint(company, changed(ship, { stage: "bogus" })).problems).toEqual([
+      {
+        path: "ship.md",
+        rule: "basis/fields",
+        field: "/stage",
+        message: expect.stringMatching(/^Invalid option/),
+      },
+    ]);
     expect(lint(company, changed(ana, { role: undefined })).problems).toEqual([
       {
         path: "ana.md",
@@ -529,20 +530,32 @@ describe("the lint of a schema that imports another", () => {
 });
 
 describe("the lint of a type with a key", () => {
-  // Like one company's capability on que's: one capability for each agent and its name there.
+  // Like one company's capability: one capability for each agent and its name there.
+  const agent = defineType({
+    name: "agent",
+    description: "d",
+    fields: { role: z.string().min(1) },
+  });
+  const capability = defineType({
+    name: "capability",
+    description: "d",
+    fields: {
+      title: z.string().min(1),
+      heldBy: one(() => agent),
+      localName: z.string().min(1),
+    },
+    key: ["heldBy", "localName"],
+  });
+  const kase = defineType({
+    name: "case",
+    description: "d",
+    fields: { capability: one(() => capability) },
+  });
   const keyed = defineSchema({
     name: "keyed",
     description: "d",
-    imports: [core],
-    types: {
-      capability: extendType(core.types.capability, {
-        fields: {
-          heldBy: one(() => core.types.agent),
-          localName: z.string().min(1),
-        },
-        key: ["heldBy", "localName"],
-      }),
-    },
+    types: { agent, capability, case: kase },
+    typeNotes,
   });
   const agentNote = (name: string) =>
     note(`${name}.md`, { type: "agent", description: "d", role: "r" });
@@ -897,7 +910,9 @@ describe("the lint of a type note, in a schema that imports an extension of the 
   const owned = defineSchema({
     name: "owned",
     description: "d",
-    types: { type: extendType(type, { fields: { owner: z.string() } }) },
+    types: {
+      type: extendType(type, { fields: { owner: z.string().optional() } }),
+    },
   });
   const above = defineSchema({
     name: "above",
@@ -919,14 +934,18 @@ describe("the lint of a type note, in a schema that imports an extension of the 
 
   it("parses a type note by the extension, with or without an import of basis", () => {
     for (const schema of [above, withBasis]) {
-      expect(lint(schema, [typeNote]).problems).toEqual([
+      expect(
+        lint(schema, [edit(typeNote, { ...typeNote.fields, owner: 1 })])
+          .problems,
+      ).toEqual([
         {
           path: "source.md",
           rule: "basis/fields",
           field: "/owner",
-          message: expect.stringMatching(/^Missing: /),
+          message: expect.stringMatching(/^Invalid input/),
         },
       ]);
+      expect(lint(schema, [typeNote]).problems).toEqual([]);
       expect(lint(schema, [ownedNote]).problems).toEqual([]);
     }
   });
@@ -2108,7 +2127,9 @@ describe("the one-definition rule", () => {
       name: "extended",
       description: "d",
       imports: [base],
-      types: { order: extendType(order, { fields: { note: z.string() } }) },
+      types: {
+        order: extendType(order, { fields: { note: z.string().optional() } }),
+      },
       exports: () => ({ OrderSchema: order.schema }),
     });
     const { problems } = await lintFolder(extended, root);
@@ -2877,7 +2898,7 @@ describe("a node in the composed graph of the graph that owns it", () => {
     fields: { lead: oneOrNone(() => capability) },
   });
   // left extends base's app: a node of base is still base's app.
-  const tiered = extendType(app, { fields: { tier: z.string() } });
+  const tiered = extendType(app, { fields: { tier: z.string().optional() } });
   const left = defineSchema({
     name: "left",
     description: "d",
@@ -2938,16 +2959,24 @@ describe("a node in the composed graph of the graph that owns it", () => {
       note: fc.boolean(),
       at: fc.constantFrom("p", "q"),
       type: fc.constantFrom("app", "capability", "team", "site", "unit"),
-      description: fc.boolean(),
+      // Mostly given, so most pieces parse and the rules read them.
+      description: fc.oneof(
+        { arbitrary: fc.constant(true), weight: 4 },
+        { arbitrary: fc.constant(false), weight: 1 },
+      ),
       many: fc.subarray(["a", "b", "c"]),
-      one: fc.option(nameOf, { nil: undefined }),
+      one: fc.option(nameOf, { nil: undefined, freq: 4 }),
       code: fc.constantFrom("x", "y"),
       tier: fc.boolean(),
     });
+    // Mostly notes, which share a name with a note of another graph: a note not read can be a second note of a name.
     const unreadOf = fc.record({
       owner: fc.constantFrom<Owner | undefined>(...owners, undefined),
       name: nameOf,
-      note: fc.boolean(),
+      note: fc.oneof(
+        { arbitrary: fc.constant(true), weight: 3 },
+        { arbitrary: fc.constant(false), weight: 1 },
+      ),
     });
     const toPiece = (
       p: typeof pieceOf extends fc.Arbitrary<infer T> ? T : never,
@@ -3002,7 +3031,7 @@ describe("a node in the composed graph of the graph that owns it", () => {
     fc.assert(
       fc.property(
         fc.array(pieceOf, { maxLength: 10 }).map((ps) => ps.map(toPiece)),
-        fc.array(unreadOf, { maxLength: 2 }).map((us) => us.map(toUnread)),
+        fc.array(unreadOf, { maxLength: 3 }).map((us) => us.map(toUnread)),
         (pieces, unread) => {
           const composed = lint(root, pieces, unread).problems;
           for (const owner of owners) {
@@ -3031,6 +3060,8 @@ describe("a node in the composed graph of the graph that owns it", () => {
           }
         },
       ),
+      // 100 runs miss a get that counts nodes of every graph; 3000 catch it, in a few seconds.
+      { numRuns: 3000 },
     );
   });
 
@@ -3219,11 +3250,98 @@ describe("a node in the composed graph of the graph that owns it", () => {
     expect(
       fields(
         lint(root, [
-          piece("base", "base/db.ts", "db", { type: "app" }),
-          piece("left", "left/ui.ts", "ui", { type: "app" }),
+          piece("base", "base/db.ts", "db", { type: "app", tier: "t" }),
+          piece("left", "left/ui.ts", "ui", { type: "app", tier: "t" }),
         ]).problems,
       ),
-    ).toEqual([["left/ui.ts", "/tier"]]);
+    ).toEqual([["base/db.ts", "/tier"]]);
+  });
+
+  it("reads a node below in a graph above by the extension that graph sees: a node that fits its owner's type fits it", () => {
+    const seen: unknown[] = [];
+    const reads = defineSchema({
+      name: "reads",
+      description: "d",
+      imports: [left],
+      types: {},
+      rules: [
+        defineRule({
+          name: "reads",
+          description: "Reads base's app as left extends it.",
+          on: team,
+          check: (_n, graph) => {
+            seen.push(graph.get("db", tiered), graph.all(tiered).length);
+            return [];
+          },
+        }),
+      ],
+    });
+    expect(
+      lint(reads, [
+        piece("base", "base/db.ts", "db", { type: "app" }),
+        piece(undefined, "crew.ts", "crew", { type: "team" }),
+      ]).problems,
+    ).toEqual([]);
+    expect(seen).toEqual([{ name: "db", type: "app", description: "d" }, 1]);
+  });
+
+  it("gives get, in a rule below, its own node of a name a sibling graph also holds", () => {
+    expect(
+      lint(root, [
+        piece("base", "base/c.md", "c", { type: "app" }, "notes"),
+        piece("base", "base/k.ts", "k", { type: "capability", heldBy: "c" }),
+        piece("right", "right/c.ts", "c", { type: "app" }),
+      ]).problems.filter((p) => p.path === "base/k.ts"),
+    ).toEqual([{ path: "base/k.ts", rule: "base/sees", message: "Sees c,k." }]);
+  });
+
+  it("gives get, in a rule below, its own node of a name of which a graph above holds a note it could not read", () => {
+    expect(
+      lint(
+        root,
+        [
+          piece("base", "base/c.md", "c", { type: "app" }, "notes"),
+          piece("base", "base/k.ts", "k", { type: "capability", heldBy: "c" }),
+        ],
+        [{ path: "root/c.md", name: "c", source: "notes", owner: "root" }],
+      ).problems.filter((p) => p.path === "base/k.ts"),
+    ).toEqual([{ path: "base/k.ts", rule: "base/sees", message: "Sees c,k." }]);
+  });
+
+  // A type note, as the loader gives it: its code gives description and abstract.
+  const typeNote = (owner: Owner, name: string): Piece => ({
+    path: `${owner}/types/${name}.md`,
+    name,
+    fields: { type: "type" },
+    source: "notes",
+    body: "",
+    owner,
+  });
+
+  it("joins a type note to its type's code piece, of the note's owner, in a graph that imports the type", () => {
+    expect(lint(root, [typeNote("left", "capability")]).problems).toEqual([]);
+  });
+
+  it("joins no code piece to a type note in a graph that does not see its type, and gives no clash of owners", () => {
+    expect(
+      lint(root, [typeNote("right", "team")]).problems.map((p) => [
+        p.path,
+        p.rule,
+        p.field,
+      ]),
+    ).toEqual([["right/types/team.md", "basis/fields", "/description"]]);
+  });
+
+  it("joins each of two type notes of one name in sibling graphs to its own code piece", () => {
+    expect(
+      lint(root, [
+        typeNote("left", "app"),
+        typeNote("right", "app"),
+      ]).problems.map((p) => [p.path, p.rule]),
+    ).toEqual([
+      ["left/types/app.md", "basis/unique-name"],
+      ["right/types/app.md", "basis/unique-name"],
+    ]);
   });
 
   it("gives a piece that names no owner to the schema linted", () => {

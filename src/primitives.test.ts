@@ -769,9 +769,32 @@ describe("a type with a key", () => {
 });
 
 describe("a type that extends a type", () => {
+  it("is refused with a field a node can not leave out, made without TypeScript: a node of the type it extends would not fit it", () => {
+    for (const [field, schema] of [
+      ["stage", z.string()],
+      ["heldBy", one(() => agent)],
+      ["touches", many(() => agent)],
+      ["level", z.number().default(1)],
+    ] as const)
+      expect(() =>
+        extendType(capability, { fields: { [field]: schema } } as never),
+      ).toThrow(
+        `The extension of capability adds ${field}, which a node must give: each field an extension adds is one a node can leave out (optional, oneOrNone, manyOrNone), so each node of the type it extends fits it.`,
+      );
+    expect(() =>
+      extendType(capability, {
+        fields: {
+          stage: z.string().optional(),
+          heldBy: oneOrNone(() => agent),
+          touches: manyOrNone(() => agent),
+        },
+      }),
+    ).not.toThrow();
+  });
+
   const keyedCapability = extendType(capability, {
-    fields: { stage: z.string() },
-    key: ["title", "stage"],
+    fields: { stage: z.string().optional() },
+    key: ["title"],
   });
   // A schema made by code without types: the compiler refuses an extension of a type core does not hold.
   const withCapability = (type: Type) =>
@@ -782,19 +805,19 @@ describe("a type that extends a type", () => {
       types: { capability: type },
     } as unknown as Parameters<typeof defineSchema>[0]);
 
-  it("can add a key over its own fields and the extended type's, when that type has none", () => {
-    expect(keyedCapability.key).toEqual(["title", "stage"]);
+  it("can add a key over the extended type's fields, when that type has none", () => {
+    expect(keyedCapability.key).toEqual(["title"]);
     expect(capability.key).toEqual([]);
     expect(() => withCapability(keyedCapability)).not.toThrow();
   });
 
   it("has the key of the type it extends, and is refused with another, made without TypeScript", () => {
     const deeper = extendType(keyedCapability, {
-      fields: { budget: z.number() },
+      fields: { budget: z.number().optional() },
     });
-    expect(deeper.key).toEqual(["title", "stage"]);
+    expect(deeper.key).toEqual(["title"]);
     const changed = extendType(keyedCapability, {
-      fields: { budget: z.number() },
+      fields: { budget: z.number().optional() },
       key: ["budget"] as never,
     });
     expect(() => withCapability(changed)).toThrow(
@@ -918,7 +941,7 @@ describe("a schema that imports another", () => {
   it("is refused with an extension that has a field of the type it extends, made without TypeScript", () => {
     for (const field of ["title", "description", "type"]) {
       const over = extendType(capability, {
-        fields: { [field]: z.string() } as Record<string, never>,
+        fields: { [field]: z.string().optional() } as Record<string, never>,
       });
       expect(() =>
         untyped({
@@ -1026,7 +1049,9 @@ describe("a schema that imports another", () => {
       description: "d",
       imports: [core],
       types: {
-        capability: extendType(capability, { fields: { budget: z.number() } }),
+        capability: extendType(capability, {
+          fields: { budget: z.number().optional() },
+        }),
       },
     });
     expect(() =>
@@ -1347,7 +1372,7 @@ describe("the built-in type type", () => {
     const extended = extendType(
       node as never,
       {
-        fields: { owner: z.string() },
+        fields: { owner: z.string().optional() },
       } as never,
     );
     expect(() =>

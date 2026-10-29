@@ -517,13 +517,13 @@ describe("the lint of rules", () => {
 
   it("does not run a rule on an extension on a type that inherits the type extended, which does not have the extension's fields", () => {
     const colouredObject = extendType(object, {
-      fields: { colour: z.string() },
+      fields: { colour: z.string().optional() },
     });
     const coloured = defineRule({
       name: "coloured",
       description: "d",
       on: colouredObject,
-      check: (node) => [{ message: `It is ${node.colour}.` }],
+      check: (node) => [{ message: `It is ${String(node.colour)}.` }],
     });
     const ext = defineSchema({
       name: "ext",

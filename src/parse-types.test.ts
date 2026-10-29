@@ -230,8 +230,8 @@ describe("a type that extends another, in a schema that imports it", () => {
       description: string;
       type: "capability";
       title: string;
-      stage: "idea" | "live";
-      heldBy: string;
+      stage?: "idea" | "live" | undefined;
+      heldBy?: string | undefined;
     }>();
     expectTypeOf(companyCapability.name).toEqualTypeOf<"capability">();
     expectTypeOf(companyCapability.extends).toEqualTypeOf(capability);
@@ -247,12 +247,13 @@ describe("a type that extends another, in a schema that imports it", () => {
   });
 
   it("is refused by the compiler with a field the extended type has, its own or one every node has", () => {
+    const optional = z.string().optional();
     void (() =>
       // @ts-expect-error: capability has title (the field's type is never).
-      extendType(capability, { fields: { title: z.number() } }));
+      extendType(capability, { fields: { title: z.number().optional() } }));
     void (() =>
       // @ts-expect-error: every node has description (the field's type is never).
-      extendType(capability, { fields: { description: z.string() } }));
+      extendType(capability, { fields: { description: optional } }));
   });
 
   it("is refused by the compiler in a schema that does not import the type it extends", () => {
@@ -285,19 +286,23 @@ describe("a type that extends another, in a schema that imports it", () => {
       description: "d",
       imports: [company],
       types: {
-        agent: extendType(core.types.agent, { fields: { level: z.number() } }),
+        agent: extendType(core.types.agent, {
+          fields: { level: z.number().optional() },
+        }),
       },
     });
     expectTypeOf(parserOf(deep, "agent"))
       .returns.toHaveProperty("level")
-      .toEqualTypeOf<number>();
+      .toEqualTypeOf<number | undefined>();
   });
 
   it("takes the built-in type, which every schema sees without an import", () => {
     const typed = defineSchema({
       name: "typed",
       description: "d",
-      types: { type: extendType(type, { fields: { owner: z.string() } }) },
+      types: {
+        type: extendType(type, { fields: { owner: z.string().optional() } }),
+      },
     });
     expectTypeOf(parserOf(typed, "type"))
       .returns.toHaveProperty("abstract")
@@ -305,7 +310,12 @@ describe("a type that extends another, in a schema that imports it", () => {
   });
 
   it("is refused by the compiler for an extension of an extension of the built-in type, in a schema that does not import it", () => {
-    const owned = extendType(type, { fields: { owner: z.string() } });
+    const owned = extendType(type, {
+      fields: { owner: z.string().optional() },
+    });
+    const teamed = extendType(owned, {
+      fields: { team: z.string().optional() },
+    });
     defineSchema({
       name: "owned",
       description: "d",
@@ -316,7 +326,7 @@ describe("a type that extends another, in a schema that imports it", () => {
         name: "p",
         description: "d",
         // @ts-expect-error: no schema of p's imports holds owned, which this type extends.
-        types: { type: extendType(owned, { fields: { team: z.string() } }) },
+        types: { type: teamed },
       }));
     void (() =>
       defineSchema({
@@ -324,7 +334,7 @@ describe("a type that extends another, in a schema that imports it", () => {
         description: "d",
         imports: [core],
         // @ts-expect-error: as above; core holds no type.
-        types: { type: extendType(owned, { fields: { team: z.string() } }) },
+        types: { type: teamed },
       }));
   });
 
@@ -415,27 +425,43 @@ describe("a type's key", () => {
     void t;
   });
 
-  it("takes, on an extension, its own fields and the extended type's, and is refused by the compiler when that type has a key", () => {
+  it("takes, on an extension, the extended type's fields, and is refused by the compiler for its own, which a note can leave out, or when that type has a key", () => {
     const keyed = extendType(capability, {
-      fields: { stage: z.string() },
-      key: ["title", "stage"],
+      fields: { stage: z.string().optional() },
+      key: ["title"],
     });
     void (() =>
       extendType(capability, {
-        fields: { stage: z.string(), budget: z.number().optional() },
+        fields: { stage: z.string().optional() },
         key: [
-          // @ts-expect-error: a note can leave budget out.
-          "budget",
+          // @ts-expect-error: a note can leave stage out.
+          "stage",
           // @ts-expect-error: description is a field every node has.
           "description",
         ],
       }));
     void (() =>
       extendType(keyed, {
-        fields: { level: z.number() },
+        fields: { level: z.number().optional() },
         // @ts-expect-error: keyed has a key: extend, never override.
         key: ["level"],
       }));
+  });
+
+  it("is refused by the compiler with a field a node cannot leave out", () => {
+    void (() =>
+      // @ts-expect-error: a node of capability below gives no stage.
+      extendType(capability, { fields: { stage: z.string() } }));
+    void (() =>
+      // @ts-expect-error: a one link needs a name.
+      extendType(capability, { fields: { heldBy: one(() => agent) } }));
+    void extendType(capability, {
+      fields: {
+        stage: z.string().optional(),
+        heldBy: oneOrNone(() => agent),
+        touches: manyOrNone(() => agent),
+      },
+    });
   });
 
   it("adds no second description of a type: the key names fields of its schema", () => {

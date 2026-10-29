@@ -1,7 +1,13 @@
 // Two schemas for the tests, one on the other: core, like que's ontology, and company, like one company's own,
 // which imports core, extends its capability and links to its agent.
 import * as z from "zod";
-import { defineSchema, defineType, extendType, one } from "../src/index.ts";
+import {
+  defineSchema,
+  defineType,
+  extendType,
+  one,
+  oneOrNone,
+} from "../src/index.ts";
 import { fixture } from "./notes.ts";
 
 export const agent = defineType({
@@ -32,9 +38,9 @@ export const core = defineSchema({
 
 export const companyCapability = extendType(core.types.capability, {
   fields: {
-    stage: z.enum(["idea", "live"]),
+    stage: z.enum(["idea", "live"]).optional(),
     // The agent that holds it.
-    heldBy: one(() => core.types.agent),
+    heldBy: oneOrNone(() => core.types.agent),
   },
 });
 
