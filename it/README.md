@@ -4,7 +4,7 @@ The kinds of notes Matt keeps, as types on [basis](https://www.npmjs.com/package
 
 ## Install
 
-`npm install @mku1tra/it @mku1tra/basis zod`, in plain Node, 22.18 or later. basis (`^0.29.0`) and zod (`^4.6.0`) are peers: the project gives one copy of each.
+`npm install @mku1tra/it @mku1tra/basis zod`, in plain Node, 22.18 or later. basis (`^0.30.0`) and zod (`^4.6.0`) are peers: the project gives one copy of each.
 
 ## Use
 

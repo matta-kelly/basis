@@ -38,5 +38,5 @@ export {
   type Source,
 } from "./loader.ts";
 export { coreRules, pointer, type LintResult } from "./lint.ts";
-export { lintRoot, type Config } from "./root.ts";
+export { lintRoot, rootOf, type Config } from "./root.ts";
 export { run, type Out } from "./cli.ts";

@@ -118,7 +118,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 - [[basis-lint]]: the lint: a linter over one graph, from pieces to problems and the graph it checked; parse, don't validate
 - [[basis-lint-rules]]: the layers of the lint rules, from shape to convention, each with its rule id and its blind spots
 - [[basis-problem]]: a problem the lint gives: its path, rule, field, message and fatal flag, and its severity (not built)
-- [[basis-front-ends]]: the lint of a root, `lintRoot(folder)` and the CLI `basis lint [root]`, and its config and exit codes; an Obsidian plugin is not built
+- [[basis-front-ends]]: the lint of a root, `lintRoot(folder)` (with `rootOf(folder)`, the root that holds a folder) and the CLI `basis lint [root]`, and its config and exit codes; an Obsidian plugin is not built
 
 ### Internal verification
 
@@ -164,5 +164,5 @@ An invariant is a property true in every state. One with a rule is checked; one 
 	- prior art: NixOS module merging
 2. loader: basis's own source. A folder in, notes out, each a piece of a node (path, name, fields) of the source `notes`, with its body. Each note it could not read is of the source `notes` too, so what it gives goes to the lint's core as it is. A `skip` option leaves out the paths that are not notes, such as a README or code. It also finds the notes a skip leaves out, by their frontmatter, for `basis/skip`
 3. lint: a schema and the pieces in, problems and the graph out: the pieces merged into nodes, each node checked in the composed graph of its owner, then the rule layers, the rules of each schema it sees last. Its core (`lint`) and the lint of a folder (`lintFolder`), which reads a folder's notes, the notes and sources of each schema it sees, and each folder of type notes, are inside the package. The lint merges each type note with its type's code piece
-4. root: `lintRoot(folder)`, the one lint basis exports: it reads the root's config, refuses a folder that is no root, and lints the root's folder with its schema, as the lint of a folder
+4. root: `lintRoot(folder)`, the one lint basis exports: it reads the root's config, refuses a folder that is no root, and lints the root's folder with its schema, as the lint of a folder. And `rootOf(folder)`, the root whose ground holds a folder, or none: the one walk up, which the lint uses and a tool that lints from a folder calls, so no package copies it
 5. cli: `basis lint [root]`, `lintRoot` on the command line. The one command a person, a hook and a pipeline run

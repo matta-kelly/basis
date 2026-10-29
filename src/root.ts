@@ -7,6 +7,7 @@
  * caller chooses a scope, so a graph is linted the same way by each tool that lints it.
  */
 
+import { realpathSync } from "node:fs";
 import { realpath } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -72,13 +73,20 @@ async function configOf(folder: string): Promise<Config> {
 }
 
 /**
- * The root whose ground holds a folder, by its real path: walking up from the folder, the first folder that holds a
- * config. None when the walk meets none, or when the path has a part named node_modules: node_modules is in no graph's
- * ground, and a config there is never read.
+ * The root whose ground holds `folder`, as its real path: walking up from the folder's real path, the folder itself
+ * first, the first folder that holds a config (basis.config.ts or basis.config.js). A folder that is not there is
+ * walked as named. None when the walk meets no config, or when the real path has a part named node_modules:
+ * node_modules is in no graph's ground, and a config there is never read. The lint finds a ground's root by this walk.
  */
-function rootHolding(folder: string): string | undefined {
-  if (inNodeModules(folder)) return undefined;
-  for (let at = folder; ; at = dirname(at)) {
+export function rootOf(folder: string): string | undefined {
+  let real = resolve(folder);
+  try {
+    real = realpathSync(real);
+  } catch {
+    // A folder that is not there is walked as named.
+  }
+  if (inNodeModules(real)) return undefined;
+  for (let at = real; ; at = dirname(at)) {
     if (configFileOf(at)) return at;
     if (dirname(at) === at) return undefined;
   }
@@ -98,7 +106,7 @@ async function groundsHold(schema: AnySchema): Promise<void> {
       [owner.typeNotes, "type notes"],
     ] as const) {
       const folder = await namedFolder(url);
-      const root = folder && rootHolding(folder);
+      const root = folder && rootOf(folder);
       if (!root) continue;
       const own = (await configOf(root)).schema;
       if (own === owner) continue;
