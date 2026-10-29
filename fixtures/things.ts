@@ -8,6 +8,7 @@ import {
   Name,
   one,
 } from "../src/index.ts";
+import { fixture } from "./notes.ts";
 
 export const source = defineType({
   name: "source",
@@ -50,5 +51,5 @@ export default defineSchema({
   name: "things",
   description: "What exists, and where.",
   types: { source, object, "external-object": externalObject },
-  typeNotes: new URL("./types/things/", import.meta.url),
+  typeNotes: fixture("types/things/"),
 });

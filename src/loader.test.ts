@@ -10,9 +10,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { fixture } from "../fixtures/notes.ts";
 import { loadFolder, readNote } from "./index.ts";
 
-const folder = fileURLToPath(new URL("../fixtures/loader", import.meta.url));
+const folder = fileURLToPath(fixture("loader"));
 
 // The folders the tests make, and the paths they lock, undone after each test.
 const made: string[] = [];

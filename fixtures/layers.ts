@@ -2,6 +2,7 @@
 // which imports core, extends its capability and links to its agent.
 import * as z from "zod";
 import { defineSchema, defineType, extendType, one } from "../src/index.ts";
+import { fixture } from "./notes.ts";
 
 export const agent = defineType({
   name: "agent",
@@ -26,7 +27,7 @@ export const core = defineSchema({
   name: "core",
   description: "Agents, capabilities and their cases.",
   types: { agent, capability, case: kase },
-  typeNotes: new URL("./types/core/", import.meta.url),
+  typeNotes: fixture("types/core/"),
 });
 
 export const companyCapability = extendType(core.types.capability, {

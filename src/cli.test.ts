@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { fixture } from "../fixtures/notes.ts";
 import { run } from "./index.ts";
 
 const things = fileURLToPath(new URL("../fixtures/things.ts", import.meta.url));
@@ -75,9 +76,7 @@ describe("basis lint", () => {
     const root = await folderOf({
       "basis.config.ts": `import kitchen from ${JSON.stringify(kitchen)};\nexport default { schema: kitchen };\n`,
     });
-    const bun = fileURLToPath(
-      new URL("../fixtures/types/kitchen/bun.md", import.meta.url),
-    );
+    const bun = fileURLToPath(fixture("types/kitchen/bun.md"));
     const { code, log } = await cli(["lint"], root);
     expect(code).toBe(1);
     expect(log).toContain(

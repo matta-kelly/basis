@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import * as z from "zod";
 import * as zm from "zod/mini";
 import kitchen from "../fixtures/kitchen.ts";
+import { fixture } from "../fixtures/notes.ts";
 import { company, core } from "../fixtures/layers.ts";
 import { typeNotes } from "../fixtures/types.ts";
 import things, { externalObject, object, source } from "../fixtures/things.ts";
@@ -942,7 +943,7 @@ describe("the lint of a type with no key", () => {
 describe("a folder", () => {
   it("is linted with the loader's problems and the lint's, in path order, and a link to a note the loader could not read is not a problem", async () => {
     // oven.md cannot be read, and loaf.md, which is right, links to it.
-    const folder = fileURLToPath(new URL("../fixtures/lint", import.meta.url));
+    const folder = fileURLToPath(fixture("lint"));
     const problems = (await lintFolder(things, folder)).problems;
     expect(problems.map((p) => p.path)).toEqual([
       "bun.md",
@@ -1299,7 +1300,7 @@ describe("the sources of a folder", () => {
       description: "Shelves.",
       types: { shelf },
       imports: [things],
-      typeNotes: new URL("../fixtures/types/kept/", import.meta.url),
+      typeNotes: fixture("types/kept/"),
       rules: [reads],
     });
     await writeFile(
@@ -1363,11 +1364,9 @@ describe("the sources of a folder", () => {
 });
 
 describe("the type notes of a folder", () => {
-  // Under fixtures/types: the folders of things, core and kitchen.
-  const types = fileURLToPath(new URL("../fixtures/types", import.meta.url));
-  const kitchenNotes = fileURLToPath(
-    new URL("../fixtures/types/kitchen/", import.meta.url),
-  );
+  // Under types: the folders of things, core and kitchen.
+  const types = fileURLToPath(fixture("types"));
+  const kitchenNotes = fileURLToPath(fixture("types/kitchen/"));
 
   it("gives no problem when each type a schema owns, abstract or not, has its note in the folder the schema declares, and an extension has none", async () => {
     // company imports core and extends its capability, and declares no folder.
@@ -1481,11 +1480,15 @@ describe("the type notes of a folder", () => {
   });
 
   it("gives a problem for a type note in the folder it lints that is in the folder of no schema it sees", async () => {
+    // basis's own type notes, in this repo, by their path from the folder it lints.
+    const basisNotes = relative(
+      types,
+      fileURLToPath(new URL("../types", import.meta.url)),
+    );
     expect((await lintFolder(kitchen, types)).problems).toContainEqual({
       path: "things/source.md",
       rule: "basis/type-note-folder",
-      message:
-        "A type note outside the folder of the type notes of each schema the lint sees: move it to the folder of its schema, one of ../../types, kitchen.",
+      message: `A type note outside the folder of the type notes of each schema the lint sees: move it to the folder of its schema, one of ${basisNotes}, kitchen.`,
     });
   });
 
@@ -1494,7 +1497,7 @@ describe("the type notes of a folder", () => {
       name: "away",
       description: "d",
       types: { bun: defineType({ name: "bun", description: "d", fields: {} }) },
-      typeNotes: new URL("../fixtures/types/away/", import.meta.url),
+      typeNotes: fixture("types/away/"),
     });
     expect((await lintFolder(away, types)).problems).toContainEqual({
       path: "away/bun.md",

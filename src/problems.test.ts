@@ -16,6 +16,7 @@ import ajvDraft04 from "ajv-draft-04";
 import { describe, expect, it } from "vitest";
 import * as z from "zod";
 import kitchen from "../fixtures/kitchen.ts";
+import { fixture } from "../fixtures/notes.ts";
 import things, { object, source } from "../fixtures/things.ts";
 import {
   coreRules,
@@ -37,8 +38,7 @@ const note = (path: string, fields: Record<string, unknown>): Note => ({
   source: "notes",
 });
 
-const fixture = (path: string) =>
-  fileURLToPath(new URL(`../fixtures/${path}`, import.meta.url));
+const fixturePath = (path: string) => fileURLToPath(fixture(path));
 
 const ledger = note("ledger.md", {
   type: "source",
@@ -79,7 +79,7 @@ const shop = defineSchema({
   description: "things, with a keyed type, an abstract type and a rule.",
   imports: [things],
   types: { stamp, grain },
-  typeNotes: new URL("../fixtures/types/shop/", import.meta.url),
+  typeNotes: fixture("types/shop/"),
   rules: [inRecord],
 });
 
@@ -134,13 +134,13 @@ async function everyProblem(): Promise<Problem[]> {
   return [
     ...(await unreadable()),
     ...lint(shop, [...notes, bareInCode]).problems,
-    ...(await lintFolder(kitchen, fixture("types"))).problems,
-    ...(await lintFolder(things, fixture("loader"))).problems,
-    ...(await lintFolder(things, fixture("lint"))).problems,
-    ...(await lintFolder(exporting, fixture("lint"))).problems,
+    ...(await lintFolder(kitchen, fixturePath("types"))).problems,
+    ...(await lintFolder(things, fixturePath("loader"))).problems,
+    ...(await lintFolder(things, fixturePath("lint"))).problems,
+    ...(await lintFolder(exporting, fixturePath("lint"))).problems,
     // A skip that names a note.
     ...(
-      await lintFolder(things, fixture("lint"), {
+      await lintFolder(things, fixturePath("lint"), {
         skip: (path) => path === "bun.md",
       })
     ).problems,
@@ -313,7 +313,7 @@ describe("a problem", () => {
 
   it("has no rule and no field when its note cannot be read", async () => {
     const unread = (
-      await lintFolder(things, fixture("loader"))
+      await lintFolder(things, fixturePath("loader"))
     ).problems.filter((problem) => problem.rule === undefined);
     expect(unread.length).toBeGreaterThan(0);
     for (const problem of unread) expect(problem.field).toBeUndefined();
@@ -321,7 +321,10 @@ describe("a problem", () => {
 
   it("is a SARIF 2.1.0 result, in a log the official schema accepts", async () => {
     const schema = JSON.parse(
-      await readFile(fixture("sarif-schema-2.1.0.json"), "utf8"),
+      await readFile(
+        new URL("../fixtures/sarif-schema-2.1.0.json", import.meta.url),
+        "utf8",
+      ),
     ) as object;
     const validate = new ajvDraft04.default({ strict: false }).compile(schema);
     const problems = await everyProblem();

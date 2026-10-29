@@ -1,7 +1,9 @@
-// A schema for the tests of type notes: its folder, types/kitchen/, holds notes that are wrong on purpose. tray, oven
-// and roll have their right notes, which give only prose; pan and bun have none; scone's gives abstract and loaf's a
-// description, which their code gives; crumb's cannot be read; and till.md explains a type kitchen does not have.
+// A schema for the tests of type notes: its folder, types/kitchen/, which the tests write from notes.ts, holds notes
+// that are wrong on purpose. tray, oven and roll have their right notes, which give only prose; pan and bun have none;
+// scone's gives abstract and loaf's a description, which their code gives; crumb's cannot be read; and till.md explains
+// a type kitchen does not have.
 import { defineSchema, defineType } from "../src/index.ts";
+import { fixture } from "./notes.ts";
 
 const kind = <const N extends string>(
   name: N,
@@ -22,5 +24,5 @@ export default defineSchema({
     scone: kind("scone", "A sweet bake."),
     crumb: kind("crumb", "What a bake leaves."),
   },
-  typeNotes: new URL("./types/kitchen/", import.meta.url),
+  typeNotes: fixture("types/kitchen/"),
 });
