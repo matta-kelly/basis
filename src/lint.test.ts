@@ -34,6 +34,7 @@ import {
   one,
   oneOrNone,
   type,
+  type AnySchema,
   type Graph,
   type LinkFailure,
   type Piece,
@@ -1790,6 +1791,127 @@ describe("the lint of a schema and the schemas it imports, as one graph", () => 
       type: "type",
       description: "One agent of a deployment.",
       abstract: false,
+    });
+  });
+
+  describe("a nested root: a folder below a place with its own config", () => {
+    // A note that is wrong for things: read, it is a problem of basis/fields.
+    const wrongNote = slateNote.replace("role: entry", "role: bogus");
+    const shopOf = (...imports: AnySchema[]) =>
+      defineSchema({
+        name: "shop",
+        description: "d",
+        imports: [things, ...imports],
+        types: {},
+      });
+    const pkgAt = (notes: string, skip?: string) =>
+      defineSchema({
+        name: "pkg",
+        description: "d",
+        imports: [things],
+        types: {},
+        notes: pathToFileURL(notes),
+        ...(skip && { skip: (path: string) => path === skip }),
+      });
+    const names = (graph: Graph) => graph.all(source).map((n) => n.name);
+
+    it.each(["basis.config.ts", "basis.config.js"])(
+      "that the folder linted does not import, by %s, has none of its notes read",
+      async (config) => {
+        const base = await filesIn({
+          "slate.md": slateNote,
+          [`other/${config}`]: "export default {};\n",
+          "other/wrong.md": wrongNote,
+          "other/deep/wrong.md": wrongNote,
+        });
+        const { problems, graph } = await lintFolder(shopOf(), base);
+        expect(problems).toEqual([]);
+        expect(names(graph)).toEqual(["slate"]);
+      },
+    );
+
+    it("that the folder linted imports is read once, as the import's: by its skip", async () => {
+      const base = await filesIn({
+        "pkg/basis.config.ts": "export default {};\n",
+        "pkg/slate.md": slateNote,
+        "pkg/draft.md": "Not a note of the schema.\n",
+      });
+      const pkg = pkgAt(`${base}/pkg/`, "draft.md");
+      const { problems, graph } = await lintFolder(shopOf(pkg), base);
+      expect(problems).toEqual([]);
+      expect(names(graph)).toEqual(["slate"]);
+    });
+
+    it("ends the ground at its own top: an import of a folder inside it reads that folder alone", async () => {
+      const base = await filesIn({
+        "pkg/basis.config.ts": "export default {};\n",
+        "pkg/wrong.md": wrongNote,
+        "pkg/notes/slate.md": slateNote,
+      });
+      const pkg = pkgAt(`${base}/pkg/notes/`);
+      const { problems, graph } = await lintFolder(shopOf(pkg), base);
+      expect(problems).toEqual([]);
+      expect(names(graph)).toEqual(["slate"]);
+    });
+
+    it("ends the ground of a schema's notes, read as a place, as it ends the folder linted's", async () => {
+      const base = await filesIn({
+        "pkg/slate.md": slateNote,
+        "pkg/inner/basis.config.ts": "export default {};\n",
+        "pkg/inner/wrong.md": wrongNote,
+      });
+      const pkg = pkgAt(`${base}/pkg/`);
+      const { problems, graph } = await lintFolder(
+        shopOf(pkg),
+        await filesIn({}),
+      );
+      expect(problems).toEqual([]);
+      expect(names(graph)).toEqual(["slate"]);
+    });
+
+    it("is not the folder linted: a config at the folder's top ends nothing", async () => {
+      const base = await filesIn({
+        "basis.config.ts": "export default {};\n",
+        "slate.md": slateNote,
+        "sub/wrong.md": wrongNote,
+      });
+      const { problems } = await lintFolder(shopOf(), base);
+      expect(problems).toEqual([
+        {
+          path: "sub/wrong.md",
+          rule: "basis/fields",
+          field: "/role",
+          message: expect.stringMatching(/^Invalid option/),
+        },
+      ]);
+    });
+
+    it("holds no note of the outer graph, so a skip of it, or of a folder it is in, hides none", async () => {
+      const base = await filesIn({
+        "slate.md": slateNote,
+        "vendor/basis.config.ts": "export default {};\n",
+        "vendor/bench.md": slateNote,
+        "packages/other/basis.config.js": "export default {};\n",
+        "packages/other/bench.md": slateNote,
+        "packages/old.md": slateNote,
+      });
+      const pkg = defineSchema({
+        name: "pkg",
+        description: "d",
+        imports: [things],
+        types: {},
+        notes: pathToFileURL(`${base}/`),
+        skip: (path) => path === "vendor" || path === "packages",
+      });
+      const { problems } = await lintFolder(pkg, base);
+      expect(problems).toEqual([
+        {
+          path: "packages/old.md",
+          rule: "basis/skip",
+          message:
+            "The skip leaves out this file, and its frontmatter has a type: it is a note the lint does not see. Take it out of the skip, or take the type out of its frontmatter.",
+        },
+      ]);
     });
   });
 
