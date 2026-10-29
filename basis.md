@@ -85,7 +85,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 		- rule: `basis/link`
 - **graph and subgraph:** how layers build on basis
 	- a graph stands alone: linted from its own root, it and its subgraphs pass, with nothing above it
-		- no rule yet: no check lints each root alone
+		- rule: each repo's check lints each of its roots alone, at every push ([[presubmit]]): basis's `.`, `types/` and `it/`; que's four roots; each other root by its repo's check
 		- a node's links, and the rules that see it, resolve only in the composed graph of the graph that owns it: a subgraph that links up to a graph above it fails alone
 			- rule: the lint, in one pass. Each piece names its owner, the schema whose ground or sources gave it ([[basis-graph]], owner): a root's lint names the schema of the place that read it; the lint's core gives a piece that names none to the schema linted, and throws on an owner it does not see. Each node is checked in its owner's composed graph: its type is one its owner sees, `basis/link` resolves each link only to a node of that graph, and only the rules of that graph's schemas run on it, each reading only that graph ([[basis-rule]]). A name or a key it shares with a node of a graph its owner does not import is a problem of its own, which names that node and its owner (`basis/unique-name`, `basis/key`)
 	- a lint starts only at a root: a caller names a root, and the root decides its graph: its ground, skip, sources and imports, and where its ground ends. No caller chooses a scope, so each tool that lints a graph reads the one graph its root's own lint reads. As `tsc -p` takes no file beside a project, and a Go or Cargo build reads a module by its `go.mod` or `Cargo.toml`
@@ -102,7 +102,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 	- schemas form no cycle, and imports point only down
 		- rule: `defineSchema` refuses these when a schema is built
 	- every push lints, from its root, the graph whose ground it changes
-		- no rule yet: a push is no state, so no lint rule can hold it. Each root's own check at its push holds it, not one shared gate: a gate run from the outermost root cannot show that a graph stands alone
+		- rule: no lint rule, since a push is no state. Each repo's `checks` job holds it at every push to every branch, and the ruleset on main refuses a commit whose `checks` is not green ([[presubmit]], [[ci#checks.yml]]). A root's own check lints its graph; a repo whose notes are lot's ground lints lot's graph, with our repos at their main
 	- packages are nodes, and each dependency is on a published package, by version: never a path into another repo
 		- rule: a rule of the graph that holds the packages, none in basis. It reads each `package.json`: a dependency npm resolves to a place (a folder, a tarball, a git or other url), a published package used as a workspace, or a workspace with no package fails. It reads `package.json`, not code, so it does not see an import by a relative path
 
@@ -128,7 +128,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 
 - validation: the check that the specification gives what the intent asks for. Does the rule set say all that "each real thing is defined once" means?
 - what the rule set does not say ([[#Invariants]])
-	- the invariants with no rule yet: a graph stands alone; every push lints the graph whose ground it changes
+	- the invariants with no rule yet: none
 	- transitions: basis checks one state of the graph, never a move from one state to the next. No rule can say what a change may do
 - what basis leaves to its schemas: an invariant about what only a schema defines. The schema that owns it states it and holds it, with its own rule or by how it builds it; basis does not check it
 	- a relation is stated once: one link, on one node, and its reverse comes from the graph, not from a second link. Only a schema knows that two of its links state one relation, so a schema that states a relation holds this with its own rule over the graph. A schema that states a relation twice and writes no rule is not caught
