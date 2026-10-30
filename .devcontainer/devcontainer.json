@@ -10,12 +10,20 @@
   "workspaceFolder": "${localWorkspaceFolder}",
 
   // keep-id: map your host user onto the image's `node` user (uid 1000), so files
-  // written into the repo from inside stay owned by you.
-  "runArgs": ["--userns=keep-id:uid=1000,gid=1000"],
+  // written into the repo from inside stay owned by you. The CPU budget bounds this
+  // checkout's container: 3 CPUs, and its shares when the host is contended.
+  "runArgs": [
+    "--userns=keep-id:uid=1000,gid=1000",
+    "--security-opt",
+    "label=disable",
+    "--cpus=3",
+    "--cpu-shares=256"
+  ],
   "remoteUser": "node",
   "updateRemoteUserUID": false,
 
-  // Packages live in a podman volume, not the repo folder: one per checkout, so a worktree has its own. VS Code's id is not the one `just` names its volume by, so a checkout used by both has two.
+  // Packages live in a podman volume, not the repo folder: one per checkout, so a worktree has its own.
+  // The CLI names it with its id for this folder, so `just` and VS Code mount the same one.
   "mounts": [
     "source=basis-node-modules-${devcontainerId},target=${containerWorkspaceFolder}/node_modules,type=volume"
   ],
