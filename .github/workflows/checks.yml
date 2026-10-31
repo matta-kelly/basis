@@ -6,7 +6,7 @@ name: checks
 on:
   # GitHub checks a release tag only: every land is checked on this machine, at the local main.
   push:
-    tags: ['v*', 'que-pair-*']
+    tags: ["v*", "que-pair-*"]
   workflow_dispatch:
 
 permissions:
