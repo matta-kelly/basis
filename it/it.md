@@ -16,7 +16,7 @@ The kinds of notes Matt keeps, as a package on [[basis]], `@mku1tra/it`, publish
 Every note sits at exactly one layer. Mixing them is the primary failure mode.
 
 - **Meta-schema**: almost never changes. [[basis]]: what a note, a type, a property and a link are
-- **Ontology**: changes rarely. The types of this package, of [[kinetic]], of [[landl]], and of [[que]] (`@mku1tra/que-plugin`, `@mku1tra/que-harness`). See [[#Ontology]]
+- **Ontology**: changes rarely. The types of this package, of [[kinetic]], of `landl`, and of [[que]] (`@mku1tra/que-plugin`, `@mku1tra/que-harness`). See [[#Ontology]]
 - **Instance**: notes written in those types, changes constantly
 - **Reality**: the actual things. Usually outside the vault; when inside, it has no type
 	- test: if the program reading it went away, would it still make sense as a note? No → Reality
