@@ -26,7 +26,7 @@ Every note sits at exactly one layer. Mixing them is the primary failure mode.
 
 ## Ontology
 
-- `src/schema.ts` defines the types and their fields, and says what each field and value means. Its notes are this folder: this note and its type notes, which basis's `just check` lints. `just lint` at the root of lot checks every note against it
+- `src/schema.ts` defines the types and their fields, and says what each field and value means. Its notes are this folder: this note and its type notes, which basis's `just check` lints. Each repo whose notes use these types checks them by its own lint, from its own root
 - a note is an idea, a thing, or work, by what it *is*. Each is an abstract type: no note is of it, and the types that inherit it share its fields. A type note is none of these: its type is [[type]], which is basis's, and every schema sees it
 	- [[idea]]: notes about ideas and domains: [[moc]], [[doc]], [[sop]]. Their `status` says how far a note can be trusted
 	- [[thing]]: notes about things that exist and do something: [[tool]], [[component]], [[service]], [[role]]. Their `status` says where the thing is in its life

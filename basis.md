@@ -102,7 +102,7 @@ An invariant is a property true in every state. One with a rule is checked; one 
 	- schemas form no cycle, and imports point only down
 		- rule: `defineSchema` refuses these when a schema is built
 	- every push lints, from its root, the graph whose ground it changes
-		- rule: no lint rule, since a push is no state. Each repo's `checks` job holds it at every push to every branch, and the ruleset on main refuses a commit whose `checks` is not green. A root's own check lints its graph; a repo whose notes are the ground of a graph above it lints that graph
+		- rule: no lint rule, since a push is no state. Each repo's `checks` job holds it at every push to every branch; a repo whose ruleset on main requires `checks` also refuses a commit whose `checks` is not green. Each root's own check lints its graph alone: no repo lints the graph of a repo that holds it
 	- packages are nodes, and each dependency is on a published package, by version: never a path into another repo
 		- rule: a rule of the graph that holds the packages, none in basis. It reads each `package.json`: a dependency npm resolves to a place (a folder, a tarball, a git or other url), a published package used as a workspace, or a workspace with no package fails. It reads `package.json`, not code, so it does not see an import by a relative path
 
