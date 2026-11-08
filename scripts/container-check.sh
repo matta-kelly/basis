@@ -6,7 +6,8 @@
 #
 # Run them on the host: `scripts/container-check.sh`, or `scripts/container-check.sh <name>...` for some of
 # them, and `scripts/container-check.sh --list` to list them. They destroy and remake this checkout's
-# container and its volumes, so do not run them under a session that is using the container.
+# container and its volumes, so do not run them under a session that is using the container. The host is
+# logged in to ghcr (`podman login ghcr.io`): the file's image is a ghcr tag, and `just up` pulls it.
 #
 # They are not a step of scripts/check.sh: that file runs inside the container, where podman is not, and
 # its steps stay as they are. Where they cannot run they say why and exit 0: a machine with no podman
@@ -20,6 +21,11 @@ label="devcontainer.local_folder=$root"
 CLI=(npx --yes @devcontainers/cli@0.90.0)
 CAP=3000000000
 SHARES=256
+# The bound on a fresh up from the dev image, in seconds: a little over twice the 26.4 s the probe measured
+# for a whole up of que. The image's pull is once per machine, so it is not in this.
+BOUND=60
+# The image the file starts from: the tag ghcr carries the dev image's main under.
+main_image=ghcr.io/matta-kelly/basis-dev:main
 
 skip() {
   echo "SKIP: $*"
@@ -441,6 +447,71 @@ test_the_dev_image_has_its_paths_and_runs_as_root() {
     "the image's source label" || return 1
 }
 
+# --- the file's image ---
+
+# Given the file, when it is read through the CLI, then it starts from the dev image and pulls it before
+# the container: the CLI never pulls a tag it has, so without the pull a machine with an older :main keeps
+# it, and VS Code and `just up` both read the file.
+test_the_file_names_the_dev_image_and_pulls_it_first() {
+  cd "$root" || return 1
+  local out init
+  # The CLI's log and npm's notices are on stderr: the file's settings are all stdout holds.
+  if ! out=$("${CLI[@]}" read-configuration --workspace-folder "$root" --docker-path podman 2>"$tmp/read-configuration.log"); then
+    fail "the CLI could not read the file: $(tail -5 "$tmp/read-configuration.log")"
+    return 1
+  fi
+  assert_eq "$main_image" "$(jq -r '.configuration.image' <<<"$out")" "the file's image is the dev image" || return 1
+  init=$(jq -r '.configuration.initializeCommand | (if type == "array" then join(" ; ") else . end) // ""' <<<"$out")
+  assert_contains "$init" "podman pull $main_image" "the file pulls the dev image first" || return 1
+}
+
+# Given the dev image pulled and this checkout cleaned, when `just up` runs, then it is up from that image
+# within the bound, installed from the image's cache: the modules are in a fresh volume and tsc answers.
+test_a_fresh_container_is_up_from_the_dev_image_within_the_bound() {
+  cd "$root" || return 1
+  local out id elapsed digest local_digest version expected_ts
+  # The given: the machine holds the registry's :main, so the up's own pull moves no layer and the bound
+  # measures the up alone.
+  if ! podman pull "$main_image" >"$tmp/pull.log" 2>&1; then
+    fail "the dev image $main_image: expected a successful podman pull (podman login ghcr.io), got: $(tail -5 "$tmp/pull.log")"
+    return 1
+  fi
+  digest=$(podman image inspect --format '{{.Digest}}' "$main_image")
+  clean
+  elapsed=$SECONDS
+  if ! out=$(just up 2>&1); then
+    fail "just up from the dev image failed: $out"
+    return 1
+  fi
+  elapsed=$((SECONDS - elapsed))
+  id=$(cid)
+  if [ -z "$id" ]; then
+    fail "just up left no container for the folder"
+    return 1
+  fi
+  local_digest=$(field "$id" '{{.ImageDigest}}')
+  assert_eq "$digest" "$local_digest" "the container runs the dev image this machine has" || return 1
+  { [ "$elapsed" -le "$BOUND" ] ||
+    fail "a fresh up from the dev image: expected at most ${BOUND}s, took ${elapsed}s"; } || return 1
+  if ! podman exec "$id" test -f "$root/node_modules/.package-lock.json"; then
+    fail "the fresh volume has no install in it"
+    return 1
+  fi
+  if ! version=$(podman exec -u node -w "$root" "$id" npx tsc --version 2>&1); then
+    fail "npx tsc --version as node in the container failed: $version"
+    return 1
+  fi
+  # tsc from the volume's install, not one npx fetched: the version the checkout's lockfile holds.
+  expected_ts=$(jq -r .devDependencies.typescript package.json)
+  case "$version" in
+  "Version $expected_ts") ;;
+  *)
+    fail "npx tsc --version as node: expected [Version $expected_ts], got [$version]"
+    return 1
+    ;;
+  esac
+}
+
 # --- the runner ---
 
 TESTS=(
@@ -457,6 +528,8 @@ TESTS=(
   test_the_dev_image_passes_its_smoke
   test_the_smoke_fails_an_image_with_no_cache
   test_the_dev_image_has_its_paths_and_runs_as_root
+  test_the_file_names_the_dev_image_and_pulls_it_first
+  test_a_fresh_container_is_up_from_the_dev_image_within_the_bound
 )
 
 if [ "${1:-}" = "--list" ]; then
