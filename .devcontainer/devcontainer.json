@@ -2,7 +2,11 @@
 // the folder is a notes vault whose indexer reads every file.
 {
   "name": "basis",
-  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "image": "ghcr.io/matta-kelly/basis-dev:main",
+  // The CLI inspects the image before it starts the container, and pulls only when the inspect fails: a tag
+  // it has stays. So pull it here, on the host, before the CLI resolves the image, for VS Code and `just`
+  // alike. A failed pull does not fail the start: it says so, and the machine's copy is used.
+  "initializeCommand": "podman pull ghcr.io/matta-kelly/basis-dev:main || echo 'could not pull ghcr.io/matta-kelly/basis-dev:main: the copy this machine has is used' >&2",
 
   // Mount the repo at its host path, so absolute paths in caches and tool output
   // mean the same thing inside the container and out.
@@ -28,7 +32,8 @@
     "source=basis-node-modules-${devcontainerId},target=${containerWorkspaceFolder}/node_modules,type=volume"
   ],
 
-  // A new volume starts root-owned: hand it to `node`, then install.
+  // A new volume starts root-owned: hand it to `node`, then install. The install reads the image's cache:
+  // the image points npm at it and sets npm_config_prefer_offline=true.
   "postCreateCommand": "sudo chown node:node node_modules && npm ci",
 
   "customizations": {
