@@ -54,7 +54,9 @@ jobs:
           # all history, so the script can read what the change touched against origin/main
           fetch-depth: 0
           persist-credentials: false
-      - run: scripts/check.sh
+      # A job container runs as root, which reads every file and owns none of the checkout: the check runs as
+      # the image's node, as in the dev container, over a checkout node owns.
+      - run: chown -R node:node "$GITHUB_WORKSPACE" && runuser -u node -- env HOME=/home/node scripts/check.sh
 
   # The one result a ruleset requires. It always runs, so a failed image job cannot read as a pass.
   checks:
