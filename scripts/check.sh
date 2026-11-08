@@ -32,7 +32,8 @@ set_code() {
     npx eslint &&
     npx prettier --check . &&
     npx vitest run --reporter="$reporter" &&
-    scripts/install-check.sh
+    scripts/install-check.sh &&
+    scripts/dev-image.test.sh
 }
 
 # 3. The sets a changed file needs. A file no rule names needs every set, so a missing rule runs more, never less.

@@ -34,7 +34,11 @@ for cmd in podman just jq npx; do
 done
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+# The engine the dev image cases use, and their tag: the test's own, so no image of the developer's is touched.
+engine=${ENGINE:-podman}
+dev_image_tag=localhost/basis-dev:check
+dev_image_cleanup() { "$engine" image rm -f "$dev_image_tag" >/dev/null 2>&1 || true; }
+trap 'rm -rf "$tmp"; dev_image_cleanup' EXIT
 
 # --- the machine, read ---
 
@@ -380,6 +384,63 @@ test_the_check_passes_in_the_new_container() {
   assert_eq "$CAP" "$(field "$(cid)" '{{.HostConfig.NanoCpus}}')" "the check ran in the container the file makes" || return 1
 }
 
+# --- the dev image ---
+
+# dev_image: builds the image under test from the checkout when this machine lacks it, once a run.
+dev_image() {
+  "$engine" image exists "$dev_image_tag" >/dev/null 2>&1 && return 0
+  local log=$tmp/dev-image-build.log
+  "$engine" build -f .devcontainer/Containerfile -t "$dev_image_tag" "$root" >"$log" 2>&1 || {
+    fail "the dev image builds from .devcontainer/Containerfile: $(tail -20 "$log")"
+    return 1
+  }
+}
+
+# Given basis's checkout, when its image is built and the smoke runs on it, then the smoke exits 0 and
+# its last line says ok: the image installs package-lock.json with no network.
+test_the_dev_image_passes_its_smoke() {
+  cd "$root" || return 1
+  dev_image || return 1
+  local out code
+  out=$(scripts/dev-image-smoke.sh "$dev_image_tag" 2>&1)
+  code=$?
+  assert_eq 0 "$code" "the smoke exits 0 on the image: $out" || return 1
+  assert_eq "dev image smoke: ok" "$(tail -1 <<<"$out")" "the smoke's last line" || return 1
+}
+
+# Given an image with no npm cache, when the smoke runs on it, then the smoke fails and names the
+# install: the check catches an image that would leave a checkout to reach the network.
+test_the_smoke_fails_an_image_with_no_cache() {
+  cd "$root" || return 1
+  local out code
+  out=$(scripts/dev-image-smoke.sh mcr.microsoft.com/devcontainers/javascript-node:22 2>&1)
+  code=$?
+  { [ "$code" -ne 0 ] || fail "the smoke's exit on an image with no cache: expected non-zero, got $code"; } &&
+    assert_contains "$out" "the offline install of package-lock.json" "the smoke names the step it failed at"
+}
+
+# Given the built image, when its settings are read, then it runs as root, points npm at the baked
+# cache in its environment and prefers it, and its label names the repository it came from.
+test_the_dev_image_has_its_paths_and_runs_as_root() {
+  cd "$root" || return 1
+  dev_image || return 1
+  local user env
+  user=$(field "$dev_image_tag" '{{.Config.User}}')
+  env=$(field "$dev_image_tag" '{{range .Config.Env}}{{println .}}{{end}}')
+  case $user in
+  "" | root) ;;
+  *)
+    fail "the image's user: expected root or none, got [$user]"
+    return 1
+    ;;
+  esac
+  assert_contains "$env" "npm_config_cache=/opt/npm-cache" "the image's env points npm at the cache" || return 1
+  assert_contains "$env" "npm_config_prefer_offline=true" "the image's env prefers the cache" || return 1
+  assert_eq "https://github.com/matta-kelly/basis" \
+    "$(field "$dev_image_tag" '{{index .Config.Labels "org.opencontainers.image.source"}}')" \
+    "the image's source label" || return 1
+}
+
 # --- the runner ---
 
 TESTS=(
@@ -393,6 +454,9 @@ TESTS=(
   test_a_container_from_before_this_change_is_replaced
   test_no_file_passes_container_settings_to_podman_run_or_create
   test_the_check_passes_in_the_new_container
+  test_the_dev_image_passes_its_smoke
+  test_the_smoke_fails_an_image_with_no_cache
+  test_the_dev_image_has_its_paths_and_runs_as_root
 )
 
 if [ "${1:-}" = "--list" ]; then
