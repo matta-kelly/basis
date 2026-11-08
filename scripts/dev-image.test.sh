@@ -82,7 +82,7 @@ echo "smoke $*" >>"$T/calls"
 exit "${SMOKE_EXIT:-0}"
 STUB
   chmod +x "$T/bin/skopeo" "$T/bin/podman" "$T/smoke" || return 1
-  export T PATH="$T/bin:$PATH" DEV_IMAGE=$name_ DEV_IMAGE_SMOKE=$T/smoke SMOKE_EXIT=0
+  export T PATH="$T/bin:$PATH" ENGINE=podman DEV_IMAGE=$name_ DEV_IMAGE_SMOKE=$T/smoke SMOKE_EXIT=0
 }
 
 commit() { git -C "$repo" -c user.email=t@t -c user.name=t commit -qam "$1"; }
