@@ -497,7 +497,7 @@ test_the_check_job_runs_in_that_image() {
   steps=$(job check | block_in '^    steps:' || true)
   first=$(head -1 <<<"$steps")
   echo_at=$(grep -n 'dev image:' <<<"$steps" | cut -d: -f1)
-  check_at=$(grep -n 'run: scripts/check.sh$' <<<"$steps" | cut -d: -f1)
+  check_at=$(grep -n 'scripts/check.sh$' <<<"$steps" | cut -d: -f1)
   then_has "the check job's needs" 'image' "$needs" &&
     then_has "the container" 'image: ${{ needs.image.outputs.image }}' "$container" &&
     then_has "the container's credentials" 'username: ${{ github.actor }}' "$container" &&
@@ -506,6 +506,18 @@ test_the_check_job_runs_in_that_image() {
     then_has "the first step" 'echo "dev image: ${{ needs.image.outputs.image }}"' "$first" &&
     { [ -n "$echo_at" ] && [ -n "$check_at" ] && [ "$echo_at" -lt "$check_at" ] ||
       miss "the steps: expected the image echo, then scripts/check.sh; got lines [$echo_at] [$check_at]"; } &&
+    pass
+}
+
+# A job container runs as root: root reads every file, so a test that a file it may not open gives a problem
+# cannot fail as it should, and git refuses a checkout root does not own. The check runs as the image's node,
+# as in the dev container, over a checkout node owns.
+test_the_check_runs_as_node_over_a_checkout_node_owns() {
+  name="the check job hands the checkout to node and runs check.sh as node, with node's home"
+  given_workflow checks.yml || return 1
+  steps=$(job check | block_in '^    steps:' || true)
+  then_has "the check step" 'run: chown -R node:node "$GITHUB_WORKSPACE" && runuser -u node -- env HOME=/home/node scripts/check.sh' "$steps" &&
+    then_lacks "the steps" 'run: scripts/check.sh' "$steps" &&
     pass
 }
 
