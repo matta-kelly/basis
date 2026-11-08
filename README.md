@@ -29,7 +29,7 @@ Each source is a function that gives more pieces of nodes, such as a package's r
 
 ## Check
 
-Node runs in a dev container, never on the host. `just check` makes the container if there is none, then runs the check set: types, lint, format, tests, the repo's notes from its root (`basis lint .`), and the packages, each installed from its tarball in an empty project and run in plain Node. The pipeline runs the same file, `scripts/check.sh`.
+Node runs in a dev container, never on the host. The dev image is built from `.devcontainer/Containerfile`, and `.github/workflows/dev-image.yml` pushes it to ghcr on main. `just check` makes the container if there is none, then runs the check set: types, lint, format, tests, the repo's notes from its root (`basis lint .`), and the packages, each installed from its tarball in an empty project and run in plain Node. The pipeline runs the same file, `scripts/check.sh`.
 
 it is a workspace of the repo. It depends on basis by version (`^0.30.0`, a peer), and in the repo its dev dependency `file:..` links the root, so its check runs on basis as it is.
 
