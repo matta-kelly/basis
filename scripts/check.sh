@@ -6,7 +6,7 @@
 #   scripts/check.sh <set>    one set
 #   scripts/check.sh --plan   print the sets the change needs, and run none
 #
-# The three parts below are basis's. The rest is the template's (shit-sdlc, templates/repo).
+# The three parts below are basis's. The rest is the template's (kinetic, templates/repo).
 # Runs where Node is: in the dev container, or in a pipeline job.
 set -euo pipefail
 cd "$(dirname "$0")/.."
