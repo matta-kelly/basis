@@ -28,9 +28,9 @@ Part of the schema in [[basis]] (Schema): the terms are those of [[state-machine
 			- a message that throws, or gives other than a non-empty string or undefined, is a fault of the link: the lint throws, naming the type, the link and the node's path
 		- data on a link itself is not supported yet
 		- whether an absent optional link is worth a warning is a lint rule, not a schema question
-	- **type note**: the documentation of a type, as a docstring is the documentation of a function
+	- **type note**: a type in its own shape, as a well-made form is its own instructions (structured authoring: the structure tells the writer what goes where, and the reader what they read)
 		- one per type, of type `type`, with the type's name as its file name. `type` is built into basis, and every schema sees it without an import
 		- it sits in the folder its schema declares: `defineSchema({ ..., typeNotes: new URL("./types/", import.meta.url) })`. basis's own type notes are in `types/` (`node.md`, `type.md`), in its package
-		- a type is one node: its code piece, as `defineType` made it, gives its `description` and `abstract`, and its type note gives the prose. The lint adds the code piece of each type note it is given, named for a type the schema sees, at the note's path, of the source `defineType`, and merges the two by name ([[basis-node]], merge). A note that gives the description or abstract again is `basis/merge`, which names the code
+		- a type is one node: its code piece, as `defineType` made it, gives its `description` and `abstract`, and its type note gives its shape. The lint adds the code piece of each type note it is given, named for a type the schema sees, at the note's path, of the source `defineType`, and merges the two by name ([[basis-node]], merge). A note that gives the description or abstract again is `basis/merge`, which names the code
 		- an extension is the type it extends: its type note is the one of the schema that owns that type
-		- its body says what the type is for, and when to use it over another. It is the template for a new node of that type
+		- its body is the template a new node of the type starts from, each part named and defined where it sits. The template explains the type: nothing sits above it, and what the type is for is its code's description
