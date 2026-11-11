@@ -6,7 +6,9 @@
   // The CLI inspects the image before it starts the container, and pulls only when the inspect fails: a tag
   // it has stays. So pull it here, on the host, before the CLI resolves the image, for VS Code and `just`
   // alike. A failed pull does not fail the start: it says so, and the machine's copy is used.
-  "initializeCommand": "podman pull ghcr.io/matta-kelly/basis-dev:main || echo 'could not pull ghcr.io/matta-kelly/basis-dev:main: the copy this machine has is used' >&2",
+  // Then the workspace's own network (and its pod, when the repo has .devcontainer/pod.yaml), which the
+  // container joins below: scripts/workspace.sh, from kinetic's template.
+  "initializeCommand": "(podman pull ghcr.io/matta-kelly/basis-dev:main || echo 'could not pull ghcr.io/matta-kelly/basis-dev:main: the copy this machine has is used' >&2) && scripts/workspace.sh up ${localWorkspaceFolder}",
 
   // Mount the repo at its host path, so absolute paths in caches and tool output
   // mean the same thing inside the container and out.
@@ -18,6 +20,10 @@
   // checkout's container: 3 CPUs, and its shares when the host is contended.
   "runArgs": [
     "--userns=keep-id:uid=1000,gid=1000",
+    "--network",
+    "basis-${localWorkspaceFolderBasename}",
+    "--network-alias",
+    "basis-${localWorkspaceFolderBasename}-app",
     "--security-opt",
     "label=disable",
     "--cpus=3",
