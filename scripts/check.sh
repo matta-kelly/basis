@@ -7,7 +7,7 @@
 #   scripts/check.sh --plan   print the sets the change needs, and run none
 #
 # The three parts below are basis's. The rest is the template's (kinetic, templates/repo).
-# Runs where Node is: in the dev container, or in a pipeline job.
+# Runs where Node is: in the workspace (crate run), or in the check of a push on the server.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -33,7 +33,7 @@ set_code() {
     npx prettier --check . &&
     npx vitest run --reporter="$reporter" &&
     scripts/install-check.sh &&
-    scripts/dev-image.test.sh
+    scripts/workflows.test.sh
 }
 
 # 3. The sets a changed file needs. A file no rule names needs every set, so a missing rule runs more, never less.
