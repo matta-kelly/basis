@@ -1,6 +1,6 @@
 /**
  * it: the kinds of notes Matt keeps, as types on basis. A note is an idea or a thing, by what it is: two abstract
- * types, which the other types inherit. Work is in the kinetic schema. Each type has a note in types/ that says what it is
+ * types, which the other types inherit. Work is in the work schema. Each type has a note in types/ that says what it is
  * for, and whose body a new note starts from. The package's folder is the schema's notes: this note and its type notes.
  */
 
