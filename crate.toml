@@ -1,5 +1,5 @@
 # basis's workspace and its check, made by crate (github.com/matta-kelly/crate) from this file: on the laptop
-# (just up), in the factory, and in the check of every push to main on the server.
+# (just up), in the factory, and in the merge queue's check of each change to main on the server.
 crate = "2"
 name = "basis"
 image = "dev"       # the check runs in the dev image, [dev] below
