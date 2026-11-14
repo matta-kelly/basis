@@ -7,7 +7,7 @@ ship = "npm"        # each move of main publishes the versions its commits ask f
 packages = ". it"   # the packages it versions: basis, and it in it/
 
 [dev]               # the dev image: the files its hash covers
-inputs = [".devcontainer/Containerfile", "package-lock.json"]
+inputs = [".crate/Containerfile", "package-lock.json"]
 
 [tools]             # the dev image with the checkout: where commands run
 volumes = ["node_modules"]
